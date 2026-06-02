@@ -26,12 +26,15 @@ export async function createThoughtAction(formData: FormData) {
       title,
       category,
       excerpt,
+      userId: currentUser.id,
     });
   } catch {
-    redirect("/?error=db");
+    redirect("/dashboard?error=db");
   }
 
+  revalidatePath("/dashboard");
   revalidatePath("/");
+  redirect("/dashboard");
 }
 
 export async function registerAction(formData: FormData) {
@@ -72,7 +75,7 @@ export async function registerAction(formData: FormData) {
   }
 
   await createSession(user.id);
-  redirect("/");
+  redirect("/dashboard");
 }
 
 export async function loginAction(formData: FormData) {
@@ -96,7 +99,7 @@ export async function loginAction(formData: FormData) {
   }
 
   await createSession(user.id);
-  redirect("/");
+  redirect("/dashboard");
 }
 
 export async function logoutAction() {

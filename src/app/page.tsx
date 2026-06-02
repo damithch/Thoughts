@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { createThoughtAction, logoutAction } from "@/app/actions";
+import { logoutAction } from "@/app/actions";
 import { getCurrentUser } from "@/lib/auth";
 import { getThoughts } from "@/lib/db";
 
@@ -12,11 +12,9 @@ type HomePageProps = {
   }>;
 };
 
-export default async function Home({ searchParams }: HomePageProps) {
+export default async function Home({}: HomePageProps) {
   const currentUser = await getCurrentUser();
   const { thoughts, databaseAvailable } = await getThoughts();
-  const params = await searchParams;
-  const databaseWriteError = params?.error === "db";
 
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#f7efe3_0%,#efe2d0_35%,#e3d0bb_100%)] px-6 py-10 text-stone-900">
@@ -81,12 +79,6 @@ export default async function Home({ searchParams }: HomePageProps) {
           id="home"
           className="rounded-[2rem] border border-stone-900/10 bg-white/65 p-8 shadow-[0_20px_60px_rgba(86,58,34,0.12)] backdrop-blur md:p-12"
         >
-          {databaseWriteError ? (
-            <div className="mb-6 rounded-2xl border border-rose-700/10 bg-rose-100/80 px-4 py-3 text-sm text-rose-950">
-              The thought could not be saved because the database is currently
-              unavailable.
-            </div>
-          ) : null}
           {!databaseAvailable ? (
             <div className="mb-6 rounded-2xl border border-amber-700/15 bg-amber-100/80 px-4 py-3 text-sm text-amber-950">
               Neon is unreachable right now, so the page is showing fallback
@@ -111,8 +103,34 @@ export default async function Home({ searchParams }: HomePageProps) {
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-stone-700 md:text-lg">
                 Start collecting your ideas, memories, and short reflections as
-                visual cards. This homepage is ready to evolve into your journal.
+                visual cards. The public homepage showcases the journal, while
+                your private dashboard handles card creation.
               </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                {currentUser ? (
+                  <Link
+                    href="/dashboard"
+                    className="rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700"
+                  >
+                    Open Dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      href="/register"
+                      className="rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700"
+                    >
+                      Create Account
+                    </Link>
+                    <Link
+                      href="/login"
+                      className="rounded-full border border-stone-900/10 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-700 transition hover:bg-white"
+                    >
+                      Login
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
             <div
               id="today"
@@ -132,80 +150,41 @@ export default async function Home({ searchParams }: HomePageProps) {
         <section className="grid gap-6 md:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-[1.75rem] border border-stone-900/10 bg-stone-900 p-8 text-stone-100 shadow-[0_18px_40px_rgba(86,58,34,0.12)]">
             <p className="text-sm uppercase tracking-[0.24em] text-stone-400">
-              Add a thought
+              Private dashboard
             </p>
             <h2 className="mt-4 font-[family:var(--font-display)] text-4xl leading-none md:text-5xl">
-              Write now. Sort later.
+              Create cards in your own space.
             </h2>
             <p className="mt-5 max-w-md text-sm leading-7 text-stone-300">
               {currentUser
-                ? "This form posts to a server action, inserts a row into Neon, and refreshes the archive below."
-                : "Create an account or log in first. After that, this form will save your cards to Neon."}
+                ? "Use the dashboard to add and manage your personal cards without mixing the writing form into the public homepage."
+                : "Register or log in first, then use your dashboard to add cards to your account."}
             </p>
           </div>
 
-          <form
-            action={createThoughtAction}
-            className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-[0_18px_40px_rgba(86,58,34,0.08)] md:p-8"
-          >
-            <div className="grid gap-5">
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-stone-500">
-                  Title
-                </span>
-                <input
-                  type="text"
-                  name="title"
-                  placeholder="An idea worth returning to"
-                  required
-                  className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-stone-500">
-                  Category
-                </span>
-                <input
-                  type="text"
-                  name="category"
-                  placeholder="Reflection"
-                  required
-                  className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-stone-500">
-                  Thought
-                </span>
-                <textarea
-                  name="excerpt"
-                  rows={5}
-                  placeholder="Write the thought exactly as it arrives."
-                  required
-                  className="resize-none rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
-                />
-              </label>
-
-              <div className="flex items-center justify-between gap-4 pt-2">
-                <p className="text-xs uppercase tracking-[0.18em] text-stone-400">
-                  {databaseAvailable
-                    ? currentUser
-                      ? "Saved to Neon"
-                      : "Login required"
-                    : "Database offline"}
-                </p>
-                <button
-                  type="submit"
-                  disabled={!currentUser || !databaseAvailable}
-                  className="rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
-                >
-                  Add Card
-                </button>
-              </div>
+          <div className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-[0_18px_40px_rgba(86,58,34,0.08)] md:p-8">
+            <p className="text-sm uppercase tracking-[0.24em] text-stone-500">
+              Next step
+            </p>
+            <h3 className="mt-4 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
+              {currentUser ? "Go write from the dashboard." : "Login to start writing."}
+            </h3>
+            <p className="mt-5 max-w-xl text-sm leading-7 text-stone-600">
+              {databaseAvailable
+                ? currentUser
+                  ? "Your account is ready. Open the dashboard to create cards tied to your user."
+                  : "Once you sign in, the dashboard becomes your private writing area."
+                : "The database is offline right now, so the dashboard will need the connection restored before new cards can be saved."}
+            </p>
+            <div className="mt-8">
+              <Link
+                href={currentUser ? "/dashboard" : "/login"}
+                className="inline-flex rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700"
+              >
+                {currentUser ? "Open Dashboard" : "Login"}
+              </Link>
             </div>
-          </form>
+          </div>
         </section>
 
         <section id="archive" className="space-y-6">

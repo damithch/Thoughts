@@ -7,6 +7,7 @@ type Thought = {
   title: string;
   category: string;
   excerpt: string;
+  user_id: number | null;
   created_at: Date;
 };
 
@@ -22,6 +23,7 @@ type NewThought = {
   title: string;
   category: string;
   excerpt: string;
+  userId: number;
 };
 
 type NewUser = {
@@ -89,6 +91,7 @@ function getFallbackThoughts(): Thought[] {
     title: thought.title,
     category: thought.category,
     excerpt: thought.excerpt,
+    user_id: null,
     created_at: new Date(now.getTime() - index * 60_000),
   }));
 }
@@ -118,6 +121,11 @@ async function initializeThoughtsTable() {
     )
   `);
 
+  await pool.query(`
+    ALTER TABLE thoughts
+    ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL
+  `);
+
   const { rows } = await pool.query<{ count: string }>(
     "SELECT COUNT(*)::text AS count FROM thoughts",
   );
@@ -143,7 +151,7 @@ export async function getThoughts(): Promise<ThoughtsResult> {
 
     const { rows } = await pool.query<Thought>(
       `
-        SELECT id, title, category, excerpt, created_at
+        SELECT id, title, category, excerpt, user_id, created_at
         FROM thoughts
         ORDER BY created_at DESC, id DESC
         LIMIT 12
@@ -169,11 +177,28 @@ export async function createThought(input: NewThought) {
 
   await pool.query(
     `
-      INSERT INTO thoughts (title, category, excerpt)
-      VALUES ($1, $2, $3)
+      INSERT INTO thoughts (title, category, excerpt, user_id)
+      VALUES ($1, $2, $3, $4)
     `,
-    [input.title, input.category, input.excerpt],
+    [input.title, input.category, input.excerpt, input.userId],
   );
+}
+
+export async function getThoughtsByUser(userId: number) {
+  await initializeThoughtsTable();
+
+  const { rows } = await pool.query<Thought>(
+    `
+      SELECT id, title, category, excerpt, user_id, created_at
+      FROM thoughts
+      WHERE user_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 24
+    `,
+    [userId],
+  );
+
+  return rows;
 }
 
 export async function createUser(input: NewUser) {
