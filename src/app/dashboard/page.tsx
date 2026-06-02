@@ -44,12 +44,12 @@ export default async function DashboardPage({
     : "No entries";
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#e8efe6_0%,#d9e2d5_38%,#c4d0c4_100%)] px-6 py-10 text-stone-900">
+    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-6 py-10 text-stone-900">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
-        <header className="rounded-[2rem] border border-stone-900/10 bg-white/80 p-6 shadow-[0_20px_60px_rgba(40,60,41,0.10)] backdrop-blur md:p-8">
+        <header className="rounded-[2.5rem] border border-emerald-950/10 bg-white/70 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.28em] text-stone-500">
+              <p className="text-sm uppercase tracking-[0.28em] text-emerald-800/70">
                 Dashboard
               </p>
               <h1 className="mt-3 font-[family:var(--font-display)] text-5xl leading-none md:text-6xl">
@@ -63,14 +63,14 @@ export default async function DashboardPage({
             <div className="flex flex-wrap gap-3 text-sm">
               <Link
                 href="/"
-                className="rounded-full border border-stone-900/10 px-4 py-2 text-stone-700 transition-colors hover:bg-white"
+                className="rounded-full border border-emerald-950/10 px-4 py-2 text-emerald-950 transition-colors hover:bg-white"
               >
                 Public Home
               </Link>
               <form action={logoutAction}>
                 <button
                   type="submit"
-                  className="rounded-full bg-stone-900 px-4 py-2 text-stone-50 transition-colors hover:bg-stone-700"
+                  className="rounded-full bg-emerald-950 px-4 py-2 text-emerald-50 transition-colors hover:bg-emerald-800"
                 >
                   Logout
                 </button>
@@ -94,14 +94,14 @@ export default async function DashboardPage({
         ) : null}
 
         <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-[1.75rem] border border-stone-900/10 bg-stone-900 p-8 text-stone-100 shadow-[0_18px_40px_rgba(40,60,41,0.14)]">
+          <div className="rounded-[2rem] border border-emerald-950/10 bg-emerald-950 p-8 text-emerald-50 shadow-[0_20px_50px_rgba(25,55,30,0.22)]">
             <h2 className="font-[family:var(--font-display)] text-4xl leading-none md:text-5xl">
               Your cards
             </h2>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
               <div className="rounded-2xl bg-white/8 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-stone-400">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-200/70">
                   Total cards
                 </p>
                 <p className="mt-3 font-[family:var(--font-display)] text-4xl">
@@ -109,10 +109,10 @@ export default async function DashboardPage({
                 </p>
               </div>
               <div className="rounded-2xl bg-white/8 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-stone-400">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-200/70">
                   Latest activity
                 </p>
-                <p className="mt-3 text-sm leading-7 text-stone-200">
+                <p className="mt-3 text-sm leading-7 text-emerald-100/80">
                   {latestActivity}
                 </p>
               </div>
@@ -121,53 +121,53 @@ export default async function DashboardPage({
 
           <form
             action={createThoughtAction}
-            className="rounded-[1.75rem] border border-stone-900/10 bg-white/85 p-6 shadow-[0_18px_40px_rgba(40,60,41,0.08)] md:p-8"
+            className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
           >
             <div className="grid gap-5">
               <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-stone-500">
+                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                   Title
                 </span>
                 <input
                   type="text"
                   name="title"
                   required
-                  className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
+                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                 />
               </label>
 
               <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-stone-500">
+                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                   Category
                 </span>
                 <input
                   type="text"
                   name="category"
                   required
-                  className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
+                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                 />
               </label>
 
               <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-stone-500">
+                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                   Card text
                 </span>
                 <textarea
                   name="excerpt"
                   rows={6}
                   required
-                  className="resize-none rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
+                  className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                 />
               </label>
 
               <div className="flex items-center justify-between gap-4 pt-2">
-                <p className="text-xs uppercase tracking-[0.18em] text-stone-400">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                   Saves to your account
                 </p>
                 <button
                   type="submit"
                   disabled={!databaseAvailable}
-                  className="rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:bg-stone-400"
+                  className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                 >
                   Create Card
                 </button>
@@ -199,8 +199,8 @@ export default async function DashboardPage({
               {thoughts.map((thought) => (
                 <article
                   key={thought.id}
-                  className="rounded-[1.75rem] border border-stone-900/10 bg-white/80 p-6 shadow-[0_18px_40px_rgba(40,60,41,0.08)]"
-                >
+                className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-6 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur"
+              >
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-stone-500">
                     <span>{thought.category}</span>
                     <span>{thought.id}</span>

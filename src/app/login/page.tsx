@@ -20,9 +20,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   if (currentUser) {
     return (
-      <main className="min-h-screen bg-[radial-gradient(circle_at_top,#f7efe3_0%,#efe2d0_35%,#e3d0bb_100%)] px-6 py-10 text-stone-900">
-        <div className="mx-auto max-w-xl rounded-[2rem] border border-stone-900/10 bg-white/80 p-8 shadow-[0_20px_60px_rgba(86,58,34,0.12)]">
-          <p className="text-sm uppercase tracking-[0.28em] text-stone-500">
+      <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-6 py-10 text-stone-900">
+        <div className="mx-auto max-w-xl rounded-[2.5rem] border border-emerald-950/10 bg-white/70 p-8 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur">
+          <p className="text-sm uppercase tracking-[0.28em] text-emerald-800/70">
             Already signed in
           </p>
           <h1 className="mt-4 font-[family:var(--font-display)] text-5xl leading-none">
@@ -33,7 +33,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </p>
           <Link
             href="/"
-            className="mt-8 inline-flex rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700"
+            className="mt-8 inline-flex rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800"
           >
             Back Home
           </Link>
@@ -46,9 +46,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const errorMessage = params?.error ? loginMessages[params.error] : undefined;
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#f7efe3_0%,#efe2d0_35%,#e3d0bb_100%)] px-6 py-10 text-stone-900">
-      <div className="mx-auto max-w-xl rounded-[2rem] border border-stone-900/10 bg-white/80 p-8 shadow-[0_20px_60px_rgba(86,58,34,0.12)]">
-        <p className="text-sm uppercase tracking-[0.28em] text-stone-500">
+    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-6 py-10 text-stone-900">
+      <div className="mx-auto max-w-xl rounded-[2.5rem] border border-emerald-950/10 bg-white/70 p-8 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur">
+        <p className="text-sm uppercase tracking-[0.28em] text-emerald-800/70">
           Login
         </p>
         <h1 className="mt-4 font-[family:var(--font-display)] text-5xl leading-none">
@@ -66,19 +66,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         <form action={loginAction} className="mt-8 grid gap-5">
           <label className="grid gap-2 text-sm text-stone-700">
-            <span className="uppercase tracking-[0.18em] text-stone-500">
+            <span className="uppercase tracking-[0.18em] text-emerald-800/70">
               Email
             </span>
             <input
               type="email"
               name="email"
               required
-              className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
+              className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
             />
           </label>
 
           <label className="grid gap-2 text-sm text-stone-700">
-            <span className="uppercase tracking-[0.18em] text-stone-500">
+            <span className="uppercase tracking-[0.18em] text-emerald-800/70">
               Password
             </span>
             <input
@@ -86,13 +86,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               name="password"
               minLength={8}
               required
-              className="rounded-2xl border border-stone-900/10 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-500"
+              className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
             />
           </label>
 
           <button
             type="submit"
-            className="mt-2 rounded-full bg-stone-900 px-5 py-3 text-sm uppercase tracking-[0.16em] text-stone-50 transition hover:bg-stone-700"
+            className="mt-2 rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800"
           >
             Login
           </button>
@@ -100,7 +100,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
         <p className="mt-6 text-sm text-stone-600">
           New here?{" "}
-          <Link href="/register" className="font-medium text-stone-900">
+          <Link href="/register" className="font-medium text-emerald-950">
             Create an account
           </Link>
         </p>
