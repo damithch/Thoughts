@@ -35,7 +35,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </p>
           <Link
             href="/"
-            className="mt-8 inline-flex rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800"
+            className="mt-8 inline-flex rounded-full bg-emerald-950 px-5 py-3 text-sm font-medium uppercase tracking-[0.16em] text-white shadow-[0_14px_28px_rgba(6,78,59,0.22)] transition hover:bg-emerald-800"
           >
             Back Home
           </Link>
@@ -94,7 +94,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
           <button
             type="submit"
-            className="mt-2 rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800"
+            className="mt-2 rounded-full bg-emerald-950 px-5 py-3 text-sm font-medium uppercase tracking-[0.16em] text-white shadow-[0_14px_28px_rgba(6,78,59,0.22)] transition hover:bg-emerald-800"
           >
             Login
           </button>

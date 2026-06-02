@@ -20,14 +20,14 @@ export default async function Home() {
               <>
                 <Link
                   href="/dashboard"
-                  className="rounded-full bg-emerald-950 px-4 py-2 text-emerald-50 transition-colors hover:bg-emerald-800"
+                  className="rounded-full bg-emerald-950 px-4 py-2 font-medium text-white shadow-[0_10px_24px_rgba(6,78,59,0.22)] transition-colors hover:bg-emerald-800"
                 >
                   Dashboard
                 </Link>
                 <form action={logoutAction}>
                   <button
                     type="submit"
-                    className="rounded-full border border-emerald-950/10 px-4 py-2 text-emerald-950 transition-colors hover:bg-white"
+                    className="rounded-full border border-emerald-950/15 bg-white/92 px-4 py-2 font-medium text-emerald-950 shadow-[0_8px_18px_rgba(255,255,255,0.4)] transition-colors hover:bg-white"
                   >
                     Logout
                   </button>
@@ -37,13 +37,13 @@ export default async function Home() {
               <>
                 <Link
                   href="/login"
-                  className="rounded-full border border-emerald-950/10 px-4 py-2 text-emerald-950 transition-colors hover:bg-white"
+                  className="rounded-full border border-emerald-950/15 bg-white/92 px-4 py-2 font-medium text-emerald-950 shadow-[0_8px_18px_rgba(255,255,255,0.4)] transition-colors hover:bg-white"
                 >
                   Login
                 </Link>
                 <Link
                   href="/register"
-                  className="rounded-full bg-emerald-950 px-4 py-2 text-emerald-50 transition-colors hover:bg-emerald-800"
+                  className="rounded-full bg-emerald-950 px-4 py-2 font-medium text-white shadow-[0_10px_24px_rgba(6,78,59,0.22)] transition-colors hover:bg-emerald-800"
                 >
                   Register
                 </Link>
@@ -71,14 +71,14 @@ export default async function Home() {
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link
                   href={currentUser ? "/dashboard" : "/login"}
-                  className="inline-flex rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800"
+                  className="inline-flex rounded-full bg-emerald-950 px-5 py-3 text-sm font-medium uppercase tracking-[0.16em] text-white shadow-[0_14px_28px_rgba(6,78,59,0.22)] transition hover:bg-emerald-800"
                 >
                   {currentUser ? "Open Dashboard" : "Login"}
                 </Link>
                 {!currentUser ? (
                   <Link
                     href="/register"
-                    className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                    className="inline-flex rounded-full border border-emerald-950/15 bg-white/95 px-5 py-3 text-sm font-medium uppercase tracking-[0.16em] text-emerald-950 shadow-[0_10px_24px_rgba(255,255,255,0.4)] transition hover:bg-white"
                   >
                     Create Account
                   </Link>
