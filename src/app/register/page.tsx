@@ -3,6 +3,8 @@ import Link from "next/link";
 import { registerAction } from "@/app/actions";
 import { getCurrentUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 type RegisterPageProps = {
   searchParams?: Promise<{
     error?: string;

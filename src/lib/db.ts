@@ -9,6 +9,7 @@ type Thought = {
   excerpt: string;
   user_id: number | null;
   created_at: Date;
+  updated_at: Date;
 };
 
 type User = {
@@ -20,6 +21,14 @@ type User = {
 };
 
 type NewThought = {
+  title: string;
+  category: string;
+  excerpt: string;
+  userId: number;
+};
+
+type UpdateThought = {
+  id: number;
   title: string;
   category: string;
   excerpt: string;
@@ -93,6 +102,7 @@ function getFallbackThoughts(): Thought[] {
     excerpt: thought.excerpt,
     user_id: null,
     created_at: new Date(now.getTime() - index * 60_000),
+    updated_at: new Date(now.getTime() - index * 60_000),
   }));
 }
 
@@ -117,13 +127,19 @@ async function initializeThoughtsTable() {
       title TEXT NOT NULL,
       category TEXT NOT NULL,
       excerpt TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   await pool.query(`
     ALTER TABLE thoughts
     ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL
+  `);
+
+  await pool.query(`
+    ALTER TABLE thoughts
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   `);
 
   const { rows } = await pool.query<{ count: string }>(
@@ -152,6 +168,7 @@ export async function getThoughts(): Promise<ThoughtsResult> {
     const { rows } = await pool.query<Thought>(
       `
         SELECT id, title, category, excerpt, user_id, created_at
+             , updated_at
         FROM thoughts
         ORDER BY created_at DESC, id DESC
         LIMIT 12
@@ -177,8 +194,8 @@ export async function createThought(input: NewThought) {
 
   await pool.query(
     `
-      INSERT INTO thoughts (title, category, excerpt, user_id)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO thoughts (title, category, excerpt, user_id, updated_at)
+      VALUES ($1, $2, $3, $4, NOW())
     `,
     [input.title, input.category, input.excerpt, input.userId],
   );
@@ -190,6 +207,7 @@ export async function getThoughtsByUser(userId: number) {
   const { rows } = await pool.query<Thought>(
     `
       SELECT id, title, category, excerpt, user_id, created_at
+           , updated_at
       FROM thoughts
       WHERE user_id = $1
       ORDER BY created_at DESC, id DESC
@@ -199,6 +217,66 @@ export async function getThoughtsByUser(userId: number) {
   );
 
   return rows;
+}
+
+export async function getThoughtByIdForUser(thoughtId: number, userId: number) {
+  await initializeThoughtsTable();
+
+  const { rows } = await pool.query<Thought>(
+    `
+      SELECT id, title, category, excerpt, user_id, created_at
+           , updated_at
+      FROM thoughts
+      WHERE id = $1
+        AND user_id = $2
+      LIMIT 1
+    `,
+    [thoughtId, userId],
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function getThoughtsByUserAndDate(userId: number, date: string) {
+  await initializeThoughtsTable();
+
+  const [year, month, day] = date.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
+
+  const { rows } = await pool.query<Thought>(
+    `
+      SELECT id, title, category, excerpt, user_id, created_at
+           , updated_at
+      FROM thoughts
+      WHERE user_id = $1
+        AND created_at >= $2
+        AND created_at < $3
+      ORDER BY created_at ASC, id ASC
+    `,
+    [userId, start.toISOString(), end.toISOString()],
+  );
+
+  return rows;
+}
+
+export async function updateThought(input: UpdateThought) {
+  await initializeThoughtsTable();
+
+  const { rowCount } = await pool.query(
+    `
+      UPDATE thoughts
+      SET title = $1,
+          category = $2,
+          excerpt = $3,
+          updated_at = NOW()
+      WHERE id = $4
+        AND user_id = $5
+    `,
+    [input.title, input.category, input.excerpt, input.id, input.userId],
+  );
+
+  return rowCount === 1;
 }
 
 export async function createUser(input: NewUser) {

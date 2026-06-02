@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
-import { createThought, createUser, getUserByEmail } from "@/lib/db";
+import { createThought, createUser, getUserByEmail, updateThought } from "@/lib/db";
 
 export async function createThoughtAction(formData: FormData) {
   const currentUser = await getCurrentUser();
@@ -28,6 +28,43 @@ export async function createThoughtAction(formData: FormData) {
       excerpt,
       userId: currentUser.id,
     });
+  } catch {
+    redirect("/dashboard?error=db");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/");
+  redirect("/dashboard");
+}
+
+export async function updateThoughtAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const thoughtId = Number(formData.get("thoughtId"));
+  const title = formData.get("title")?.toString().trim() ?? "";
+  const category = formData.get("category")?.toString().trim() ?? "";
+  const excerpt = formData.get("excerpt")?.toString().trim() ?? "";
+
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !excerpt) {
+    redirect("/dashboard?error=invalid");
+  }
+
+  try {
+    const updated = await updateThought({
+      id: thoughtId,
+      title,
+      category,
+      excerpt,
+      userId: currentUser.id,
+    });
+
+    if (!updated) {
+      redirect("/dashboard?error=invalid");
+    }
   } catch {
     redirect("/dashboard?error=db");
   }

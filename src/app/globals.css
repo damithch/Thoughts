@@ -3,6 +3,8 @@
 :root {
   --background: #ead8c0;
   --foreground: #241b14;
+  --font-body: "Segoe UI", "Trebuchet MS", Verdana, sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
 }
 
 @theme inline {

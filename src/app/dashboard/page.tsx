@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { createThoughtAction, logoutAction } from "@/app/actions";
+import { createThoughtAction, logoutAction, updateThoughtAction } from "@/app/actions";
 import { getCurrentUser } from "@/lib/auth";
-import { getThoughtsByUser } from "@/lib/db";
+import { getThoughtByIdForUser, getThoughtsByUser } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
+    edit?: string;
     error?: string;
   }>;
 };
@@ -34,7 +35,18 @@ export default async function DashboardPage({
 
   const params = await searchParams;
   const databaseWriteError = params?.error === "db";
+  const invalidEditError = params?.error === "invalid";
+  const today = new Date().toISOString().slice(0, 10);
+  const editThoughtId = params?.edit ? Number(params.edit) : null;
+  const validEditThoughtId =
+    editThoughtId && Number.isInteger(editThoughtId) && editThoughtId > 0
+      ? editThoughtId
+      : null;
+  const editingThought = validEditThoughtId
+    ? await getThoughtByIdForUser(validEditThoughtId, currentUser.id)
+    : null;
   const latestThought = thoughts[0] ?? null;
+  type DashboardThought = Awaited<ReturnType<typeof getThoughtsByUser>>[number];
   const latestActivity = latestThought
     ? new Date(latestThought.created_at).toLocaleDateString("en-US", {
         month: "short",
@@ -86,6 +98,12 @@ export default async function DashboardPage({
           </div>
         ) : null}
 
+        {invalidEditError ? (
+          <div className="rounded-2xl border border-amber-700/15 bg-amber-100/80 px-4 py-3 text-sm text-amber-950">
+            That card could not be updated.
+          </div>
+        ) : null}
+
         {!databaseAvailable ? (
           <div className="rounded-2xl border border-amber-700/15 bg-amber-100/80 px-4 py-3 text-sm text-amber-950">
             Neon is unreachable right now, so your dashboard cannot load saved
@@ -119,61 +137,131 @@ export default async function DashboardPage({
             </div>
           </div>
 
-          <form
-            action={createThoughtAction}
-            className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
-          >
-            <div className="grid gap-5">
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Title
-                </span>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                />
-              </label>
+          <div className="grid gap-6">
+            <form
+              action={editingThought ? updateThoughtAction : createThoughtAction}
+              className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
+            >
+              <div className="grid gap-5">
+                {editingThought ? (
+                  <input type="hidden" name="thoughtId" value={editingThought.id} />
+                ) : null}
+                <label className="grid gap-2 text-sm text-stone-700">
+                  <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                    Title
+                  </span>
+                  <input
+                    type="text"
+                    name="title"
+                    defaultValue={editingThought?.title ?? ""}
+                    required
+                    className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                  />
+                </label>
 
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Category
-                </span>
-                <input
-                  type="text"
-                  name="category"
-                  required
-                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                />
-              </label>
+                <label className="grid gap-2 text-sm text-stone-700">
+                  <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                    Category
+                  </span>
+                  <input
+                    type="text"
+                    name="category"
+                    defaultValue={editingThought?.category ?? ""}
+                    required
+                    className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                  />
+                </label>
 
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Card text
-                </span>
-                <textarea
-                  name="excerpt"
-                  rows={6}
-                  required
-                  className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                />
-              </label>
+                <label className="grid gap-2 text-sm text-stone-700">
+                  <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                    Card text
+                  </span>
+                  <textarea
+                    name="excerpt"
+                    rows={6}
+                    defaultValue={editingThought?.excerpt ?? ""}
+                    required
+                    className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                  />
+                </label>
 
-              <div className="flex items-center justify-between gap-4 pt-2">
-                <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
-                  Saves to your account
-                </p>
-                <button
-                  type="submit"
-                  disabled={!databaseAvailable}
-                  className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                >
-                  Create Card
-                </button>
+                <div className="flex items-center justify-between gap-4 pt-2">
+                  <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                    {editingThought ? "Updates this card" : "Saves to your account"}
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {editingThought ? (
+                      <Link
+                        href="/dashboard"
+                        className="rounded-full border border-emerald-950/10 bg-white/70 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                      >
+                        Cancel
+                      </Link>
+                    ) : null}
+                    <button
+                      type="submit"
+                      disabled={!databaseAvailable}
+                      className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                    >
+                      {editingThought ? "Update Card" : "Create Card"}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </form>
+            </form>
+
+            <form
+              action="/api/reports/daily"
+              method="get"
+              className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
+            >
+              <div className="flex flex-col gap-5">
+                <div className="space-y-3">
+                  <p className="text-sm leading-7 text-stone-700">
+                    JSON is best for AI processing. It preserves structure
+                    clearly, so an AI can analyze dates, categories, frequency,
+                    mood, repeated themes, and patterns more reliably than from
+                    plain text or CSV.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+                  <div className="grid flex-1 gap-2 text-sm text-stone-700">
+                    <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                      Download daily report
+                    </span>
+                    <input
+                      type="date"
+                      name="date"
+                      defaultValue={today}
+                      required
+                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      name="format"
+                      value="csv"
+                      disabled={!databaseAvailable}
+                      className="rounded-full border border-emerald-950/10 bg-white/70 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-400"
+                    >
+                      Download CSV
+                    </button>
+                    <button
+                      type="submit"
+                      name="format"
+                      value="json"
+                      disabled={!databaseAvailable}
+                      className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                    >
+                      Download JSON
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
         </section>
 
         <section className="space-y-6">
@@ -196,7 +284,7 @@ export default async function DashboardPage({
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {thoughts.map((thought) => (
+              {thoughts.map((thought: DashboardThought) => (
                 <article
                   key={thought.id}
                 className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-6 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur"
@@ -218,6 +306,22 @@ export default async function DashboardPage({
                       year: "numeric",
                     })}
                   </p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-400">
+                    Updated{" "}
+                    {new Date(thought.updated_at).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </p>
+                  <div className="mt-6">
+                    <Link
+                      href={`/dashboard?edit=${thought.id}`}
+                      className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                    >
+                      Edit
+                    </Link>
+                  </div>
                 </article>
               ))}
             </div>

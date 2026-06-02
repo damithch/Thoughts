@@ -3,6 +3,8 @@ import Link from "next/link";
 import { loginAction } from "@/app/actions";
 import { getCurrentUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 type LoginPageProps = {
   searchParams?: Promise<{
     error?: string;

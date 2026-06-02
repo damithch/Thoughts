@@ -14,6 +14,8 @@ if (!authSecret) {
   throw new Error("AUTH_SECRET is not configured.");
 }
 
+const authSecretValue: string = authSecret;
+
 type SessionPayload = {
   userId: number;
   expiresAt: number;
@@ -32,7 +34,7 @@ function base64UrlDecode(input: string) {
 }
 
 function signValue(value: string) {
-  return createHmac("sha256", authSecret).update(value).digest("base64url");
+  return createHmac("sha256", authSecretValue).update(value).digest("base64url");
 }
 
 export function hashPassword(password: string) {
