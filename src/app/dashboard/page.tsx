@@ -111,37 +111,49 @@ export default async function DashboardPage({
           </div>
         ) : null}
 
-        <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-[2rem] border border-emerald-950/10 bg-emerald-950 p-8 text-emerald-50 shadow-[0_20px_50px_rgba(25,55,30,0.22)]">
-            <h2 className="font-[family:var(--font-display)] text-4xl leading-none md:text-5xl">
-              Your cards
-            </h2>
-
-            <div className="mt-8 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl bg-white/8 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-emerald-200/70">
-                  Total cards
-                </p>
-                <p className="mt-3 font-[family:var(--font-display)] text-4xl">
-                  {thoughts.length}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/8 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-emerald-200/70">
-                  Latest activity
-                </p>
-                <p className="mt-3 text-sm leading-7 text-emerald-100/80">
-                  {latestActivity}
-                </p>
-              </div>
-            </div>
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Total cards
+            </p>
+            <p className="mt-3 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
+              {thoughts.length}
+            </p>
           </div>
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Latest activity
+            </p>
+            <p className="mt-3 text-sm leading-7 text-stone-700">
+              {latestActivity}
+            </p>
+          </div>
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Mode
+            </p>
+            <p className="mt-3 text-sm leading-7 text-stone-700">
+              {editingThought ? "Editing selected card" : "Creating new card"}
+            </p>
+          </div>
+        </section>
 
+        <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="grid gap-6">
             <form
               action={editingThought ? updateThoughtAction : createThoughtAction}
               className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
             >
+              <div className="mb-6 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                    {editingThought ? "Edit thought" : "New thought"}
+                  </p>
+                  <h2 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+                    {editingThought ? "Refine your card" : "Capture a new card"}
+                  </h2>
+                </div>
+              </div>
               <div className="grid gap-5">
                 {editingThought ? (
                   <input type="hidden" name="thoughtId" value={editingThought.id} />
@@ -209,12 +221,22 @@ export default async function DashboardPage({
                 </div>
               </div>
             </form>
+          </div>
 
+          <div className="grid gap-6">
             <form
               action="/api/reports/daily"
               method="get"
               className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
             >
+              <div className="mb-6">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                  Reports
+                </p>
+                <h2 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+                  Review a specific day
+                </h2>
+              </div>
               <div className="flex flex-col gap-5">
                 <div className="space-y-3">
                   <p className="text-sm leading-7 text-stone-700">
@@ -261,6 +283,20 @@ export default async function DashboardPage({
                 </div>
               </div>
             </form>
+
+            <div className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8">
+              <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                Summary
+              </p>
+              <h2 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+                Your writing space
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-stone-700">
+                Use this dashboard to add thoughts, update existing cards, and
+                export daily entries when you want to review patterns or run AI
+                analysis.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -287,8 +323,8 @@ export default async function DashboardPage({
               {thoughts.map((thought: DashboardThought) => (
                 <article
                   key={thought.id}
-                className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-6 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur"
-              >
+                  className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-6 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur"
+                >
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-stone-500">
                     <span>{thought.category}</span>
                     <span>{thought.id}</span>
