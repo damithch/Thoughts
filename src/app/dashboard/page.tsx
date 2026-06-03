@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 type DashboardPageProps = {
   searchParams?: Promise<{
     edit?: string;
+    tag?: string;
     toast?: string;
     type?: "success" | "error" | "info";
   }>;
@@ -25,6 +26,7 @@ const dashboardToastMessages: Record<string, string> = {
   created: "Thought card created.",
   deleted: "Thought card deleted.",
   delete_failed: "That card could not be deleted.",
+  invalid_entry: "Add a title, category, mood, and card text before saving.",
   registered: "Account created. Your dashboard is ready.",
   save_failed: "The card could not be saved.",
   update_failed: "That card could not be updated.",
@@ -55,6 +57,7 @@ export default async function DashboardPage({
   const toastMessage = params?.toast
     ? dashboardToastMessages[params.toast]
     : undefined;
+  const activeTag = params?.tag?.trim().toLowerCase() ?? "";
   const today = new Date().toISOString().slice(0, 10);
   const editThoughtId = params?.edit ? Number(params.edit) : null;
   const validEditThoughtId =
@@ -64,8 +67,17 @@ export default async function DashboardPage({
   const editingThought = validEditThoughtId
     ? await getThoughtByIdForUser(validEditThoughtId, currentUser.id)
     : null;
-  const latestThought = thoughts[0] ?? null;
   type DashboardThought = Awaited<ReturnType<typeof getThoughtsByUser>>[number];
+  const filteredThoughts = activeTag
+    ? thoughts.filter((thought: DashboardThought) => thought.tags.includes(activeTag))
+    : thoughts;
+  const latestThought = filteredThoughts[0] ?? null;
+  const averageMood = filteredThoughts.length
+    ? (filteredThoughts.reduce((total, thought) => total + thought.mood, 0) / filteredThoughts.length).toFixed(1)
+    : "0.0";
+  const visibleTags = Array.from(
+    new Set(filteredThoughts.flatMap((thought: DashboardThought) => thought.tags)),
+  ).slice(0, 12);
   const latestActivity = latestThought
     ? new Date(latestThought.created_at).toLocaleDateString("en-US", {
         month: "short",
@@ -124,7 +136,7 @@ export default async function DashboardPage({
               Total cards
             </p>
             <p className="mt-3 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
-              {thoughts.length}
+              {filteredThoughts.length}
             </p>
           </div>
           <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
@@ -137,11 +149,51 @@ export default async function DashboardPage({
           </div>
           <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
-              Mode
+              Average mood
             </p>
             <p className="mt-3 text-sm leading-7 text-stone-700">
-              {editingThought ? "Editing selected card" : "Creating new card"}
+              {averageMood}/10
             </p>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                Tag filter
+              </p>
+              <p className="mt-2 text-sm leading-7 text-stone-700">
+                Use tags to isolate patterns like work, family, health, or specific projects.
+              </p>
+            </div>
+            {activeTag ? (
+              <Link
+                href="/dashboard"
+                className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+              >
+                Clear filter
+              </Link>
+            ) : null}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {visibleTags.length === 0 ? (
+              <p className="text-sm text-stone-600">No tags yet.</p>
+            ) : (
+              visibleTags.map((tag) => (
+                <Link
+                  key={tag}
+                  href={`/dashboard?tag=${encodeURIComponent(tag)}`}
+                  className={`inline-flex rounded-full px-4 py-2 text-xs uppercase tracking-[0.16em] transition ${
+                    activeTag === tag
+                      ? "bg-emerald-950 text-emerald-50"
+                      : "border border-emerald-950/10 bg-white/70 text-emerald-950 hover:bg-white"
+                  }`}
+                >
+                  {tag}
+                </Link>
+              ))
+            )}
           </div>
         </section>
 
@@ -178,17 +230,55 @@ export default async function DashboardPage({
                   />
                 </label>
 
+                <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr]">
+                  <label className="grid gap-2 text-sm text-stone-700">
+                    <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                      Category
+                    </span>
+                    <input
+                      type="text"
+                      name="category"
+                      defaultValue={editingThought?.category ?? ""}
+                      required
+                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                    />
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-stone-700">
+                    <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                      Mood {editingThought?.mood ?? 5}/10
+                    </span>
+                    <input
+                      type="range"
+                      name="mood"
+                      min="1"
+                      max="10"
+                      step="1"
+                      defaultValue={editingThought?.mood ?? 5}
+                      required
+                      className="mt-2 accent-emerald-900"
+                    />
+                    <div className="flex justify-between text-xs uppercase tracking-[0.12em] text-stone-500">
+                      <span>Low</span>
+                      <span>High</span>
+                    </div>
+                  </label>
+                </div>
+
                 <label className="grid gap-2 text-sm text-stone-700">
                   <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                    Category
+                    Tags
                   </span>
                   <input
                     type="text"
-                    name="category"
-                    defaultValue={editingThought?.category ?? ""}
-                    required
+                    name="tags"
+                    defaultValue={editingThought?.tags.join(", ") ?? ""}
+                    placeholder="work, family, health"
                     className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                   />
+                  <span className="text-xs leading-6 text-stone-500">
+                    Separate tags with commas. Use them to group cards across different categories.
+                  </span>
                 </label>
 
                 <label className="grid gap-2 text-sm text-stone-700">
@@ -299,9 +389,9 @@ export default async function DashboardPage({
                 Your writing space
               </h2>
               <p className="mt-4 text-sm leading-7 text-stone-700">
-                Use this dashboard to add thoughts, update existing cards, and
-                export daily entries when you want to review patterns or run AI
-                analysis.
+                Use this dashboard to track category, mood, and tags together,
+                then export daily entries when you want to review patterns or
+                run AI analysis.
               </p>
             </div>
           </div>
@@ -311,30 +401,30 @@ export default async function DashboardPage({
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-sm uppercase tracking-[0.24em] text-stone-500">
-                Archive
+                {activeTag ? `Archive: ${activeTag}` : "Archive"}
               </p>
               <h2 className="mt-2 font-[family:var(--font-display)] text-4xl leading-none md:text-5xl">
-                {thoughts.length === 1 ? "1 card" : `${thoughts.length} cards`}
+                {filteredThoughts.length === 1 ? "1 card" : `${filteredThoughts.length} cards`}
               </h2>
             </div>
           </div>
 
-          {thoughts.length === 0 ? (
+          {filteredThoughts.length === 0 ? (
             <div className="rounded-[1.75rem] border border-dashed border-stone-900/15 bg-white/60 p-10 text-center text-stone-600">
               <p className="font-[family:var(--font-display)] text-3xl text-stone-900">
-                No cards yet.
+                {activeTag ? "No cards match this tag." : "No cards yet."}
               </p>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {thoughts.map((thought: DashboardThought) => (
+              {filteredThoughts.map((thought: DashboardThought) => (
                 <article
                   key={thought.id}
                   className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-6 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur"
                 >
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-stone-500">
                     <span>{thought.category}</span>
-                    <span>{thought.id}</span>
+                    <span>Mood {thought.mood}/10</span>
                   </div>
                   <h3 className="mt-6 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
                     {thought.title}
@@ -342,6 +432,23 @@ export default async function DashboardPage({
                   <p className="mt-4 text-base leading-7 text-stone-700">
                     {thought.excerpt}
                   </p>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {thought.tags.length === 0 ? (
+                      <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
+                        No tags
+                      </span>
+                    ) : (
+                      thought.tags.map((tag) => (
+                        <Link
+                          key={`${thought.id}-${tag}`}
+                          href={`/dashboard?tag=${encodeURIComponent(tag)}`}
+                          className="rounded-full border border-emerald-950/10 bg-white/75 px-3 py-1 text-xs uppercase tracking-[0.14em] text-emerald-950 transition hover:bg-white"
+                        >
+                          {tag}
+                        </Link>
+                      ))
+                    )}
+                  </div>
                   <p className="mt-6 text-xs uppercase tracking-[0.2em] text-stone-400">
                     {new Date(thought.created_at).toLocaleDateString("en-US", {
                       month: "short",

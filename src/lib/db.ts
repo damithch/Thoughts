@@ -6,6 +6,8 @@ type Thought = {
   id: number;
   title: string;
   category: string;
+  mood: number;
+  tags: string[];
   excerpt: string;
   user_id: number | null;
   created_at: Date;
@@ -23,6 +25,8 @@ type User = {
 type NewThought = {
   title: string;
   category: string;
+  mood: number;
+  tags: string[];
   excerpt: string;
   userId: number;
 };
@@ -31,6 +35,8 @@ type UpdateThought = {
   id: number;
   title: string;
   category: string;
+  mood: number;
+  tags: string[];
   excerpt: string;
   userId: number;
 };
@@ -78,18 +84,24 @@ const seedThoughts = [
   {
     title: "Small Rituals",
     category: "Morning note",
+    mood: 7,
+    tags: ["morning", "routine", "calm"],
     excerpt:
       "A cup of tea, ten quiet minutes, and a single sentence can set the tone for an entire day.",
   },
   {
     title: "City Fragments",
     category: "Observation",
+    mood: 6,
+    tags: ["walk", "city", "reflection"],
     excerpt:
       "Every street has its own rhythm. Some rush, some linger, and some feel like a memory you walked into.",
   },
   {
     title: "Unfinished Ideas",
     category: "Draft",
+    mood: 5,
+    tags: ["draft", "ideas", "thinking"],
     excerpt:
       "Not every thought needs a conclusion. Some are more useful when they stay open and keep pulling you back.",
   },
@@ -104,6 +116,8 @@ function getFallbackThoughts(): Thought[] {
     id: -(index + 1),
     title: thought.title,
     category: thought.category,
+    mood: thought.mood,
+    tags: thought.tags,
     excerpt: thought.excerpt,
     user_id: null,
     created_at: new Date(now.getTime() - index * 60_000),
@@ -131,6 +145,8 @@ async function initializeThoughtsTable() {
       id BIGSERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       category TEXT NOT NULL,
+      mood INTEGER NOT NULL DEFAULT 5,
+      tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
       excerpt TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -147,6 +163,16 @@ async function initializeThoughtsTable() {
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   `);
 
+  await pool.query(`
+    ALTER TABLE thoughts
+    ADD COLUMN IF NOT EXISTS mood INTEGER NOT NULL DEFAULT 5
+  `);
+
+  await pool.query(`
+    ALTER TABLE thoughts
+    ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
+  `);
+
   const { rows } = await pool.query<{ count: string }>(
     "SELECT COUNT(*)::text AS count FROM thoughts",
   );
@@ -155,10 +181,10 @@ async function initializeThoughtsTable() {
     for (const thought of seedThoughts) {
       await pool.query(
         `
-          INSERT INTO thoughts (title, category, excerpt)
-          VALUES ($1, $2, $3)
+          INSERT INTO thoughts (title, category, mood, tags, excerpt)
+          VALUES ($1, $2, $3, $4, $5)
         `,
-        [thought.title, thought.category, thought.excerpt],
+        [thought.title, thought.category, thought.mood, thought.tags, thought.excerpt],
       );
     }
   }
@@ -173,7 +199,7 @@ export async function getThoughts(): Promise<ThoughtsResult> {
     const { rows } = await pool.query<Thought>(
       `
         SELECT id, title, category, excerpt, user_id, created_at
-             , updated_at
+             , updated_at, mood, tags
         FROM thoughts
         ORDER BY created_at DESC, id DESC
         LIMIT 12
@@ -199,10 +225,10 @@ export async function createThought(input: NewThought) {
 
   await pool.query(
     `
-      INSERT INTO thoughts (title, category, excerpt, user_id, updated_at)
-      VALUES ($1, $2, $3, $4, NOW())
+      INSERT INTO thoughts (title, category, mood, tags, excerpt, user_id, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
     `,
-    [input.title, input.category, input.excerpt, input.userId],
+    [input.title, input.category, input.mood, input.tags, input.excerpt, input.userId],
   );
 }
 
@@ -212,7 +238,7 @@ export async function getThoughtsByUser(userId: number) {
   const { rows } = await pool.query<Thought>(
     `
       SELECT id, title, category, excerpt, user_id, created_at
-           , updated_at
+           , updated_at, mood, tags
       FROM thoughts
       WHERE user_id = $1
       ORDER BY created_at DESC, id DESC
@@ -230,7 +256,7 @@ export async function getThoughtByIdForUser(thoughtId: number, userId: number) {
   const { rows } = await pool.query<Thought>(
     `
       SELECT id, title, category, excerpt, user_id, created_at
-           , updated_at
+           , updated_at, mood, tags
       FROM thoughts
       WHERE id = $1
         AND user_id = $2
@@ -252,7 +278,7 @@ export async function getThoughtsByUserAndDate(userId: number, date: string) {
   const { rows } = await pool.query<Thought>(
     `
       SELECT id, title, category, excerpt, user_id, created_at
-           , updated_at
+           , updated_at, mood, tags
       FROM thoughts
       WHERE user_id = $1
         AND created_at >= $2
@@ -273,12 +299,22 @@ export async function updateThought(input: UpdateThought) {
       UPDATE thoughts
       SET title = $1,
           category = $2,
-          excerpt = $3,
+          mood = $3,
+          tags = $4,
+          excerpt = $5,
           updated_at = NOW()
-      WHERE id = $4
-        AND user_id = $5
+      WHERE id = $6
+        AND user_id = $7
     `,
-    [input.title, input.category, input.excerpt, input.id, input.userId],
+    [
+      input.title,
+      input.category,
+      input.mood,
+      input.tags,
+      input.excerpt,
+      input.id,
+      input.userId,
+    ],
   );
 
   return rowCount === 1;

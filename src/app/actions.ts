@@ -6,6 +6,27 @@ import { redirect } from "next/navigation";
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 import { createThought, createUser, deleteThought, getUserByEmail, updateThought } from "@/lib/db";
 
+function parseMood(value: FormDataEntryValue | null) {
+  const mood = Number(value?.toString() ?? "");
+
+  if (!Number.isInteger(mood) || mood < 1 || mood > 10) {
+    return null;
+  }
+
+  return mood;
+}
+
+function parseTags(value: FormDataEntryValue | null) {
+  return Array.from(
+    new Set(
+      (value?.toString() ?? "")
+        .split(",")
+        .map((tag) => tag.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ).slice(0, 8);
+}
+
 export async function createThoughtAction(formData: FormData) {
   const currentUser = await getCurrentUser();
 
@@ -15,16 +36,20 @@ export async function createThoughtAction(formData: FormData) {
 
   const title = formData.get("title")?.toString().trim() ?? "";
   const category = formData.get("category")?.toString().trim() ?? "";
+  const mood = parseMood(formData.get("mood"));
+  const tags = parseTags(formData.get("tags"));
   const excerpt = formData.get("excerpt")?.toString().trim() ?? "";
 
-  if (!title || !category || !excerpt) {
-    return;
+  if (!title || !category || !mood || !excerpt) {
+    redirect("/dashboard?toast=invalid_entry&type=error");
   }
 
   try {
     await createThought({
       title,
       category,
+      mood,
+      tags,
       excerpt,
       userId: currentUser.id,
     });
@@ -47,9 +72,11 @@ export async function updateThoughtAction(formData: FormData) {
   const thoughtId = Number(formData.get("thoughtId"));
   const title = formData.get("title")?.toString().trim() ?? "";
   const category = formData.get("category")?.toString().trim() ?? "";
+  const mood = parseMood(formData.get("mood"));
+  const tags = parseTags(formData.get("tags"));
   const excerpt = formData.get("excerpt")?.toString().trim() ?? "";
 
-  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !excerpt) {
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !mood || !excerpt) {
     redirect("/dashboard?toast=update_failed&type=error");
   }
 
@@ -58,6 +85,8 @@ export async function updateThoughtAction(formData: FormData) {
       id: thoughtId,
       title,
       category,
+      mood,
+      tags,
       excerpt,
       userId: currentUser.id,
     });
