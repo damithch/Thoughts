@@ -29,12 +29,12 @@ export async function createThoughtAction(formData: FormData) {
       userId: currentUser.id,
     });
   } catch {
-    redirect("/dashboard?error=db");
+    redirect("/dashboard?toast=save_failed&type=error");
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/");
-  redirect("/dashboard");
+  redirect("/dashboard?toast=created&type=success");
 }
 
 export async function updateThoughtAction(formData: FormData) {
@@ -50,7 +50,7 @@ export async function updateThoughtAction(formData: FormData) {
   const excerpt = formData.get("excerpt")?.toString().trim() ?? "";
 
   if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !excerpt) {
-    redirect("/dashboard?error=invalid");
+    redirect("/dashboard?toast=update_failed&type=error");
   }
 
   try {
@@ -63,15 +63,15 @@ export async function updateThoughtAction(formData: FormData) {
     });
 
     if (!updated) {
-      redirect("/dashboard?error=invalid");
+      redirect("/dashboard?toast=update_failed&type=error");
     }
   } catch {
-    redirect("/dashboard?error=db");
+    redirect("/dashboard?toast=save_failed&type=error");
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/");
-  redirect("/dashboard");
+  redirect("/dashboard?toast=updated&type=success");
 }
 
 export async function registerAction(formData: FormData) {
@@ -80,7 +80,7 @@ export async function registerAction(formData: FormData) {
   const password = formData.get("password")?.toString() ?? "";
 
   if (!name || !email || password.length < 8) {
-    redirect("/register?error=invalid");
+    redirect("/register?toast=invalid&type=error");
   }
 
   let existingUser = null;
@@ -88,11 +88,11 @@ export async function registerAction(formData: FormData) {
   try {
     existingUser = await getUserByEmail(email);
   } catch {
-    redirect("/register?error=db");
+    redirect("/register?toast=db&type=error");
   }
 
   if (existingUser) {
-    redirect("/register?error=exists");
+    redirect("/register?toast=exists&type=error");
   }
 
   let user = null;
@@ -104,15 +104,15 @@ export async function registerAction(formData: FormData) {
       passwordHash: hashPassword(password),
     });
   } catch {
-    redirect("/register?error=db");
+    redirect("/register?toast=db&type=error");
   }
 
   if (!user) {
-    redirect("/register?error=failed");
+    redirect("/register?toast=failed&type=error");
   }
 
   await createSession(user.id);
-  redirect("/dashboard");
+  redirect("/dashboard?toast=registered&type=success");
 }
 
 export async function loginAction(formData: FormData) {
@@ -120,7 +120,7 @@ export async function loginAction(formData: FormData) {
   const password = formData.get("password")?.toString() ?? "";
 
   if (!email || !password) {
-    redirect("/login?error=invalid");
+    redirect("/login?toast=invalid&type=error");
   }
 
   let user = null;
@@ -128,18 +128,18 @@ export async function loginAction(formData: FormData) {
   try {
     user = await getUserByEmail(email);
   } catch {
-    redirect("/login?error=db");
+    redirect("/login?toast=db&type=error");
   }
 
   if (!user || !verifyPassword(password, user.password_hash)) {
-    redirect("/login?error=credentials");
+    redirect("/login?toast=credentials&type=error");
   }
 
   await createSession(user.id);
-  redirect("/dashboard");
+  redirect("/dashboard?toast=welcome_back&type=success");
 }
 
 export async function logoutAction() {
   await clearSession();
-  redirect("/login");
+  redirect("/login?toast=signed_out&type=success");
 }

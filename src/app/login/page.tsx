@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { loginAction } from "@/app/actions";
+import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 type LoginPageProps = {
   searchParams?: Promise<{
     error?: string;
+    toast?: string;
+    type?: "success" | "error" | "info";
   }>;
 };
 
@@ -45,10 +48,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   }
 
   const params = await searchParams;
-  const errorMessage = params?.error ? loginMessages[params.error] : undefined;
+  const toastCode = params?.toast ?? params?.error;
+  const toastMessage = toastCode ? loginMessages[toastCode] : undefined;
 
   return (
     <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-6 py-10 text-stone-900">
+      {toastMessage ? <Toast message={toastMessage} tone={params?.type ?? "error"} /> : null}
       <div className="mx-auto max-w-xl rounded-[2.5rem] border border-emerald-950/10 bg-white/70 p-8 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur">
         <p className="text-sm uppercase tracking-[0.28em] text-emerald-800/70">
           Login
@@ -59,12 +64,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <p className="mt-5 text-base leading-8 text-stone-700">
           Sign in to create and manage thought cards.
         </p>
-
-        {errorMessage ? (
-          <div className="mt-6 rounded-2xl border border-rose-700/10 bg-rose-100/80 px-4 py-3 text-sm text-rose-950">
-            {errorMessage}
-          </div>
-        ) : null}
 
         <form action={loginAction} className="mt-8 grid gap-5">
           <label className="grid gap-2 text-sm text-stone-700">

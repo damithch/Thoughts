@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createThoughtAction, logoutAction, updateThoughtAction } from "@/app/actions";
+import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import { getThoughtByIdForUser, getThoughtsByUser } from "@/lib/db";
 
@@ -10,8 +11,18 @@ export const dynamic = "force-dynamic";
 type DashboardPageProps = {
   searchParams?: Promise<{
     edit?: string;
-    error?: string;
+    toast?: string;
+    type?: "success" | "error" | "info";
   }>;
+};
+
+const dashboardToastMessages: Record<string, string> = {
+  created: "Thought card created.",
+  registered: "Account created. Your dashboard is ready.",
+  save_failed: "The card could not be saved.",
+  update_failed: "That card could not be updated.",
+  updated: "Thought card updated.",
+  welcome_back: "Signed in successfully.",
 };
 
 export default async function DashboardPage({
@@ -34,8 +45,9 @@ export default async function DashboardPage({
   }
 
   const params = await searchParams;
-  const databaseWriteError = params?.error === "db";
-  const invalidEditError = params?.error === "invalid";
+  const toastMessage = params?.toast
+    ? dashboardToastMessages[params.toast]
+    : undefined;
   const today = new Date().toISOString().slice(0, 10);
   const editThoughtId = params?.edit ? Number(params.edit) : null;
   const validEditThoughtId =
@@ -57,6 +69,7 @@ export default async function DashboardPage({
 
   return (
     <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-6 py-10 text-stone-900">
+      {toastMessage ? <Toast message={toastMessage} tone={params?.type} /> : null}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
         <header className="rounded-[2.5rem] border border-emerald-950/10 bg-white/70 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -90,19 +103,6 @@ export default async function DashboardPage({
             </div>
           </div>
         </header>
-
-        {databaseWriteError ? (
-          <div className="rounded-2xl border border-rose-700/10 bg-rose-100/80 px-4 py-3 text-sm text-rose-950">
-            The card could not be saved because the database is currently
-            unavailable.
-          </div>
-        ) : null}
-
-        {invalidEditError ? (
-          <div className="rounded-2xl border border-amber-700/15 bg-amber-100/80 px-4 py-3 text-sm text-amber-950">
-            That card could not be updated.
-          </div>
-        ) : null}
 
         {!databaseAvailable ? (
           <div className="rounded-2xl border border-amber-700/15 bg-amber-100/80 px-4 py-3 text-sm text-amber-950">
