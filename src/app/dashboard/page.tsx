@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { createThoughtAction, logoutAction, updateThoughtAction } from "@/app/actions";
+import {
+  createThoughtAction,
+  deleteThoughtAction,
+  logoutAction,
+  updateThoughtAction,
+} from "@/app/actions";
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import { getThoughtByIdForUser, getThoughtsByUser } from "@/lib/db";
@@ -18,6 +23,8 @@ type DashboardPageProps = {
 
 const dashboardToastMessages: Record<string, string> = {
   created: "Thought card created.",
+  deleted: "Thought card deleted.",
+  delete_failed: "That card could not be deleted.",
   registered: "Account created. Your dashboard is ready.",
   save_failed: "The card could not be saved.",
   update_failed: "That card could not be updated.",
@@ -350,13 +357,23 @@ export default async function DashboardPage({
                       year: "numeric",
                     })}
                   </p>
-                  <div className="mt-6">
+                  <div className="mt-6 flex flex-wrap gap-3">
                     <Link
                       href={`/dashboard?edit=${thought.id}`}
                       className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
                     >
                       Edit
                     </Link>
+                    <form action={deleteThoughtAction}>
+                      <input type="hidden" name="thoughtId" value={thought.id} />
+                      <button
+                        type="submit"
+                        disabled={!databaseAvailable}
+                        className="inline-flex rounded-full border border-rose-900/10 bg-rose-50/90 px-4 py-2 text-xs uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Delete
+                      </button>
+                    </form>
                   </div>
                 </article>
               ))}

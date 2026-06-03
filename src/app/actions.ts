@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
-import { createThought, createUser, getUserByEmail, updateThought } from "@/lib/db";
+import { createThought, createUser, deleteThought, getUserByEmail, updateThought } from "@/lib/db";
 
 export async function createThoughtAction(formData: FormData) {
   const currentUser = await getCurrentUser();
@@ -72,6 +72,37 @@ export async function updateThoughtAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/");
   redirect("/dashboard?toast=updated&type=success");
+}
+
+export async function deleteThoughtAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const thoughtId = Number(formData.get("thoughtId"));
+
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0) {
+    redirect("/dashboard?toast=delete_failed&type=error");
+  }
+
+  try {
+    const deleted = await deleteThought({
+      id: thoughtId,
+      userId: currentUser.id,
+    });
+
+    if (!deleted) {
+      redirect("/dashboard?toast=delete_failed&type=error");
+    }
+  } catch {
+    redirect("/dashboard?toast=delete_failed&type=error");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/");
+  redirect("/dashboard?toast=deleted&type=success");
 }
 
 export async function registerAction(formData: FormData) {

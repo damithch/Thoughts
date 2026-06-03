@@ -35,6 +35,11 @@ type UpdateThought = {
   userId: number;
 };
 
+type DeleteThought = {
+  id: number;
+  userId: number;
+};
+
 type NewUser = {
   name: string;
   email: string;
@@ -274,6 +279,21 @@ export async function updateThought(input: UpdateThought) {
         AND user_id = $5
     `,
     [input.title, input.category, input.excerpt, input.id, input.userId],
+  );
+
+  return rowCount === 1;
+}
+
+export async function deleteThought(input: DeleteThought) {
+  await initializeThoughtsTable();
+
+  const { rowCount } = await pool.query(
+    `
+      DELETE FROM thoughts
+      WHERE id = $1
+        AND user_id = $2
+    `,
+    [input.id, input.userId],
   );
 
   return rowCount === 1;
