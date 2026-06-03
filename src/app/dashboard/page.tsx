@@ -87,34 +87,34 @@ export default async function DashboardPage({
     : "No entries";
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-6 py-10 text-stone-900">
+    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
       {toastMessage ? <Toast message={toastMessage} tone={params?.type} /> : null}
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
-        <header className="rounded-[2.5rem] border border-emerald-950/10 bg-white/70 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur md:p-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
+        <header className="rounded-[2rem] border border-emerald-950/10 bg-white/70 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur sm:rounded-[2.5rem] sm:p-6 md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm uppercase tracking-[0.28em] text-emerald-800/70">
+              <p className="text-xs uppercase tracking-[0.22em] text-emerald-800/70 sm:text-sm sm:tracking-[0.28em]">
                 Dashboard
               </p>
-              <h1 className="mt-3 font-[family:var(--font-display)] text-5xl leading-none md:text-6xl">
+              <h1 className="mt-3 font-[family:var(--font-display)] text-4xl leading-none sm:text-5xl md:text-6xl">
                 {currentUser.name}
               </h1>
-              <p className="mt-4 text-sm leading-7 text-stone-700">
+              <p className="mt-3 break-all text-sm leading-6 text-stone-700 sm:mt-4 sm:leading-7">
                 {currentUser.email}
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3 text-sm">
+            <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap">
               <Link
                 href="/"
-                className="rounded-full border border-emerald-950/10 px-4 py-2 text-emerald-950 transition-colors hover:bg-white"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
                 Public Home
               </Link>
               <form action={logoutAction}>
                 <button
                   type="submit"
-                  className="rounded-full bg-emerald-950 px-4 py-2 text-emerald-50 transition-colors hover:bg-emerald-800"
+                  className="w-full rounded-full bg-emerald-950 px-4 py-3 text-emerald-50 transition-colors hover:bg-emerald-800"
                 >
                   Logout
                 </button>
@@ -157,7 +157,7 @@ export default async function DashboardPage({
           </div>
         </section>
 
-        <section className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
@@ -184,7 +184,7 @@ export default async function DashboardPage({
                 <Link
                   key={tag}
                   href={`/dashboard?tag=${encodeURIComponent(tag)}`}
-                  className={`inline-flex rounded-full px-4 py-2 text-xs uppercase tracking-[0.16em] transition ${
+                  className={`inline-flex rounded-full px-3 py-2 text-xs uppercase tracking-[0.14em] transition sm:px-4 sm:tracking-[0.16em] ${
                     activeTag === tag
                       ? "bg-emerald-950 text-emerald-50"
                       : "border border-emerald-950/10 bg-white/70 text-emerald-950 hover:bg-white"
@@ -201,14 +201,14 @@ export default async function DashboardPage({
           <div className="grid gap-6">
             <form
               action={editingThought ? updateThoughtAction : createThoughtAction}
-              className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
+              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
             >
-              <div className="mb-6 flex items-start justify-between gap-4">
+              <div className="mb-5 flex items-start justify-between gap-4 sm:mb-6">
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                     {editingThought ? "Edit thought" : "New thought"}
                   </p>
-                  <h2 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+                  <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
                     {editingThought ? "Refine your card" : "Capture a new card"}
                   </h2>
                 </div>
@@ -294,15 +294,15 @@ export default async function DashboardPage({
                   />
                 </label>
 
-                <div className="flex items-center justify-between gap-4 pt-2">
+                <div className="flex flex-col gap-4 pt-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                     {editingThought ? "Updates this card" : "Saves to your account"}
                   </p>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     {editingThought ? (
                       <Link
                         href="/dashboard"
-                        className="rounded-full border border-emerald-950/10 bg-white/70 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                        className="rounded-full border border-emerald-950/10 bg-white/70 px-5 py-3 text-center text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
                       >
                         Cancel
                       </Link>
@@ -324,13 +324,13 @@ export default async function DashboardPage({
             <form
               action="/api/reports/daily"
               method="get"
-              className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8"
+              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
             >
               <div className="mb-6">
                 <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                   Reports
                 </p>
-                <h2 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+                <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
                   Review a specific day
                 </h2>
               </div>
@@ -357,7 +357,7 @@ export default async function DashboardPage({
                       className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                     />
                   </div>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <button
                       type="submit"
                       name="format"
@@ -381,11 +381,11 @@ export default async function DashboardPage({
               </div>
             </form>
 
-            <div className="rounded-[2rem] border border-emerald-950/10 bg-white/75 p-6 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur md:p-8">
+            <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                 Summary
               </p>
-              <h2 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+              <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
                 Your writing space
               </h2>
               <p className="mt-4 text-sm leading-7 text-stone-700">
@@ -410,8 +410,8 @@ export default async function DashboardPage({
           </div>
 
           {filteredThoughts.length === 0 ? (
-            <div className="rounded-[1.75rem] border border-dashed border-stone-900/15 bg-white/60 p-10 text-center text-stone-600">
-              <p className="font-[family:var(--font-display)] text-3xl text-stone-900">
+            <div className="rounded-[1.75rem] border border-dashed border-stone-900/15 bg-white/60 p-8 text-center text-stone-600 sm:p-10">
+              <p className="font-[family:var(--font-display)] text-2xl text-stone-900 sm:text-3xl">
                 {activeTag ? "No cards match this tag." : "No cards yet."}
               </p>
             </div>
@@ -420,16 +420,16 @@ export default async function DashboardPage({
               {filteredThoughts.map((thought: DashboardThought) => (
                 <article
                   key={thought.id}
-                  className="rounded-[2rem] border border-emerald-950/10 bg-white/72 p-6 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur"
+                  className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6"
                 >
-                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.22em] text-stone-500">
+                  <div className="flex flex-col gap-2 text-xs uppercase tracking-[0.22em] text-stone-500 sm:flex-row sm:items-center sm:justify-between">
                     <span>{thought.category}</span>
                     <span>Mood {thought.mood}/10</span>
                   </div>
-                  <h3 className="mt-6 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
+                  <h3 className="mt-5 font-[family:var(--font-display)] text-3xl leading-none text-stone-900 sm:mt-6 sm:text-4xl">
                     {thought.title}
                   </h3>
-                  <p className="mt-4 text-base leading-7 text-stone-700">
+                  <p className="mt-4 text-sm leading-7 text-stone-700 sm:text-base">
                     {thought.excerpt}
                   </p>
                   <div className="mt-5 flex flex-wrap gap-2">
@@ -464,10 +464,10 @@ export default async function DashboardPage({
                       year: "numeric",
                     })}
                   </p>
-                  <div className="mt-6 flex flex-wrap gap-3">
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <Link
                       href={`/dashboard?edit=${thought.id}`}
-                      className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                      className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-3 text-center text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white sm:py-2"
                     >
                       Edit
                     </Link>
@@ -476,7 +476,7 @@ export default async function DashboardPage({
                       <button
                         type="submit"
                         disabled={!databaseAvailable}
-                        className="inline-flex rounded-full border border-rose-900/10 bg-rose-50/90 px-4 py-2 text-xs uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex w-full justify-center rounded-full border border-rose-900/10 bg-rose-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2"
                       >
                         Delete
                       </button>
