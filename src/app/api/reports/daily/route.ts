@@ -2,21 +2,12 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
 import { getThoughtsByUserAndDate } from "@/lib/db";
+import { toColomboExportParts } from "@/lib/time";
 
 type DailyThought = Awaited<ReturnType<typeof getThoughtsByUserAndDate>>[number];
 
 function escapeCsv(value: string) {
   return `"${value.replace(/"/g, '""')}"`;
-}
-
-function formatDateParts(value: Date) {
-  const iso = value.toISOString();
-
-  return {
-    iso,
-    date: iso.slice(0, 10),
-    time: iso.slice(11, 19),
-  };
 }
 
 export async function GET(request: Request) {
@@ -52,8 +43,8 @@ export async function GET(request: Request) {
           },
           total_thoughts: thoughts.length,
           thoughts: thoughts.map((thought: DailyThought) => {
-            const createdAt = formatDateParts(new Date(thought.created_at));
-            const updatedAt = formatDateParts(new Date(thought.updated_at));
+            const createdAt = toColomboExportParts(thought.created_at);
+            const updatedAt = toColomboExportParts(thought.updated_at);
 
             return {
               id: thought.id,
@@ -65,10 +56,12 @@ export async function GET(request: Request) {
               summary: thought.summary,
               full_note: thought.body,
               content: thought.summary,
-              created_at: createdAt.iso,
+              created_at: createdAt.localIso,
+              created_at_utc: createdAt.isoUtc,
               created_date: createdAt.date,
               created_time: createdAt.time,
-              updated_at: updatedAt.iso,
+              updated_at: updatedAt.localIso,
+              updated_at_utc: updatedAt.isoUtc,
               updated_date: updatedAt.date,
               updated_time: updatedAt.time,
             };
@@ -96,13 +89,15 @@ export async function GET(request: Request) {
         "created_date",
         "created_time",
         "created_at",
+        "created_at_utc",
         "updated_date",
         "updated_time",
         "updated_at",
+        "updated_at_utc",
       ].join(","),
       ...thoughts.map((thought: DailyThought) => {
-        const createdAt = formatDateParts(new Date(thought.created_at));
-        const updatedAt = formatDateParts(new Date(thought.updated_at));
+        const createdAt = toColomboExportParts(thought.created_at);
+        const updatedAt = toColomboExportParts(thought.updated_at);
 
         return [
           String(thought.id),
@@ -115,10 +110,12 @@ export async function GET(request: Request) {
           escapeCsv(thought.body),
           escapeCsv(createdAt.date),
           escapeCsv(createdAt.time),
-          escapeCsv(createdAt.iso),
+          escapeCsv(createdAt.localIso),
+          escapeCsv(createdAt.isoUtc),
           escapeCsv(updatedAt.date),
           escapeCsv(updatedAt.time),
-          escapeCsv(updatedAt.iso),
+          escapeCsv(updatedAt.localIso),
+          escapeCsv(updatedAt.isoUtc),
         ].join(",");
       }),
     ];

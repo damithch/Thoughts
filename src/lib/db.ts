@@ -306,21 +306,16 @@ export async function getThoughtByIdForUser(thoughtId: number, userId: number) {
 export async function getThoughtsByUserAndDate(userId: number, date: string) {
   await initializeThoughtsTable();
 
-  const [year, month, day] = date.split("-").map(Number);
-  const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month - 1, day + 1, 0, 0, 0, 0));
-
   const { rows } = await pool.query<Thought>(
     `
       SELECT id, title, category, excerpt AS summary, body, user_id, created_at
            , updated_at, mood, tags
       FROM thoughts
       WHERE user_id = $1
-        AND created_at >= $2
-        AND created_at < $3
+        AND (created_at AT TIME ZONE 'Asia/Colombo')::date = $2::date
       ORDER BY created_at ASC, id ASC
     `,
-    [userId, start.toISOString(), end.toISOString()],
+    [userId, date],
   );
 
   return rows;
@@ -329,23 +324,18 @@ export async function getThoughtsByUserAndDate(userId: number, date: string) {
 export async function getThoughtActivityByUserMonth(userId: number, month: string) {
   await initializeThoughtsTable();
 
-  const [year, monthIndex] = month.split("-").map(Number);
-  const start = new Date(Date.UTC(year, monthIndex - 1, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
-
   const { rows } = await pool.query<ThoughtActivityDay>(
     `
-      SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+      SELECT TO_CHAR(created_at AT TIME ZONE 'Asia/Colombo', 'YYYY-MM-DD') AS date,
              COUNT(*)::int AS total,
              ROUND(AVG(mood)::numeric, 1)::float8 AS average_mood
       FROM thoughts
       WHERE user_id = $1
-        AND created_at >= $2
-        AND created_at < $3
+        AND TO_CHAR(created_at AT TIME ZONE 'Asia/Colombo', 'YYYY-MM') = $2
       GROUP BY 1
       ORDER BY 1 ASC
     `,
-    [userId, start.toISOString(), end.toISOString()],
+    [userId, month],
   );
 
   return rows;

@@ -14,6 +14,11 @@ import {
   getThoughtByIdForUser,
   getThoughtsByUser,
 } from "@/lib/db";
+import {
+  getCurrentColomboDate,
+  getCurrentColomboMonth,
+  toColomboDate,
+} from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +79,7 @@ function buildCalendarDays(month: string, activityByDate: Map<string, { total: n
         isToday: boolean;
       }
   > = [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getCurrentColomboDate();
 
   for (let index = 0; index < startOffset; index += 1) {
     cells.push({ kind: "empty", key: `empty-${index}` });
@@ -123,11 +128,11 @@ export default async function DashboardPage({
     ? dashboardToastMessages[params.toast]
     : undefined;
   const activeTag = params?.tag?.trim().toLowerCase() ?? "";
-  const requestedMonth = params?.month ?? new Date().toISOString().slice(0, 7);
+  const requestedMonth = params?.month ?? getCurrentColomboMonth();
   const activeMonth = /^\d{4}-\d{2}$/.test(requestedMonth)
     ? requestedMonth
-    : new Date().toISOString().slice(0, 7);
-  const today = new Date().toISOString().slice(0, 10);
+    : getCurrentColomboMonth();
+  const today = getCurrentColomboDate();
   const editThoughtId = params?.edit ? Number(params.edit) : null;
   const validEditThoughtId =
     editThoughtId && Number.isInteger(editThoughtId) && editThoughtId > 0
@@ -170,11 +175,7 @@ export default async function DashboardPage({
   ).getUTCDate();
   const missedDaysCount = Math.max(daysInActiveMonth - loggedDaysCount, 0);
   const latestActivity = latestThought
-    ? new Date(latestThought.created_at).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
+    ? toColomboDate(latestThought.created_at)
     : "No entries";
 
   return (
@@ -672,19 +673,11 @@ export default async function DashboardPage({
                     )}
                   </div>
                   <p className="mt-6 text-xs uppercase tracking-[0.2em] text-stone-400">
-                    {new Date(thought.created_at).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {toColomboDate(thought.created_at)}
                   </p>
                   <p className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-400">
                     Updated{" "}
-                    {new Date(thought.updated_at).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {toColomboDate(thought.updated_at)}
                   </p>
                   <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <Link
