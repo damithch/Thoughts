@@ -38,9 +38,10 @@ export async function createThoughtAction(formData: FormData) {
   const category = formData.get("category")?.toString().trim() ?? "";
   const mood = parseMood(formData.get("mood"));
   const tags = parseTags(formData.get("tags"));
-  const excerpt = formData.get("excerpt")?.toString().trim() ?? "";
+  const summary = formData.get("summary")?.toString().trim() ?? "";
+  const body = formData.get("body")?.toString().trim() ?? "";
 
-  if (!title || !category || !mood || !excerpt) {
+  if (!title || !category || !mood || !summary) {
     redirect("/dashboard?toast=invalid_entry&type=error");
   }
 
@@ -50,7 +51,8 @@ export async function createThoughtAction(formData: FormData) {
       category,
       mood,
       tags,
-      excerpt,
+      summary,
+      body,
       userId: currentUser.id,
     });
   } catch {
@@ -74,9 +76,10 @@ export async function updateThoughtAction(formData: FormData) {
   const category = formData.get("category")?.toString().trim() ?? "";
   const mood = parseMood(formData.get("mood"));
   const tags = parseTags(formData.get("tags"));
-  const excerpt = formData.get("excerpt")?.toString().trim() ?? "";
+  const summary = formData.get("summary")?.toString().trim() ?? "";
+  const body = formData.get("body")?.toString().trim() ?? "";
 
-  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !mood || !excerpt) {
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !mood || !summary) {
     redirect("/dashboard?toast=update_failed&type=error");
   }
 
@@ -87,7 +90,8 @@ export async function updateThoughtAction(formData: FormData) {
       category,
       mood,
       tags,
-      excerpt,
+      summary,
+      body,
       userId: currentUser.id,
     });
 

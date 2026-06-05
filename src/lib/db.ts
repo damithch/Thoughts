@@ -8,7 +8,8 @@ type Thought = {
   category: string;
   mood: number;
   tags: string[];
-  excerpt: string;
+  summary: string;
+  body: string;
   user_id: number | null;
   created_at: Date;
   updated_at: Date;
@@ -27,7 +28,8 @@ type NewThought = {
   category: string;
   mood: number;
   tags: string[];
-  excerpt: string;
+  summary: string;
+  body: string;
   userId: number;
 };
 
@@ -37,7 +39,8 @@ type UpdateThought = {
   category: string;
   mood: number;
   tags: string[];
-  excerpt: string;
+  summary: string;
+  body: string;
   userId: number;
 };
 
@@ -105,24 +108,30 @@ const seedThoughts = [
     category: "Morning note",
     mood: 7,
     tags: ["morning", "routine", "calm"],
-    excerpt:
+    summary:
       "A cup of tea, ten quiet minutes, and a single sentence can set the tone for an entire day.",
+    body:
+      "Today felt steady from the beginning. The quiet start mattered more than the task list. I want to keep protecting that first calm pocket of the morning because it seems to shape everything after it.",
   },
   {
     title: "City Fragments",
     category: "Observation",
     mood: 6,
     tags: ["walk", "city", "reflection"],
-    excerpt:
+    summary:
       "Every street has its own rhythm. Some rush, some linger, and some feel like a memory you walked into.",
+    body:
+      "The walk made me notice how quickly my attention shifts when I stop trying to document everything. There was one corner that felt familiar for no obvious reason, and I kept thinking about how places can hold emotional residue.",
   },
   {
     title: "Unfinished Ideas",
     category: "Draft",
     mood: 5,
     tags: ["draft", "ideas", "thinking"],
-    excerpt:
+    summary:
       "Not every thought needs a conclusion. Some are more useful when they stay open and keep pulling you back.",
+    body:
+      "I usually rush to turn an idea into a final position, but this one probably needs to remain unresolved a little longer. The uncertainty might be part of what makes it worth returning to.",
   },
 ];
 
@@ -137,7 +146,8 @@ function getFallbackThoughts(): Thought[] {
     category: thought.category,
     mood: thought.mood,
     tags: thought.tags,
-    excerpt: thought.excerpt,
+    summary: thought.summary,
+    body: thought.body,
     user_id: null,
     created_at: new Date(now.getTime() - index * 60_000),
     updated_at: new Date(now.getTime() - index * 60_000),
@@ -167,6 +177,7 @@ async function initializeThoughtsTable() {
       mood INTEGER NOT NULL DEFAULT 5,
       tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
       excerpt TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
@@ -192,6 +203,11 @@ async function initializeThoughtsTable() {
     ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
   `);
 
+  await pool.query(`
+    ALTER TABLE thoughts
+    ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''
+  `);
+
   const { rows } = await pool.query<{ count: string }>(
     "SELECT COUNT(*)::text AS count FROM thoughts",
   );
@@ -200,10 +216,10 @@ async function initializeThoughtsTable() {
     for (const thought of seedThoughts) {
       await pool.query(
         `
-          INSERT INTO thoughts (title, category, mood, tags, excerpt)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO thoughts (title, category, mood, tags, excerpt, body)
+          VALUES ($1, $2, $3, $4, $5, $6)
         `,
-        [thought.title, thought.category, thought.mood, thought.tags, thought.excerpt],
+        [thought.title, thought.category, thought.mood, thought.tags, thought.summary, thought.body],
       );
     }
   }
@@ -217,7 +233,7 @@ export async function getThoughts(): Promise<ThoughtsResult> {
 
     const { rows } = await pool.query<Thought>(
       `
-        SELECT id, title, category, excerpt, user_id, created_at
+        SELECT id, title, category, excerpt AS summary, body, user_id, created_at
              , updated_at, mood, tags
         FROM thoughts
         ORDER BY created_at DESC, id DESC
@@ -244,10 +260,10 @@ export async function createThought(input: NewThought) {
 
   await pool.query(
     `
-      INSERT INTO thoughts (title, category, mood, tags, excerpt, user_id, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      INSERT INTO thoughts (title, category, mood, tags, excerpt, body, user_id, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
     `,
-    [input.title, input.category, input.mood, input.tags, input.excerpt, input.userId],
+    [input.title, input.category, input.mood, input.tags, input.summary, input.body, input.userId],
   );
 }
 
@@ -256,7 +272,7 @@ export async function getThoughtsByUser(userId: number) {
 
   const { rows } = await pool.query<Thought>(
     `
-      SELECT id, title, category, excerpt, user_id, created_at
+      SELECT id, title, category, excerpt AS summary, body, user_id, created_at
            , updated_at, mood, tags
       FROM thoughts
       WHERE user_id = $1
@@ -274,7 +290,7 @@ export async function getThoughtByIdForUser(thoughtId: number, userId: number) {
 
   const { rows } = await pool.query<Thought>(
     `
-      SELECT id, title, category, excerpt, user_id, created_at
+      SELECT id, title, category, excerpt AS summary, body, user_id, created_at
            , updated_at, mood, tags
       FROM thoughts
       WHERE id = $1
@@ -296,7 +312,7 @@ export async function getThoughtsByUserAndDate(userId: number, date: string) {
 
   const { rows } = await pool.query<Thought>(
     `
-      SELECT id, title, category, excerpt, user_id, created_at
+      SELECT id, title, category, excerpt AS summary, body, user_id, created_at
            , updated_at, mood, tags
       FROM thoughts
       WHERE user_id = $1
@@ -346,16 +362,18 @@ export async function updateThought(input: UpdateThought) {
           mood = $3,
           tags = $4,
           excerpt = $5,
+          body = $6,
           updated_at = NOW()
-      WHERE id = $6
-        AND user_id = $7
+      WHERE id = $7
+        AND user_id = $8
     `,
     [
       input.title,
       input.category,
       input.mood,
       input.tags,
-      input.excerpt,
+      input.summary,
+      input.body,
       input.id,
       input.userId,
     ],

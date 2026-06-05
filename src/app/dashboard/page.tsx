@@ -31,7 +31,7 @@ const dashboardToastMessages: Record<string, string> = {
   created: "Thought card created.",
   deleted: "Thought card deleted.",
   delete_failed: "That card could not be deleted.",
-  invalid_entry: "Add a title, category, mood, and card text before saving.",
+  invalid_entry: "Add a title, category, mood level, and summary before saving.",
   registered: "Account created. Your dashboard is ready.",
   save_failed: "The card could not be saved.",
   update_failed: "That card could not be updated.",
@@ -431,21 +431,30 @@ export default async function DashboardPage({
 
                   <label className="grid gap-2 text-sm text-stone-700">
                     <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                      Mood {editingThought?.mood ?? 5}/10
+                      Mood level
                     </span>
-                    <input
-                      type="range"
+                    <select
                       name="mood"
-                      min="1"
-                      max="10"
-                      step="1"
-                      defaultValue={editingThought?.mood ?? 5}
                       required
-                      className="mt-2 accent-emerald-900"
-                    />
+                      defaultValue={editingThought ? String(editingThought.mood) : ""}
+                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                    >
+                      <option value="" disabled>
+                        Select a mood from 1 to 10
+                      </option>
+                      {Array.from({ length: 10 }, (_, index) => {
+                        const level = index + 1;
+
+                        return (
+                          <option key={level} value={level}>
+                            {level} / 10
+                          </option>
+                        );
+                      })}
+                    </select>
                     <div className="flex justify-between text-xs uppercase tracking-[0.12em] text-stone-500">
-                      <span>Low</span>
-                      <span>High</span>
+                      <span>1 = low</span>
+                      <span>10 = high</span>
                     </div>
                   </label>
                 </div>
@@ -468,15 +477,33 @@ export default async function DashboardPage({
 
                 <label className="grid gap-2 text-sm text-stone-700">
                   <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                    Card text
+                    Card summary
                   </span>
                   <textarea
-                    name="excerpt"
-                    rows={6}
-                    defaultValue={editingThought?.excerpt ?? ""}
+                    name="summary"
+                    rows={4}
+                    defaultValue={editingThought?.summary ?? ""}
                     required
                     className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                   />
+                  <span className="text-xs leading-6 text-stone-500">
+                    Keep this short so your cards stay easy to scan in the archive.
+                  </span>
+                </label>
+
+                <label className="grid gap-2 text-sm text-stone-700">
+                  <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                    Long-form note
+                  </span>
+                  <textarea
+                    name="body"
+                    rows={8}
+                    defaultValue={editingThought?.body ?? ""}
+                    className="resize-y rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                  />
+                  <span className="text-xs leading-6 text-stone-500">
+                    Optional deeper reflection. This stays attached to the card without cluttering the archive view.
+                  </span>
                 </label>
 
                 <div className="flex flex-col gap-4 pt-2 sm:flex-row sm:items-center sm:justify-between">
@@ -615,8 +642,18 @@ export default async function DashboardPage({
                     {thought.title}
                   </h3>
                   <p className="mt-4 text-sm leading-7 text-stone-700 sm:text-base">
-                    {thought.excerpt}
+                    {thought.summary}
                   </p>
+                  {thought.body ? (
+                    <details className="mt-4 rounded-2xl border border-emerald-950/10 bg-white/65 p-4">
+                      <summary className="cursor-pointer text-xs uppercase tracking-[0.16em] text-emerald-900/75">
+                        Open full note
+                      </summary>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                        {thought.body}
+                      </p>
+                    </details>
+                  ) : null}
                   <div className="mt-5 flex flex-wrap gap-2">
                     {thought.tags.length === 0 ? (
                       <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
