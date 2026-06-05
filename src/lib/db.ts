@@ -57,6 +57,25 @@ type ThoughtsResult = {
   thoughts: Thought[];
 };
 
+type ThoughtActivityDay = {
+  date: string;
+  total: number;
+  average_mood: number;
+};
+
+function normalizeDatabaseUrl(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  const sslMode = url.searchParams.get("sslmode");
+
+  // pg warns that legacy sslmode aliases will change meaning in the next major release.
+  // Normalize them now so local dev and production use the stricter current behavior.
+  if (sslMode === "prefer" || sslMode === "require" || sslMode === "verify-ca") {
+    url.searchParams.set("sslmode", "verify-full");
+  }
+
+  return url.toString();
+}
+
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
@@ -70,7 +89,7 @@ const globalForDb = globalThis as typeof globalThis & {
 const pool =
   globalForDb.thoughtsPool ??
   new Pool({
-    connectionString,
+    connectionString: normalizeDatabaseUrl(connectionString),
     ssl: {
       rejectUnauthorized: false,
     },
@@ -284,6 +303,31 @@ export async function getThoughtsByUserAndDate(userId: number, date: string) {
         AND created_at >= $2
         AND created_at < $3
       ORDER BY created_at ASC, id ASC
+    `,
+    [userId, start.toISOString(), end.toISOString()],
+  );
+
+  return rows;
+}
+
+export async function getThoughtActivityByUserMonth(userId: number, month: string) {
+  await initializeThoughtsTable();
+
+  const [year, monthIndex] = month.split("-").map(Number);
+  const start = new Date(Date.UTC(year, monthIndex - 1, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+
+  const { rows } = await pool.query<ThoughtActivityDay>(
+    `
+      SELECT TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date,
+             COUNT(*)::int AS total,
+             ROUND(AVG(mood)::numeric, 1)::float8 AS average_mood
+      FROM thoughts
+      WHERE user_id = $1
+        AND created_at >= $2
+        AND created_at < $3
+      GROUP BY 1
+      ORDER BY 1 ASC
     `,
     [userId, start.toISOString(), end.toISOString()],
   );

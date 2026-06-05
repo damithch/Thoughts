@@ -9,13 +9,18 @@ import {
 } from "@/app/actions";
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
-import { getThoughtByIdForUser, getThoughtsByUser } from "@/lib/db";
+import {
+  getThoughtActivityByUserMonth,
+  getThoughtByIdForUser,
+  getThoughtsByUser,
+} from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
     edit?: string;
+    month?: string;
     tag?: string;
     toast?: string;
     type?: "success" | "error" | "info";
@@ -33,6 +38,66 @@ const dashboardToastMessages: Record<string, string> = {
   updated: "Thought card updated.",
   welcome_back: "Signed in successfully.",
 };
+
+function formatMonthLabel(month: string) {
+  const [year, monthIndex] = month.split("-").map(Number);
+
+  return new Date(Date.UTC(year, monthIndex - 1, 1)).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function shiftMonth(month: string, delta: number) {
+  const [year, monthIndex] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthIndex - 1 + delta, 1));
+
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildCalendarDays(month: string, activityByDate: Map<string, { total: number; averageMood: number }>) {
+  const [year, monthIndex] = month.split("-").map(Number);
+  const firstDay = new Date(Date.UTC(year, monthIndex - 1, 1));
+  const daysInMonth = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  const startOffset = firstDay.getUTCDay();
+  const cells: Array<
+    | { kind: "empty"; key: string }
+    | {
+        kind: "day";
+        key: string;
+        date: string;
+        dayNumber: number;
+        total: number;
+        averageMood: number | null;
+        isLogged: boolean;
+        isToday: boolean;
+      }
+  > = [];
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (let index = 0; index < startOffset; index += 1) {
+    cells.push({ kind: "empty", key: `empty-${index}` });
+  }
+
+  for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber += 1) {
+    const date = `${month}-${String(dayNumber).padStart(2, "0")}`;
+    const activity = activityByDate.get(date);
+
+    cells.push({
+      kind: "day",
+      key: date,
+      date,
+      dayNumber,
+      total: activity?.total ?? 0,
+      averageMood: activity?.averageMood ?? null,
+      isLogged: Boolean(activity),
+      isToday: today === date,
+    });
+  }
+
+  return cells;
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -58,6 +123,10 @@ export default async function DashboardPage({
     ? dashboardToastMessages[params.toast]
     : undefined;
   const activeTag = params?.tag?.trim().toLowerCase() ?? "";
+  const requestedMonth = params?.month ?? new Date().toISOString().slice(0, 7);
+  const activeMonth = /^\d{4}-\d{2}$/.test(requestedMonth)
+    ? requestedMonth
+    : new Date().toISOString().slice(0, 7);
   const today = new Date().toISOString().slice(0, 10);
   const editThoughtId = params?.edit ? Number(params.edit) : null;
   const validEditThoughtId =
@@ -78,6 +147,28 @@ export default async function DashboardPage({
   const visibleTags = Array.from(
     new Set(filteredThoughts.flatMap((thought: DashboardThought) => thought.tags)),
   ).slice(0, 12);
+  const monthlyActivity = databaseAvailable
+    ? await getThoughtActivityByUserMonth(currentUser.id, activeMonth)
+    : [];
+  const activityByDate = new Map(
+    monthlyActivity.map((day) => [
+      day.date,
+      {
+        total: day.total,
+        averageMood: day.average_mood,
+      },
+    ]),
+  );
+  const calendarDays = buildCalendarDays(activeMonth, activityByDate);
+  const loggedDaysCount = monthlyActivity.length;
+  const daysInActiveMonth = new Date(
+    Date.UTC(
+      Number(activeMonth.slice(0, 4)),
+      Number(activeMonth.slice(5, 7)),
+      0,
+    ),
+  ).getUTCDate();
+  const missedDaysCount = Math.max(daysInActiveMonth - loggedDaysCount, 0);
   const latestActivity = latestThought
     ? new Date(latestThought.created_at).toLocaleDateString("en-US", {
         month: "short",
@@ -194,6 +285,100 @@ export default async function DashboardPage({
                 </Link>
               ))
             )}
+          </div>
+        </section>
+
+        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                Calendar view
+              </p>
+              <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
+                {formatMonthLabel(activeMonth)}
+              </h2>
+              <p className="mt-3 text-sm leading-7 text-stone-700">
+                Logged days are highlighted so you can see where you kept the journaling habit and where you missed it.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href={`/dashboard?month=${shiftMonth(activeMonth, -1)}${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                className="rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-center text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+              >
+                Previous
+              </Link>
+              <Link
+                href={`/dashboard?month=${shiftMonth(activeMonth, 1)}${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                className="rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-center text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+              >
+                Next
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-[1.25fr_0.75fr]">
+            <div>
+              <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((dayName) => (
+                  <span key={dayName}>{dayName}</span>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {calendarDays.map((cell) =>
+                  cell.kind === "empty" ? (
+                    <div
+                      key={cell.key}
+                      className="aspect-square rounded-2xl border border-transparent"
+                    />
+                  ) : (
+                    <a
+                      key={cell.key}
+                      href={`/api/reports/daily?date=${cell.date}&format=json`}
+                      className={`flex aspect-square flex-col justify-between rounded-2xl border p-2 text-left transition sm:p-3 ${
+                        cell.isLogged
+                          ? "border-emerald-900/15 bg-emerald-100/80 text-emerald-950 hover:bg-emerald-100"
+                          : "border-stone-900/8 bg-white/70 text-stone-500 hover:bg-white"
+                      } ${cell.isToday ? "ring-2 ring-emerald-800/30" : ""}`}
+                    >
+                      <span className="text-xs font-semibold">{cell.dayNumber}</span>
+                      <div className="text-[11px] leading-4">
+                        {cell.isLogged ? (
+                          <>
+                            <div>{cell.total} card{cell.total === 1 ? "" : "s"}</div>
+                            <div>Mood {cell.averageMood?.toFixed(1) ?? "0.0"}</div>
+                          </>
+                        ) : (
+                          <div>Missed</div>
+                        )}
+                      </div>
+                    </a>
+                  ),
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              <div className="rounded-[1.5rem] border border-emerald-950/10 bg-white/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                  This month
+                </p>
+                <p className="mt-3 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+                  {loggedDaysCount} logged
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-700">
+                  {missedDaysCount} missed days in {formatMonthLabel(activeMonth)}.
+                </p>
+              </div>
+              <div className="rounded-[1.5rem] border border-emerald-950/10 bg-white/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                  How to use it
+                </p>
+                <p className="mt-3 text-sm leading-7 text-stone-700">
+                  Click a logged day to download that day&apos;s JSON report instantly. Empty days help you spot breaks in the habit.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
