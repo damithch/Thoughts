@@ -66,6 +66,81 @@ type ThoughtActivityDay = {
   average_mood: number;
 };
 
+export type TaskStatus = "todo" | "in_progress" | "done" | "skipped";
+export type TaskPriority = "low" | "medium" | "high";
+
+export type TaskItem = {
+  id: number;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  tags: string[];
+  note: string;
+  scheduled_date: string;
+  user_id: number;
+  created_at: Date;
+  updated_at: Date;
+  started_at: Date | null;
+  completed_at: Date | null;
+};
+
+export type DayRecord = {
+  id: number;
+  user_id: number;
+  entry_date: string;
+  intention: string;
+  note: string;
+  end_of_day_mood: number | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type CheckInEnergy = "low" | "steady" | "high";
+export type CheckInFocus = "scattered" | "okay" | "locked_in";
+
+export type DailyCheckIn = {
+  id: number;
+  user_id: number;
+  entry_date: string;
+  mood: number;
+  energy: CheckInEnergy;
+  focus: CheckInFocus;
+  note: string;
+  created_at: Date;
+};
+
+type NewTask = {
+  title: string;
+  priority: TaskPriority;
+  tags: string[];
+  note: string;
+  scheduledDate: string;
+  userId: number;
+};
+
+type UpdateTaskStatusInput = {
+  id: number;
+  status: TaskStatus;
+  userId: number;
+};
+
+type UpsertDayRecordInput = {
+  entryDate: string;
+  intention: string;
+  note: string;
+  endOfDayMood: number | null;
+  userId: number;
+};
+
+type NewDailyCheckIn = {
+  entryDate: string;
+  mood: number;
+  energy: CheckInEnergy;
+  focus: CheckInFocus;
+  note: string;
+  userId: number;
+};
+
 function normalizeDatabaseUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
   const sslMode = url.searchParams.get("sslmode");
@@ -206,6 +281,71 @@ async function initializeThoughtsTable() {
   await pool.query(`
     ALTER TABLE thoughts
     ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT ''
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_tasks (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'todo',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+      note TEXT NOT NULL DEFAULT '',
+      scheduled_date DATE NOT NULL,
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (status IN ('todo', 'in_progress', 'done', 'skipped')),
+      CHECK (priority IN ('low', 'medium', 'high'))
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_task_notes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_date DATE NOT NULL,
+      intention TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      end_of_day_mood INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_id, entry_date),
+      CHECK (end_of_day_mood IS NULL OR (end_of_day_mood >= 1 AND end_of_day_mood <= 10))
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS daily_tasks_user_date_idx
+    ON daily_tasks (user_id, scheduled_date)
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS daily_tasks_user_status_idx
+    ON daily_tasks (user_id, status)
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_check_ins (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      entry_date DATE NOT NULL,
+      mood INTEGER NOT NULL,
+      energy TEXT NOT NULL,
+      focus TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (mood >= 1 AND mood <= 10),
+      CHECK (energy IN ('low', 'steady', 'high')),
+      CHECK (focus IN ('scattered', 'okay', 'locked_in'))
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS daily_check_ins_user_date_idx
+    ON daily_check_ins (user_id, entry_date, created_at)
   `);
 
   const { rows } = await pool.query<{ count: string }>(
@@ -432,4 +572,181 @@ export async function getUserById(userId: number) {
   );
 
   return rows[0] ?? null;
+}
+
+export async function getTasksByUserAndDate(userId: number, date: string) {
+  await initializeThoughtsTable();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND scheduled_date = $2::date
+      ORDER BY
+        CASE priority
+          WHEN 'high' THEN 1
+          WHEN 'medium' THEN 2
+          ELSE 3
+        END,
+        created_at ASC,
+        id ASC
+    `,
+    [userId, date],
+  );
+
+  return rows;
+}
+
+export async function getOpenTaskCountBeforeDate(userId: number, date: string) {
+  await initializeThoughtsTable();
+
+  const { rows } = await pool.query<{ total: string }>(
+    `
+      SELECT COUNT(*)::text AS total
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND scheduled_date < $2::date
+        AND status IN ('todo', 'in_progress')
+    `,
+    [userId, date],
+  );
+
+  return Number(rows[0]?.total ?? "0");
+}
+
+export async function getDayRecordByUserAndDate(userId: number, date: string) {
+  await initializeThoughtsTable();
+
+  const { rows } = await pool.query<DayRecord>(
+    `
+      SELECT id, user_id,
+             TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+             intention, note, end_of_day_mood,
+             created_at, updated_at
+      FROM daily_task_notes
+      WHERE user_id = $1
+        AND entry_date = $2::date
+      LIMIT 1
+    `,
+    [userId, date],
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function createTask(input: NewTask) {
+  await initializeThoughtsTable();
+
+  await pool.query(
+    `
+      INSERT INTO daily_tasks (
+        user_id, title, status, priority, tags, note, scheduled_date
+      )
+      VALUES ($1, $2, 'todo', $3, $4, $5, $6::date)
+    `,
+    [input.userId, input.title, input.priority, input.tags, input.note, input.scheduledDate],
+  );
+}
+
+export async function updateTaskStatus(input: UpdateTaskStatusInput) {
+  await initializeThoughtsTable();
+
+  const { rowCount } = await pool.query(
+    `
+      UPDATE daily_tasks
+      SET status = $1,
+          started_at = CASE
+            WHEN $1 = 'in_progress' AND started_at IS NULL THEN NOW()
+            WHEN $1 = 'todo' THEN NULL
+            ELSE started_at
+          END,
+          completed_at = CASE
+            WHEN $1 IN ('done', 'skipped') THEN NOW()
+            ELSE NULL
+          END,
+          updated_at = NOW()
+      WHERE id = $2
+        AND user_id = $3
+    `,
+    [input.status, input.id, input.userId],
+  );
+
+  return rowCount === 1;
+}
+
+export async function upsertDayRecord(input: UpsertDayRecordInput) {
+  await initializeThoughtsTable();
+
+  await pool.query(
+    `
+      INSERT INTO daily_task_notes (
+        user_id, entry_date, intention, note, end_of_day_mood, updated_at
+      )
+      VALUES ($1, $2::date, $3, $4, $5, NOW())
+      ON CONFLICT (user_id, entry_date)
+      DO UPDATE SET
+        intention = EXCLUDED.intention,
+        note = EXCLUDED.note,
+        end_of_day_mood = EXCLUDED.end_of_day_mood,
+        updated_at = NOW()
+    `,
+    [input.userId, input.entryDate, input.intention, input.note, input.endOfDayMood],
+  );
+}
+
+export async function moveOpenTasksToDate(userId: number, fromDate: string, toDate: string) {
+  await initializeThoughtsTable();
+
+  const { rowCount } = await pool.query(
+    `
+      UPDATE daily_tasks
+      SET scheduled_date = $3::date,
+          status = 'todo',
+          started_at = NULL,
+          completed_at = NULL,
+          updated_at = NOW()
+      WHERE user_id = $1
+        AND scheduled_date = $2::date
+        AND status IN ('todo', 'in_progress')
+    `,
+    [userId, fromDate, toDate],
+  );
+
+  return rowCount ?? 0;
+}
+
+export async function createDailyCheckIn(input: NewDailyCheckIn) {
+  await initializeThoughtsTable();
+
+  await pool.query(
+    `
+      INSERT INTO daily_check_ins (
+        user_id, entry_date, mood, energy, focus, note
+      )
+      VALUES ($1, $2::date, $3, $4, $5, $6)
+    `,
+    [input.userId, input.entryDate, input.mood, input.energy, input.focus, input.note],
+  );
+}
+
+export async function getDailyCheckInsByUserAndDate(userId: number, date: string) {
+  await initializeThoughtsTable();
+
+  const { rows } = await pool.query<DailyCheckIn>(
+    `
+      SELECT id, user_id,
+             TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+             mood, energy, focus, note, created_at
+      FROM daily_check_ins
+      WHERE user_id = $1
+        AND entry_date = $2::date
+      ORDER BY created_at ASC, id ASC
+    `,
+    [userId, date],
+  );
+
+  return rows;
 }

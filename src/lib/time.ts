@@ -53,6 +53,15 @@ export function getCurrentColomboMonth() {
   return `${year}-${month}`;
 }
 
+export function shiftColomboDate(date: string, deltaDays: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + deltaDays));
+
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    value.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
 export function toColomboDate(value: Date | string) {
   return getFormatter(
     {
@@ -90,3 +99,11 @@ export function toColomboExportParts(value: Date | string) {
   };
 }
 
+export function formatColomboDateLabel(date: string) {
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}

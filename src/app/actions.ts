@@ -4,7 +4,23 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
-import { createThought, createUser, deleteThought, getUserByEmail, updateThought } from "@/lib/db";
+import {
+  CheckInEnergy,
+  CheckInFocus,
+  createDailyCheckIn,
+  createTask,
+  createThought,
+  createUser,
+  deleteThought,
+  getUserByEmail,
+  moveOpenTasksToDate,
+  TaskPriority,
+  TaskStatus,
+  updateTaskStatus,
+  updateThought,
+  upsertDayRecord,
+} from "@/lib/db";
+import { shiftColomboDate } from "@/lib/time";
 
 function parseMood(value: FormDataEntryValue | null) {
   const mood = Number(value?.toString() ?? "");
@@ -25,6 +41,52 @@ function parseTags(value: FormDataEntryValue | null) {
         .filter(Boolean),
     ),
   ).slice(0, 8);
+}
+
+function parseTaskPriority(value: FormDataEntryValue | null): TaskPriority | null {
+  const priority = value?.toString() ?? "";
+
+  if (priority === "low" || priority === "medium" || priority === "high") {
+    return priority;
+  }
+
+  return null;
+}
+
+function parseTaskStatus(value: FormDataEntryValue | null): TaskStatus | null {
+  const status = value?.toString() ?? "";
+
+  if (status === "todo" || status === "in_progress" || status === "done" || status === "skipped") {
+    return status;
+  }
+
+  return null;
+}
+
+function parseCheckInEnergy(value: FormDataEntryValue | null): CheckInEnergy | null {
+  const energy = value?.toString() ?? "";
+
+  if (energy === "low" || energy === "steady" || energy === "high") {
+    return energy;
+  }
+
+  return null;
+}
+
+function parseCheckInFocus(value: FormDataEntryValue | null): CheckInFocus | null {
+  const focus = value?.toString() ?? "";
+
+  if (focus === "scattered" || focus === "okay" || focus === "locked_in") {
+    return focus;
+  }
+
+  return null;
+}
+
+function parseDate(value: FormDataEntryValue | null) {
+  const date = value?.toString() ?? "";
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
 
 export async function createThoughtAction(formData: FormData) {
@@ -206,4 +268,172 @@ export async function loginAction(formData: FormData) {
 export async function logoutAction() {
   await clearSession();
   redirect("/login?toast=signed_out&type=success");
+}
+
+export async function createTaskAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const title = formData.get("title")?.toString().trim() ?? "";
+  const priority = parseTaskPriority(formData.get("priority"));
+  const tags = parseTags(formData.get("tags"));
+  const note = formData.get("note")?.toString().trim() ?? "";
+  const date = parseDate(formData.get("date"));
+
+  if (!title || !priority || !date) {
+    redirect("/dashboard/today?toast=task_invalid&type=error");
+  }
+
+  try {
+    await createTask({
+      title,
+      priority,
+      tags,
+      note,
+      scheduledDate: date,
+      userId: currentUser.id,
+    });
+  } catch {
+    redirect("/dashboard/today?toast=task_save_failed&type=error");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/today");
+  redirect(`/dashboard/today?date=${date}&toast=task_created&type=success`);
+}
+
+export async function updateTaskStatusAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const taskId = Number(formData.get("taskId"));
+  const status = parseTaskStatus(formData.get("status"));
+  const date = parseDate(formData.get("date"));
+
+  if (!Number.isInteger(taskId) || taskId <= 0 || !status || !date) {
+    redirect("/dashboard/today?toast=task_update_failed&type=error");
+  }
+
+  try {
+    const updated = await updateTaskStatus({
+      id: taskId,
+      status,
+      userId: currentUser.id,
+    });
+
+    if (!updated) {
+      redirect(`/dashboard/today?date=${date}&toast=task_update_failed&type=error`);
+    }
+  } catch {
+    redirect(`/dashboard/today?date=${date}&toast=task_update_failed&type=error`);
+  }
+
+  revalidatePath("/dashboard/today");
+  redirect(`/dashboard/today?date=${date}&toast=task_updated&type=success`);
+}
+
+export async function saveDayRecordAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const date = parseDate(formData.get("date"));
+  const intention = formData.get("intention")?.toString().trim() ?? "";
+  const note = formData.get("note")?.toString().trim() ?? "";
+  const moodValue = formData.get("endOfDayMood");
+  const mood = moodValue ? parseMood(moodValue) : null;
+
+  if (!date) {
+    redirect("/dashboard/today?toast=day_invalid&type=error");
+  }
+
+  if (moodValue && !mood) {
+    redirect(`/dashboard/today?date=${date}&toast=day_invalid&type=error`);
+  }
+
+  try {
+    await upsertDayRecord({
+      entryDate: date,
+      intention,
+      note,
+      endOfDayMood: mood,
+      userId: currentUser.id,
+    });
+  } catch {
+    redirect(`/dashboard/today?date=${date}&toast=day_save_failed&type=error`);
+  }
+
+  revalidatePath("/dashboard/today");
+  redirect(`/dashboard/today?date=${date}&toast=day_saved&type=success`);
+}
+
+export async function rolloverTasksAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const fromDate = parseDate(formData.get("date"));
+
+  if (!fromDate) {
+    redirect("/dashboard/today?toast=rollover_failed&type=error");
+  }
+
+  const toDate = shiftColomboDate(fromDate, 1);
+
+  try {
+    const moved = await moveOpenTasksToDate(currentUser.id, fromDate, toDate);
+
+    if (moved === 0) {
+      redirect(`/dashboard/today?date=${fromDate}&toast=rollover_empty&type=info`);
+    }
+  } catch {
+    redirect(`/dashboard/today?date=${fromDate}&toast=rollover_failed&type=error`);
+  }
+
+  revalidatePath("/dashboard/today");
+  redirect(`/dashboard/today?date=${toDate}&toast=rollover_done&type=success`);
+}
+
+export async function createDailyCheckInAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const date = parseDate(formData.get("date"));
+  const mood = parseMood(formData.get("mood"));
+  const energy = parseCheckInEnergy(formData.get("energy"));
+  const focus = parseCheckInFocus(formData.get("focus"));
+  const note = formData.get("note")?.toString().trim() ?? "";
+
+  if (!date || !mood || !energy || !focus) {
+    redirect(`/dashboard/today?date=${date ?? ""}&toast=checkin_invalid&type=error`);
+  }
+
+  try {
+    await createDailyCheckIn({
+      entryDate: date,
+      mood,
+      energy,
+      focus,
+      note,
+      userId: currentUser.id,
+    });
+  } catch {
+    redirect(`/dashboard/today?date=${date}&toast=checkin_save_failed&type=error`);
+  }
+
+  revalidatePath("/dashboard/today");
+  redirect(`/dashboard/today?date=${date}&toast=checkin_saved&type=success`);
 }

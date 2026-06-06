@@ -198,6 +198,12 @@ export default async function DashboardPage({
 
             <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap">
               <Link
+                href="/dashboard/today"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
+              >
+                Today View
+              </Link>
+              <Link
                 href="/"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
