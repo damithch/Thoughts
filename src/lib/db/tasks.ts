@@ -88,6 +88,26 @@ export async function getDayRecordByUserAndDate(userId: number, date: string) {
   return rows[0] ?? null;
 }
 
+export async function getDayRecordsByUserMonth(userId: number, month: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<DayRecord>(
+    `
+      SELECT id, user_id,
+             TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+             intention, note, end_of_day_mood,
+             created_at, updated_at
+      FROM daily_task_notes
+      WHERE user_id = $1
+        AND TO_CHAR(entry_date, 'YYYY-MM') = $2
+      ORDER BY entry_date ASC, id ASC
+    `,
+    [userId, month],
+  );
+
+  return rows;
+}
+
 export async function createTask(input: NewTask) {
   await ensureInitialized();
 
@@ -197,6 +217,25 @@ export async function getDailyCheckInsByUserAndDate(userId: number, date: string
       ORDER BY created_at ASC, id ASC
     `,
     [userId, date],
+  );
+
+  return rows;
+}
+
+export async function getDailyCheckInsByUserMonth(userId: number, month: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<DailyCheckIn>(
+    `
+      SELECT id, user_id,
+             TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+             mood, energy, focus, note, created_at
+      FROM daily_check_ins
+      WHERE user_id = $1
+        AND TO_CHAR(entry_date, 'YYYY-MM') = $2
+      ORDER BY entry_date ASC, created_at ASC, id ASC
+    `,
+    [userId, month],
   );
 
   return rows;
@@ -431,6 +470,33 @@ export async function getTaskCompletionStatsForMonth(userId: number, month: stri
         AND TO_CHAR(scheduled_date, 'YYYY-MM') = $2
       GROUP BY scheduled_date
       ORDER BY scheduled_date ASC
+    `,
+    [userId, month],
+  );
+
+  return rows;
+}
+
+export async function getTasksByUserMonth(userId: number, month: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND TO_CHAR(scheduled_date, 'YYYY-MM') = $2
+      ORDER BY scheduled_date ASC,
+        CASE priority
+          WHEN 'high' THEN 1
+          WHEN 'medium' THEN 2
+          ELSE 3
+        END,
+        created_at ASC,
+        id ASC
     `,
     [userId, month],
   );

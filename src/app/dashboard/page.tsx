@@ -10,6 +10,7 @@ import {
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getBookIdeasByUser,
   getThoughtActivityByUserMonth,
   getThoughtByIdForUser,
   getThoughtsByUser,
@@ -155,6 +156,9 @@ export default async function DashboardPage({
   const monthlyActivity = databaseAvailable
     ? await getThoughtActivityByUserMonth(currentUser.id, activeMonth)
     : [];
+  const bookIdeas = databaseAvailable
+    ? await getBookIdeasByUser(currentUser.id)
+    : [];
   const activityByDate = new Map(
     monthlyActivity.map((day) => [
       day.date,
@@ -202,6 +206,24 @@ export default async function DashboardPage({
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
                 Today View
+              </Link>
+              <Link
+                href="/dashboard/tasks"
+                className="rounded-full border border-blue-950/10 px-4 py-3 text-center text-blue-950 transition-colors hover:bg-blue-50"
+              >
+                Task Management
+              </Link>
+              <Link
+                href="/dashboard/completion"
+                className="rounded-full border border-purple-950/10 px-4 py-3 text-center text-purple-950 transition-colors hover:bg-purple-50"
+              >
+                Completion Stats
+              </Link>
+              <Link
+                href="/dashboard/insights"
+                className="rounded-full border border-amber-950/10 px-4 py-3 text-center text-amber-950 transition-colors hover:bg-amber-50"
+              >
+                Insight Library
               </Link>
               <Link
                 href="/"
@@ -482,6 +504,45 @@ export default async function DashboardPage({
                   </span>
                 </label>
 
+                <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
+                  <label className="grid gap-2 text-sm text-stone-700">
+                    <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                      Concept tags
+                    </span>
+                    <input
+                      type="text"
+                      name="conceptTags"
+                      defaultValue={editingThought?.concept_tags.join(", ") ?? ""}
+                      placeholder="stoicism, ego, delayed gratification"
+                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                    />
+                    <span className="text-xs leading-6 text-stone-500">
+                      Optional idea-level tags for pattern tracking across your journal.
+                    </span>
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-stone-700">
+                    <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                      Linked idea
+                    </span>
+                    <select
+                      name="bookIdeaId"
+                      defaultValue={editingThought?.linked_book_idea_id ? String(editingThought.linked_book_idea_id) : ""}
+                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                    >
+                      <option value="">No linked source idea</option>
+                      {bookIdeas.map((idea) => (
+                        <option key={idea.id} value={idea.id}>
+                          {idea.book_title} - {idea.idea_text}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs leading-6 text-stone-500">
+                      Link the thought to an idea from your library when you notice it in real life.
+                    </span>
+                  </label>
+                </div>
+
                 <label className="grid gap-2 text-sm text-stone-700">
                   <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                     Card summary
@@ -495,6 +556,22 @@ export default async function DashboardPage({
                   />
                   <span className="text-xs leading-6 text-stone-500">
                     Keep this short so your cards stay easy to scan in the archive.
+                  </span>
+                </label>
+
+                <label className="grid gap-2 text-sm text-stone-700">
+                  <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                    Insight reflection
+                  </span>
+                  <textarea
+                    name="insightReflection"
+                    rows={3}
+                    defaultValue={editingThought?.insight_reflection ?? ""}
+                    placeholder="How did this idea show up today?"
+                    className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                  />
+                  <span className="text-xs leading-6 text-stone-500">
+                    Optional evidence note for how the linked idea appeared in the day.
                   </span>
                 </label>
 
@@ -600,6 +677,49 @@ export default async function DashboardPage({
               </div>
             </form>
 
+            <form
+              action="/api/reports/monthly"
+              method="get"
+              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
+            >
+              <div className="mb-6">
+                <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                  Monthly export
+                </p>
+                <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
+                  Download the full month
+                </h2>
+              </div>
+              <div className="flex flex-col gap-5">
+                <p className="text-sm leading-7 text-stone-700">
+                  Export every individual thought, task, check-in, and day note for a month in one
+                  JSON file, with each item keeping its own timestamp.
+                </p>
+
+                <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+                  <div className="grid flex-1 gap-2 text-sm text-stone-700">
+                    <span className="uppercase tracking-[0.18em] text-emerald-800/70">
+                      Download monthly report
+                    </span>
+                    <input
+                      type="month"
+                      name="month"
+                      defaultValue={activeMonth}
+                      required
+                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!databaseAvailable}
+                    className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                  >
+                    Download Month JSON
+                  </button>
+                </div>
+              </div>
+            </form>
+
             <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                 Summary
@@ -678,6 +798,33 @@ export default async function DashboardPage({
                       ))
                     )}
                   </div>
+                  {(thought.concept_tags.length > 0 || thought.linked_idea_text || thought.insight_reflection) ? (
+                    <div className="mt-4 rounded-2xl border border-amber-900/10 bg-amber-50/80 p-4">
+                      {thought.concept_tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {thought.concept_tags.map((tag) => (
+                            <span
+                              key={`${thought.id}-concept-${tag}`}
+                              className="rounded-full border border-amber-900/10 bg-white/75 px-3 py-1 text-xs uppercase tracking-[0.14em] text-amber-900"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {thought.linked_idea_text ? (
+                        <p className="mt-3 text-xs uppercase tracking-[0.16em] text-amber-900/75">
+                          {thought.linked_book_title ? `${thought.linked_book_title} - ` : ""}
+                          {thought.linked_idea_text}
+                        </p>
+                      ) : null}
+                      {thought.insight_reflection ? (
+                        <p className="mt-3 text-sm leading-7 text-stone-700">
+                          {thought.insight_reflection}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <p className="mt-6 text-xs uppercase tracking-[0.2em] text-stone-400">
                     {toColomboDate(thought.created_at)}
                   </p>

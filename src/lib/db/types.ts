@@ -4,11 +4,40 @@ export type Thought = {
   category: string;
   mood: number;
   tags: string[];
+  concept_tags: string[];
   summary: string;
   body: string;
+  linked_book_idea_id: number | null;
+  linked_book_title: string | null;
+  linked_idea_text: string | null;
+  insight_reflection: string | null;
   user_id: number | null;
   created_at: Date;
   updated_at: Date;
+};
+
+export type BookSourceType = "book" | "article" | "podcast" | "principle";
+export type BookIdeaStatus = "understood" | "noticed" | "applied" | "internalized";
+
+export type Book = {
+  id: number;
+  user_id: number;
+  title: string;
+  author: string;
+  source_type: BookSourceType;
+  added_at: Date;
+};
+
+export type BookIdea = {
+  id: number;
+  book_id: number;
+  idea_text: string;
+  status: BookIdeaStatus;
+  created_at: Date;
+  updated_at: Date;
+  book_title: string;
+  book_author: string;
+  source_type: BookSourceType;
 };
 
 export type User = {
@@ -24,8 +53,11 @@ export type NewThought = {
   category: string;
   mood: number;
   tags: string[];
+  conceptTags: string[];
   summary: string;
   body: string;
+  linkedBookIdeaId: number | null;
+  insightReflection: string;
   userId: number;
 };
 
@@ -35,8 +67,11 @@ export type UpdateThought = {
   category: string;
   mood: number;
   tags: string[];
+  conceptTags: string[];
   summary: string;
   body: string;
+  linkedBookIdeaId: number | null;
+  insightReflection: string;
   userId: number;
 };
 
@@ -49,6 +84,19 @@ export type NewUser = {
   name: string;
   email: string;
   passwordHash: string;
+};
+
+export type NewBook = {
+  title: string;
+  author: string;
+  sourceType: BookSourceType;
+  userId: number;
+};
+
+export type NewBookIdea = {
+  bookId: number;
+  ideaText: string;
+  status: BookIdeaStatus;
 };
 
 export type ThoughtsResult = {

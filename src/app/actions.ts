@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 import {
+  BookIdeaStatus,
   CheckInEnergy,
   CheckInFocus,
+  createBook,
+  createBookIdea,
   createDailyCheckIn,
   createRecurringTask,
   createTask,
@@ -19,6 +22,7 @@ import {
   moveOpenTasksToDate,
   TaskPriority,
   TaskStatus,
+  updateBookIdeaStatus,
   updateRecurringTask,
   updateTaskStatus,
   updateThought,
@@ -45,6 +49,36 @@ function parseTags(value: FormDataEntryValue | null) {
         .filter(Boolean),
     ),
   ).slice(0, 8);
+}
+
+function parseSourceType(value: FormDataEntryValue | null) {
+  const sourceType = value?.toString() ?? "";
+
+  if (
+    sourceType === "book" ||
+    sourceType === "article" ||
+    sourceType === "podcast" ||
+    sourceType === "principle"
+  ) {
+    return sourceType;
+  }
+
+  return null;
+}
+
+function parseIdeaStatus(value: FormDataEntryValue | null): BookIdeaStatus | null {
+  const status = value?.toString() ?? "";
+
+  if (
+    status === "understood" ||
+    status === "noticed" ||
+    status === "applied" ||
+    status === "internalized"
+  ) {
+    return status;
+  }
+
+  return null;
 }
 
 function parseTaskPriority(value: FormDataEntryValue | null): TaskPriority | null {
@@ -127,8 +161,15 @@ export async function createThoughtAction(formData: FormData) {
   const category = formData.get("category")?.toString().trim() ?? "";
   const mood = parseMood(formData.get("mood"));
   const tags = parseTags(formData.get("tags"));
+  const conceptTags = parseTags(formData.get("conceptTags"));
   const summary = formData.get("summary")?.toString().trim() ?? "";
   const body = formData.get("body")?.toString().trim() ?? "";
+  const linkedBookIdeaIdValue = Number(formData.get("bookIdeaId"));
+  const linkedBookIdeaId =
+    Number.isInteger(linkedBookIdeaIdValue) && linkedBookIdeaIdValue > 0
+      ? linkedBookIdeaIdValue
+      : null;
+  const insightReflection = formData.get("insightReflection")?.toString().trim() ?? "";
 
   if (!title || !category || !mood || !summary) {
     redirect("/dashboard?toast=invalid_entry&type=error");
@@ -140,8 +181,11 @@ export async function createThoughtAction(formData: FormData) {
       category,
       mood,
       tags,
+      conceptTags,
       summary,
       body,
+      linkedBookIdeaId,
+      insightReflection,
       userId: currentUser.id,
     });
   } catch {
@@ -165,8 +209,15 @@ export async function updateThoughtAction(formData: FormData) {
   const category = formData.get("category")?.toString().trim() ?? "";
   const mood = parseMood(formData.get("mood"));
   const tags = parseTags(formData.get("tags"));
+  const conceptTags = parseTags(formData.get("conceptTags"));
   const summary = formData.get("summary")?.toString().trim() ?? "";
   const body = formData.get("body")?.toString().trim() ?? "";
+  const linkedBookIdeaIdValue = Number(formData.get("bookIdeaId"));
+  const linkedBookIdeaId =
+    Number.isInteger(linkedBookIdeaIdValue) && linkedBookIdeaIdValue > 0
+      ? linkedBookIdeaIdValue
+      : null;
+  const insightReflection = formData.get("insightReflection")?.toString().trim() ?? "";
 
   if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !mood || !summary) {
     redirect("/dashboard?toast=update_failed&type=error");
@@ -179,8 +230,11 @@ export async function updateThoughtAction(formData: FormData) {
       category,
       mood,
       tags,
+      conceptTags,
       summary,
       body,
+      linkedBookIdeaId,
+      insightReflection,
       userId: currentUser.id,
     });
 
@@ -609,4 +663,99 @@ export async function applyRecurringTasksAction(formData: FormData) {
   } catch {
     redirect(`/dashboard/today?date=${date}&toast=apply_failed&type=error`);
   }
+}
+
+export async function createBookAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const title = formData.get("title")?.toString().trim() ?? "";
+  const author = formData.get("author")?.toString().trim() ?? "";
+  const sourceType = parseSourceType(formData.get("sourceType"));
+
+  if (!title || !sourceType) {
+    redirect("/dashboard/insights?toast=book_invalid&type=error");
+  }
+
+  try {
+    await createBook({
+      title,
+      author,
+      sourceType,
+      userId: currentUser.id,
+    });
+  } catch {
+    redirect("/dashboard/insights?toast=book_failed&type=error");
+  }
+
+  revalidatePath("/dashboard/insights");
+  redirect("/dashboard/insights?toast=book_created&type=success");
+}
+
+export async function createBookIdeaAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const bookId = Number(formData.get("bookId"));
+  const ideaText = formData.get("ideaText")?.toString().trim() ?? "";
+  const status = parseIdeaStatus(formData.get("status"));
+
+  if (!Number.isInteger(bookId) || bookId <= 0 || !ideaText || !status) {
+    redirect("/dashboard/insights?toast=idea_invalid&type=error");
+  }
+
+  try {
+    const created = await createBookIdea(
+      {
+        bookId,
+        ideaText,
+        status,
+      },
+      currentUser.id,
+    );
+
+    if (!created) {
+      redirect("/dashboard/insights?toast=idea_invalid&type=error");
+    }
+  } catch {
+    redirect("/dashboard/insights?toast=idea_failed&type=error");
+  }
+
+  revalidatePath("/dashboard/insights");
+  redirect("/dashboard/insights?toast=idea_created&type=success");
+}
+
+export async function updateBookIdeaStatusAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const bookIdeaId = Number(formData.get("bookIdeaId"));
+  const status = parseIdeaStatus(formData.get("status"));
+
+  if (!Number.isInteger(bookIdeaId) || bookIdeaId <= 0 || !status) {
+    redirect("/dashboard/insights?toast=idea_update_failed&type=error");
+  }
+
+  try {
+    const updated = await updateBookIdeaStatus(bookIdeaId, status, currentUser.id);
+
+    if (!updated) {
+      redirect("/dashboard/insights?toast=idea_update_failed&type=error");
+    }
+  } catch {
+    redirect("/dashboard/insights?toast=idea_update_failed&type=error");
+  }
+
+  revalidatePath("/dashboard/insights");
+  revalidatePath("/dashboard");
+  redirect("/dashboard/insights?toast=idea_updated&type=success");
 }

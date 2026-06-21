@@ -206,6 +206,74 @@ export async function ensureInitialized() {
         WHERE recurring_task_id IS NOT NULL
       `);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS books (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          author TEXT NOT NULL DEFAULT '',
+          source_type TEXT NOT NULL DEFAULT 'book',
+          added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (source_type IN ('book', 'article', 'podcast', 'principle'))
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS books_user_added_idx
+        ON books (user_id, added_at DESC)
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS book_ideas (
+          id BIGSERIAL PRIMARY KEY,
+          book_id BIGINT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+          idea_text TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'understood',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (status IN ('understood', 'noticed', 'applied', 'internalized'))
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS book_ideas_book_created_idx
+        ON book_ideas (book_id, created_at DESC)
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS concept_tags (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (user_id, name)
+        )
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS thought_concept_tags (
+          thought_id BIGINT NOT NULL REFERENCES thoughts(id) ON DELETE CASCADE,
+          concept_tag_id BIGINT NOT NULL REFERENCES concept_tags(id) ON DELETE CASCADE,
+          PRIMARY KEY (thought_id, concept_tag_id)
+        )
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS insight_logs (
+          id BIGSERIAL PRIMARY KEY,
+          thought_id BIGINT NOT NULL UNIQUE REFERENCES thoughts(id) ON DELETE CASCADE,
+          book_idea_id BIGINT REFERENCES book_ideas(id) ON DELETE SET NULL,
+          reflection TEXT NOT NULL DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS insight_logs_book_idea_idx
+        ON insight_logs (book_idea_id, created_at DESC)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );
