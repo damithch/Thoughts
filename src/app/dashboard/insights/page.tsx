@@ -299,8 +299,8 @@ export default async function InsightsPage({ searchParams }: InsightsPageProps) 
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                           <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                            {idea.source_type} · {idea.book_title}
-                            {idea.book_author ? ` · ${idea.book_author}` : ""}
+                            {idea.source_type} - {idea.book_title}
+                            {idea.book_author ? ` - ${idea.book_author}` : ""}
                           </p>
                           <p className="mt-3 text-sm leading-7 text-stone-800">{idea.idea_text}</p>
                         </div>

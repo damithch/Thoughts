@@ -135,7 +135,7 @@ export async function getThoughts(): Promise<ThoughtsResult> {
       `
         ${thoughtSelect}
         GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
-        ORDER BY created_at DESC, id DESC
+        ORDER BY t.created_at DESC, t.id DESC
         LIMIT 12
       `,
     );
@@ -185,9 +185,9 @@ export async function getThoughtsByUser(userId: number) {
   const { rows } = await pool.query<Thought>(
       `
         ${thoughtSelect}
-      WHERE user_id = $1
+      WHERE t.user_id = $1
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
-      ORDER BY created_at DESC, id DESC
+      ORDER BY t.created_at DESC, t.id DESC
       LIMIT 24
     `,
     [userId],
@@ -202,8 +202,8 @@ export async function getThoughtByIdForUser(thoughtId: number, userId: number) {
   const { rows } = await pool.query<Thought>(
       `
         ${thoughtSelect}
-      WHERE id = $1
-        AND user_id = $2
+      WHERE t.id = $1
+        AND t.user_id = $2
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
       LIMIT 1
     `,
@@ -219,10 +219,10 @@ export async function getThoughtsByUserAndDate(userId: number, date: string) {
   const { rows } = await pool.query<Thought>(
       `
         ${thoughtSelect}
-      WHERE user_id = $1
-        AND (created_at AT TIME ZONE 'Asia/Colombo')::date = $2::date
+      WHERE t.user_id = $1
+        AND (t.created_at AT TIME ZONE 'Asia/Colombo')::date = $2::date
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
-      ORDER BY created_at ASC, id ASC
+      ORDER BY t.created_at ASC, t.id ASC
     `,
     [userId, date],
   );
@@ -256,10 +256,10 @@ export async function getThoughtsByUserMonth(userId: number, month: string) {
   const { rows } = await pool.query<Thought>(
       `
         ${thoughtSelect}
-      WHERE user_id = $1
-        AND TO_CHAR(created_at AT TIME ZONE 'Asia/Colombo', 'YYYY-MM') = $2
+      WHERE t.user_id = $1
+        AND TO_CHAR(t.created_at AT TIME ZONE 'Asia/Colombo', 'YYYY-MM') = $2
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
-      ORDER BY created_at ASC, id ASC
+      ORDER BY t.created_at ASC, t.id ASC
     `,
     [userId, month],
   );
