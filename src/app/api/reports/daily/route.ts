@@ -178,6 +178,7 @@ export async function GET(request: Request) {
             return {
               id: task.id,
               user_id: task.user_id,
+              recurring_task_id: task.recurring_task_id,
               title: task.title,
               status: task.status,
               priority: task.priority,
@@ -311,6 +312,7 @@ export async function GET(request: Request) {
       [
         "id",
         "user_id",
+        "recurring_task_id",
         "title",
         "status",
         "priority",
@@ -329,6 +331,7 @@ export async function GET(request: Request) {
         return [
           String(task.id),
           String(task.user_id),
+          String(task.recurring_task_id ?? ""),
           escapeCsv(task.title),
           escapeCsv(task.status),
           escapeCsv(task.priority),

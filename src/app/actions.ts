@@ -8,14 +8,18 @@ import {
   CheckInEnergy,
   CheckInFocus,
   createDailyCheckIn,
+  createRecurringTask,
   createTask,
   createThought,
   createUser,
+  deleteRecurringTask,
   deleteThought,
+  generateDailyTasksFromRecurring,
   getUserByEmail,
   moveOpenTasksToDate,
   TaskPriority,
   TaskStatus,
+  updateRecurringTask,
   updateTaskStatus,
   updateThought,
   upsertDayRecord,
@@ -87,6 +91,29 @@ function parseDate(value: FormDataEntryValue | null) {
   const date = value?.toString() ?? "";
 
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
+
+function parseOptionalDate(value: FormDataEntryValue | null) {
+  const date = value?.toString().trim() ?? "";
+
+  if (!date) {
+    return null;
+  }
+
+  return parseDate(date);
+}
+
+function parseDaysOfWeek(formData: FormData) {
+  const allowedDays = new Set(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+
+  return Array.from(
+    new Set(
+      formData
+        .getAll("daysOfWeek")
+        .map((value) => value.toString())
+        .filter((value) => allowedDays.has(value)),
+    ),
+  );
 }
 
 export async function createThoughtAction(formData: FormData) {
@@ -436,4 +463,150 @@ export async function createDailyCheckInAction(formData: FormData) {
 
   revalidatePath("/dashboard/today");
   redirect(`/dashboard/today?date=${date}&toast=checkin_saved&type=success`);
+}
+
+export async function createRecurringTaskAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const title = formData.get("title")?.toString().trim() ?? "";
+  const priority = parseTaskPriority(formData.get("priority"));
+  const tags = parseTags(formData.get("tags"));
+  const note = formData.get("note")?.toString().trim() ?? "";
+  const daysOfWeek = parseDaysOfWeek(formData);
+  const startDate = parseDate(formData.get("startDate"));
+  const endDate = parseOptionalDate(formData.get("endDate"));
+
+  if (!title || !priority || daysOfWeek.length === 0 || !startDate || (endDate && endDate < startDate)) {
+    redirect("/dashboard/tasks?toast=recurring_invalid&type=error");
+  }
+
+  try {
+    await createRecurringTask({
+      title,
+      priority,
+      tags,
+      note,
+      daysOfWeek,
+      startDate,
+      endDate,
+      userId: currentUser.id,
+    });
+  } catch {
+    redirect("/dashboard/tasks?toast=recurring_save_failed&type=error");
+  }
+
+  revalidatePath("/dashboard/tasks");
+  redirect("/dashboard/tasks?toast=recurring_created&type=success");
+}
+
+export async function updateRecurringTaskAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const taskId = Number(formData.get("taskId"));
+  const title = formData.get("title")?.toString().trim() ?? "";
+  const priority = parseTaskPriority(formData.get("priority"));
+  const tags = parseTags(formData.get("tags"));
+  const note = formData.get("note")?.toString().trim() ?? "";
+  const isActive = formData.get("isActive") === "on";
+  const daysOfWeek = parseDaysOfWeek(formData);
+  const startDate = parseDate(formData.get("startDate"));
+  const endDate = parseOptionalDate(formData.get("endDate"));
+
+  if (
+    !Number.isInteger(taskId) ||
+    taskId <= 0 ||
+    !title ||
+    !priority ||
+    daysOfWeek.length === 0 ||
+    !startDate ||
+    (endDate && endDate < startDate)
+  ) {
+    redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
+  }
+
+  try {
+    const updated = await updateRecurringTask({
+      id: taskId,
+      title,
+      priority,
+      tags,
+      note,
+      isActive,
+      daysOfWeek,
+      startDate,
+      endDate,
+      userId: currentUser.id,
+    });
+
+    if (!updated) {
+      redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
+    }
+  } catch {
+    redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
+  }
+
+  revalidatePath("/dashboard/tasks");
+  redirect("/dashboard/tasks?toast=recurring_updated&type=success");
+}
+
+export async function deleteRecurringTaskAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const taskId = Number(formData.get("taskId"));
+
+  if (!Number.isInteger(taskId) || taskId <= 0) {
+    redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
+  }
+
+  try {
+    const deleted = await deleteRecurringTask(taskId, currentUser.id);
+
+    if (!deleted) {
+      redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
+    }
+  } catch {
+    redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
+  }
+
+  revalidatePath("/dashboard/tasks");
+  redirect("/dashboard/tasks?toast=recurring_deleted&type=success");
+}
+
+export async function applyRecurringTasksAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const date = parseDate(formData.get("date"));
+
+  if (!date) {
+    redirect("/dashboard/today?toast=apply_failed&type=error");
+  }
+
+  try {
+    const count = await generateDailyTasksFromRecurring(currentUser.id, date);
+
+    if (count === 0) {
+      redirect(`/dashboard/today?date=${date}&toast=apply_empty&type=info`);
+    }
+
+    revalidatePath("/dashboard/today");
+    redirect(`/dashboard/today?date=${date}&toast=recurring_applied&type=success`);
+  } catch {
+    redirect(`/dashboard/today?date=${date}&toast=apply_failed&type=error`);
+  }
 }

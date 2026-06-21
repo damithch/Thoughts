@@ -12,6 +12,7 @@ import {
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  generateDailyTasksFromRecurring,
   getDailyCheckInsByUserAndDate,
   getDayRecordByUserAndDate,
   getOpenTaskCountBeforeDate,
@@ -304,6 +305,12 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
   const nextDate = shiftColomboDate(activeDate, 1);
   const toastMessage = params?.toast ? todayToastMessages[params.toast] : undefined;
 
+  try {
+    await generateDailyTasksFromRecurring(currentUser.id, activeDate);
+  } catch (error) {
+    console.error("Failed to auto-generate recurring tasks for the viewed date.", error);
+  }
+
   const [tasks, dayRecord, overdueCount, checkIns] = await Promise.all([
     getTasksByUserAndDate(currentUser.id, activeDate),
     getDayRecordByUserAndDate(currentUser.id, activeDate),
@@ -351,6 +358,18 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
                 Journal Dashboard
+              </Link>
+              <Link
+                href="/dashboard/tasks"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
+              >
+                Task Management
+              </Link>
+              <Link
+                href="/dashboard/completion"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
+              >
+                Completion Stats
               </Link>
               <Link
                 href="/"
@@ -774,7 +793,7 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
           </form>
 
           <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-col gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                   Day controls
@@ -783,15 +802,17 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                   Keep the day moving
                 </h2>
               </div>
-              <form action={rolloverTasksAction}>
-                <input type="hidden" name="date" value={activeDate} />
-                <button
-                  type="submit"
-                  className="rounded-full border border-emerald-950/10 bg-white/75 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
-                >
-                  Move unfinished to tomorrow
-                </button>
-              </form>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <form action={rolloverTasksAction} className="flex-1">
+                  <input type="hidden" name="date" value={activeDate} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-full border border-emerald-950/10 bg-white/75 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                  >
+                    Move unfinished to tomorrow
+                  </button>
+                </form>
+              </div>
             </div>
 
             <div className="mt-6 rounded-[1.6rem] border border-emerald-950/10 bg-[linear-gradient(180deg,rgba(243,250,243,0.95)_0%,rgba(232,245,233,0.82)_100%)] p-4 sm:p-5">
@@ -801,8 +822,8 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                     Export snapshot
                   </p>
                   <p className="mt-2 text-sm leading-7 text-stone-700">
-                    Download this date with tasks, progress totals, the saved day note, and the
-                    day thought summary in one payload.
+                    Recurring tasks are generated automatically for this date. Download the final
+                    task list, progress totals, day note, and thought summary in one payload.
                   </p>
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">
