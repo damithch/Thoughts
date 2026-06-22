@@ -415,19 +415,19 @@ export default async function DashboardPage({
           <div className="grid gap-6">
             <form
               action={editingThought ? updateThoughtAction : createThoughtAction}
-              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
+              className="rounded-[1.5rem] border border-emerald-950/10 bg-white/75 p-4 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
             >
-              <div className="mb-5 flex items-start justify-between gap-4 sm:mb-6">
+              <div className="mb-4 flex items-start justify-between gap-3 sm:mb-6 sm:gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                     {editingThought ? "Edit thought" : "New thought"}
                   </p>
-                  <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
+                  <h2 className="mt-2 font-[family:var(--font-display)] text-[1.75rem] leading-none text-stone-900 sm:text-3xl">
                     {editingThought ? "Refine your card" : "Capture a new card"}
                   </h2>
                 </div>
               </div>
-              <div className="grid gap-5">
+              <div className="grid gap-4 sm:gap-5">
                 {editingThought ? (
                   <input type="hidden" name="thoughtId" value={editingThought.id} />
                 ) : null}
@@ -444,7 +444,7 @@ export default async function DashboardPage({
                   />
                 </label>
 
-                <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr]">
+                <div className="grid gap-4 sm:gap-5 md:grid-cols-[1.1fr_0.9fr]">
                   <label className="grid gap-2 text-sm text-stone-700">
                     <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                       Category
@@ -504,7 +504,7 @@ export default async function DashboardPage({
                   </span>
                 </label>
 
-                <div className="grid gap-5 md:grid-cols-[1fr_1fr]">
+                <div className="grid gap-4 sm:gap-5 md:grid-cols-[1fr_1fr]">
                   <label className="grid gap-2 text-sm text-stone-700">
                     <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                       Concept tags
@@ -516,19 +516,19 @@ export default async function DashboardPage({
                       placeholder="stoicism, ego, delayed gratification"
                       className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                     />
-                    <span className="text-xs leading-6 text-stone-500">
+                    <span className="text-xs leading-5 text-stone-500">
                       Optional idea-level tags for pattern tracking across your journal.
                     </span>
                   </label>
 
-                  <label className="grid gap-2 text-sm text-stone-700">
+                  <label className="grid min-w-0 gap-2 text-sm text-stone-700">
                     <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                       Linked idea
                     </span>
                     <select
                       name="bookIdeaId"
                       defaultValue={editingThought?.linked_book_idea_id ? String(editingThought.linked_book_idea_id) : ""}
-                      className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+                      className="min-w-0 rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                     >
                       <option value="">No linked source idea</option>
                       {bookIdeas.map((idea) => (
@@ -537,7 +537,7 @@ export default async function DashboardPage({
                         </option>
                       ))}
                     </select>
-                    <span className="text-xs leading-6 text-stone-500">
+                    <span className="text-xs leading-5 text-stone-500">
                       Link the thought to an idea from your library when you notice it in real life.
                     </span>
                   </label>
@@ -554,10 +554,10 @@ export default async function DashboardPage({
                     required
                     className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                   />
-                  <span className="text-xs leading-6 text-stone-500">
-                    Keep this short so your cards stay easy to scan in the archive.
-                  </span>
-                </label>
+                    <span className="text-xs leading-5 text-stone-500">
+                      Keep this short so your cards stay easy to scan in the archive.
+                    </span>
+                  </label>
 
                 <label className="grid gap-2 text-sm text-stone-700">
                   <span className="uppercase tracking-[0.18em] text-emerald-800/70">
@@ -570,10 +570,10 @@ export default async function DashboardPage({
                     placeholder="How did this idea show up today?"
                     className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                   />
-                  <span className="text-xs leading-6 text-stone-500">
-                    Optional evidence note for how the linked idea appeared in the day.
-                  </span>
-                </label>
+                    <span className="text-xs leading-5 text-stone-500">
+                      Optional evidence note for how the linked idea appeared in the day.
+                    </span>
+                  </label>
 
                 <label className="grid gap-2 text-sm text-stone-700">
                   <span className="uppercase tracking-[0.18em] text-emerald-800/70">
@@ -585,10 +585,10 @@ export default async function DashboardPage({
                     defaultValue={editingThought?.body ?? ""}
                     className="resize-y rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
                   />
-                  <span className="text-xs leading-6 text-stone-500">
-                    Optional deeper reflection. This stays attached to the card without cluttering the archive view.
-                  </span>
-                </label>
+                    <span className="text-xs leading-5 text-stone-500">
+                      Optional deeper reflection. This stays attached to the card without cluttering the archive view.
+                    </span>
+                  </label>
 
                 <div className="flex flex-col gap-4 pt-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
