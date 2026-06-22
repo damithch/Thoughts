@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#123524" />
+    <title>Thoughts Offline</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg-top: #eef8ee;
+        --bg-bottom: #c9dfc6;
+        --panel: rgba(255, 255, 255, 0.72);
+        --text: #1d3120;
+        --muted: #4f6652;
+        --accent: #123524;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: linear-gradient(180deg, var(--bg-top) 0%, #dbeed9 52%, var(--bg-bottom) 100%);
+        color: var(--text);
+        font-family: "Segoe UI", "Trebuchet MS", Verdana, sans-serif;
+      }
+
+      main {
+        width: min(100%, 560px);
+        border: 1px solid rgba(18, 53, 36, 0.12);
+        border-radius: 32px;
+        padding: 32px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 24px 80px rgba(48, 84, 53, 0.12);
+      }
+
+      h1 {
+        margin: 0;
+        font: 400 clamp(2rem, 7vw, 4rem) / 0.95 Georgia, "Times New Roman", serif;
+      }
+
+      p {
+        margin: 18px 0 0;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        margin-top: 24px;
+        padding: 0 22px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #eef8ee;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-decoration: none;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>You’re offline.</h1>
+      <p>
+        Thoughts is installed and its static files are available, but your journal data still
+        comes from the server. Reconnect to load your dashboard, tasks, and reports.
+      </p>
+      <a href="/">Try again</a>
+    </main>
+  </body>
+</html>
