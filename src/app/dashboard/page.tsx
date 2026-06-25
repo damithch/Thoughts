@@ -226,6 +226,12 @@ export default async function DashboardPage({
                 Insight Library
               </Link>
               <Link
+                href="/dashboard/activation"
+                className="rounded-full border border-stone-900/10 px-4 py-3 text-center text-stone-900 transition-colors hover:bg-stone-50"
+              >
+                BA Worksheet
+              </Link>
+              <Link
                 href="/"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >

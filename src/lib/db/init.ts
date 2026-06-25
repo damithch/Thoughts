@@ -274,6 +274,36 @@ export async function ensureInitialized() {
         ON insight_logs (book_idea_id, created_at DESC)
       `);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS behavioural_activation_entries (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          activity TEXT NOT NULL DEFAULT '',
+          entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
+          before_depression INTEGER,
+          before_pleasure INTEGER,
+          before_achievement INTEGER,
+          after_depression INTEGER,
+          after_pleasure INTEGER,
+          after_achievement INTEGER,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (before_depression IS NULL OR (before_depression >= 0 AND before_depression <= 8)),
+          CHECK (before_pleasure IS NULL OR (before_pleasure >= 0 AND before_pleasure <= 8)),
+          CHECK (before_achievement IS NULL OR (before_achievement >= 0 AND before_achievement <= 8)),
+          CHECK (after_depression IS NULL OR (after_depression >= 0 AND after_depression <= 8)),
+          CHECK (after_pleasure IS NULL OR (after_pleasure >= 0 AND after_pleasure <= 8)),
+          CHECK (after_achievement IS NULL OR (after_achievement >= 0 AND after_achievement <= 8)),
+          CHECK (status IN ('pending', 'completed'))
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS behavioural_activation_entries_user_date_idx
+        ON behavioural_activation_entries (user_id, entry_date ASC, created_at ASC)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );

@@ -231,3 +231,21 @@ export type NewDailyCheckIn = {
   note: string;
   userId: number;
 };
+
+export type BehaviouralActivationStatus = "pending" | "completed";
+
+export type BehaviouralActivationEntry = {
+  id: number;
+  user_id: number;
+  activity: string;
+  entry_date: string;
+  before_depression: number | null;
+  before_pleasure: number | null;
+  before_achievement: number | null;
+  after_depression: number | null;
+  after_pleasure: number | null;
+  after_achievement: number | null;
+  status: BehaviouralActivationStatus;
+  created_at: Date;
+  updated_at: Date;
+};
