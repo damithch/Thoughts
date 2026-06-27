@@ -11,6 +11,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { getRecurringTasksByUser, type RecurringTask } from "@/lib/db";
 import { getCurrentColomboDate } from "@/lib/time";
 
+export const dynamic = "force-dynamic";
+
 type TasksPageProps = {
   searchParams?: Promise<{
     toast?: string;

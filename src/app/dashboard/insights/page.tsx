@@ -11,6 +11,8 @@ import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import { getBookIdeasByUser, getBooksByUser, type BookIdeaStatus } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 type InsightsPageProps = {
   searchParams?: Promise<{
     toast?: string;

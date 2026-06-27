@@ -6,6 +6,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { getCurrentColomboDate } from "@/lib/time";
 import { ActivationWorksheetClient } from "@/app/dashboard/activation/worksheet-client";
 
+export const dynamic = "force-dynamic";
+
 const ratingScale = [
   { value: 0, label: "Absolutely None" },
   { value: 1, label: "Minimal" },

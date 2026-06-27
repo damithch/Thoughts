@@ -21,6 +21,15 @@ type SessionPayload = {
   expiresAt: number;
 };
 
+function isDynamicServerUsageError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    error.digest === "DYNAMIC_SERVER_USAGE"
+  );
+}
+
 function hashText(value: string, salt: string) {
   return scryptSync(value, salt, 64).toString("hex");
 }
@@ -137,7 +146,9 @@ export async function getCurrentUser() {
 
     return getUserById(payload.userId);
   } catch (error) {
-    console.error("Failed to resolve the current session.", error);
+    if (!isDynamicServerUsageError(error)) {
+      console.error("Failed to resolve the current session.", error);
+    }
     return null;
   }
 }
