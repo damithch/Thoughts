@@ -14,6 +14,7 @@ import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 
 const MCP_API_KEY_HEADER = "x-api-key";
+const MCP_API_KEY_QUERY_PARAM = "api_key";
 const MCP_JSON_RPC_VERSION = "2.0";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "thoughts-mcp";
@@ -526,10 +527,16 @@ function isAuthorized(request: Request) {
     return { ok: false, reason: "MCP_API_KEY is not configured." };
   }
 
-  const providedApiKey = request.headers.get(MCP_API_KEY_HEADER);
+  const requestUrl = new URL(request.url);
+  const providedApiKey =
+    request.headers.get(MCP_API_KEY_HEADER) ??
+    requestUrl.searchParams.get(MCP_API_KEY_QUERY_PARAM);
 
   if (!providedApiKey || providedApiKey !== expectedApiKey) {
-    return { ok: false, reason: `Missing or invalid ${MCP_API_KEY_HEADER} header.` };
+    return {
+      ok: false,
+      reason: `Missing or invalid ${MCP_API_KEY_HEADER} header or ${MCP_API_KEY_QUERY_PARAM} query parameter.`,
+    };
   }
 
   return { ok: true as const };
@@ -618,6 +625,7 @@ export async function GET(request: Request) {
     endpoint: new URL("/api/mcp", request.url).toString(),
     auth: {
       header: MCP_API_KEY_HEADER,
+      queryParam: MCP_API_KEY_QUERY_PARAM,
     },
     tools: TOOL_DEFINITIONS,
     env: ["MCP_API_KEY", "MCP_USER_ID", "DATABASE_URL"],
