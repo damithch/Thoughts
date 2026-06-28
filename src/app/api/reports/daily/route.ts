@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getConversationSummariesByUserAndDate,
   getDailyCheckInsByUserAndDate,
   getDayRecordByUserAndDate,
   getTasksByUserAndDate,
@@ -12,6 +13,7 @@ import { toColomboExportParts } from "@/lib/time";
 type DailyThought = Awaited<ReturnType<typeof getThoughtsByUserAndDate>>[number];
 type DailyTask = Awaited<ReturnType<typeof getTasksByUserAndDate>>[number];
 type DailyCheckIn = Awaited<ReturnType<typeof getDailyCheckInsByUserAndDate>>[number];
+type DailyConversationSummary = Awaited<ReturnType<typeof getConversationSummariesByUserAndDate>>[number];
 
 function escapeCsv(value: string) {
   return `"${value.replace(/"/g, '""')}"`;
@@ -97,11 +99,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [thoughts, tasks, dayRecord, checkIns] = await Promise.all([
+    const [thoughts, tasks, dayRecord, checkIns, conversationLogs] = await Promise.all([
       getThoughtsByUserAndDate(currentUser.id, date),
       getTasksByUserAndDate(currentUser.id, date),
       getDayRecordByUserAndDate(currentUser.id, date),
       getDailyCheckInsByUserAndDate(currentUser.id, date),
+      getConversationSummariesByUserAndDate(currentUser.id, date),
     ]);
     const taskProgress = buildTaskProgress(tasks);
     const dayThoughtSummary = buildDayThoughtSummary(thoughts, tasks);
@@ -116,6 +119,7 @@ export async function GET(request: Request) {
             email: currentUser.email,
           },
           total_thoughts: thoughts.length,
+          total_conversation_logs: conversationLogs.length,
           total_tasks: tasks.length,
           total_check_ins: checkIns.length,
           task_progress: taskProgress,
@@ -174,6 +178,24 @@ export async function GET(request: Request) {
               updated_time: updatedAt.time,
             };
           }),
+          conversation_logs: conversationLogs.map((summary: DailyConversationSummary) => {
+            const createdAt = toColomboExportParts(summary.created_at);
+
+            return {
+              id: summary.id,
+              user_id: summary.user_id,
+              conversation_date: summary.conversation_date,
+              title: summary.title,
+              key_topics: summary.key_topics,
+              insights: summary.insights,
+              action_items: summary.action_items,
+              mood_context: summary.mood_context,
+              created_at: createdAt.localIso,
+              created_at_utc: createdAt.isoUtc,
+              created_date: createdAt.date,
+              created_time: createdAt.time,
+            };
+          }),
           tasks: tasks.map((task: DailyTask) => {
             const createdAt = toColomboExportParts(task.created_at);
             const updatedAt = toColomboExportParts(task.updated_at);
@@ -216,6 +238,7 @@ export async function GET(request: Request) {
       ["user_name", escapeCsv(currentUser.name)].join(","),
       ["user_email", escapeCsv(currentUser.email)].join(","),
       ["total_thoughts", String(thoughts.length)].join(","),
+      ["total_conversation_logs", String(conversationLogs.length)].join(","),
       ["total_tasks", String(tasks.length)].join(","),
       ["total_check_ins", String(checkIns.length)].join(","),
       ["tasks_done", String(taskProgress.done)].join(","),
@@ -320,6 +343,38 @@ export async function GET(request: Request) {
           escapeCsv(updatedAt.time),
           escapeCsv(updatedAt.localIso),
           escapeCsv(updatedAt.isoUtc),
+        ].join(",");
+      }),
+      "",
+      ["conversation_logs"].join(","),
+      [
+        "id",
+        "user_id",
+        "conversation_date",
+        "title",
+        "key_topics",
+        "insights",
+        "action_items",
+        "mood_context",
+        "created_date",
+        "created_time",
+        "created_at",
+      ].join(","),
+      ...conversationLogs.map((summary: DailyConversationSummary) => {
+        const createdAt = toColomboExportParts(summary.created_at);
+
+        return [
+          String(summary.id),
+          String(summary.user_id),
+          escapeCsv(summary.conversation_date),
+          escapeCsv(summary.title),
+          escapeCsv(summary.key_topics.join("|")),
+          escapeCsv(summary.insights),
+          escapeCsv(summary.action_items.join("|")),
+          escapeCsv(summary.mood_context ? String(summary.mood_context) : ""),
+          escapeCsv(createdAt.date),
+          escapeCsv(createdAt.time),
+          escapeCsv(createdAt.localIso),
         ].join(",");
       }),
       "",

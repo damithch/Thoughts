@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getConversationSummariesByUserMonth,
   getDailyCheckInsByUserMonth,
   getDayRecordsByUserMonth,
   getTaskCompletionStatsForMonth,
@@ -14,6 +15,7 @@ type MonthlyThought = Awaited<ReturnType<typeof getThoughtsByUserMonth>>[number]
 type MonthlyTask = Awaited<ReturnType<typeof getTasksByUserMonth>>[number];
 type MonthlyCheckIn = Awaited<ReturnType<typeof getDailyCheckInsByUserMonth>>[number];
 type MonthlyDayNote = Awaited<ReturnType<typeof getDayRecordsByUserMonth>>[number];
+type MonthlyConversationSummary = Awaited<ReturnType<typeof getConversationSummariesByUserMonth>>[number];
 
 function buildTaskProgress(tasks: MonthlyTask[]) {
   const summary = {
@@ -58,12 +60,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [thoughts, tasks, checkIns, dayNotes, completionStats] = await Promise.all([
+    const [thoughts, tasks, checkIns, dayNotes, completionStats, conversationLogs] = await Promise.all([
       getThoughtsByUserMonth(currentUser.id, month),
       getTasksByUserMonth(currentUser.id, month),
       getDailyCheckInsByUserMonth(currentUser.id, month),
       getDayRecordsByUserMonth(currentUser.id, month),
       getTaskCompletionStatsForMonth(currentUser.id, month),
+      getConversationSummariesByUserMonth(currentUser.id, month),
     ]);
 
     const thoughtsPayload = thoughts.map((thought: MonthlyThought) => {
@@ -171,11 +174,31 @@ export async function GET(request: Request) {
       };
     });
 
+    const conversationLogsPayload = conversationLogs.map((summary: MonthlyConversationSummary) => {
+      const createdAt = toColomboExportParts(summary.created_at);
+
+      return {
+        id: summary.id,
+        user_id: summary.user_id,
+        conversation_date: summary.conversation_date,
+        title: summary.title,
+        key_topics: summary.key_topics,
+        insights: summary.insights,
+        action_items: summary.action_items,
+        mood_context: summary.mood_context,
+        created_at: createdAt.localIso,
+        created_at_utc: createdAt.isoUtc,
+        created_date: createdAt.date,
+        created_time: createdAt.time,
+      };
+    });
+
     const dateSet = new Set<string>([
       ...thoughtsPayload.map((thought) => thought.created_date),
       ...tasksPayload.map((task) => task.scheduled_date),
       ...checkInsPayload.map((checkIn) => checkIn.entry_date),
       ...dayNotesPayload.map((dayNote) => dayNote.entry_date),
+      ...conversationLogsPayload.map((summary) => summary.conversation_date),
     ]);
 
     const days = Array.from(dateSet)
@@ -185,6 +208,9 @@ export async function GET(request: Request) {
         const dayTasks = tasksPayload.filter((task) => task.scheduled_date === date);
         const dayCheckIns = checkInsPayload.filter((checkIn) => checkIn.entry_date === date);
         const dayNote = dayNotesPayload.find((note) => note.entry_date === date) ?? null;
+        const dayConversationLogs = conversationLogsPayload.filter(
+          (summary) => summary.conversation_date === date,
+        );
         const taskProgress = buildTaskProgress(
           tasks.filter((task) => task.scheduled_date === date),
         );
@@ -192,11 +218,13 @@ export async function GET(request: Request) {
         return {
           date,
           total_thoughts: dayThoughts.length,
+          total_conversation_logs: dayConversationLogs.length,
           total_tasks: dayTasks.length,
           total_check_ins: dayCheckIns.length,
           task_progress: taskProgress,
           day_note: dayNote,
           thoughts: dayThoughts,
+          conversation_logs: dayConversationLogs,
           tasks: dayTasks,
           check_ins: dayCheckIns,
         };
@@ -223,6 +251,7 @@ export async function GET(request: Request) {
         },
         summary: {
           total_thoughts: thoughtsPayload.length,
+          total_conversation_logs: conversationLogsPayload.length,
           total_tasks: tasksPayload.length,
           total_check_ins: checkInsPayload.length,
           total_day_notes: dayNotesPayload.length,
@@ -232,6 +261,7 @@ export async function GET(request: Request) {
           task_completion_by_day: completionStats,
         },
         thoughts: thoughtsPayload,
+        conversation_logs: conversationLogsPayload,
         tasks: tasksPayload,
         check_ins: checkInsPayload,
         day_notes: dayNotesPayload,

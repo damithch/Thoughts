@@ -1,24 +1,40 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { logoutAction } from "@/app/actions";
+import { deleteConversationSummaryAction, logoutAction } from "@/app/actions";
+import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import { getConversationSummariesByUser } from "@/lib/db";
 import { toColomboDateTime } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
-export default async function ConversationsPage() {
+type ConversationsPageProps = {
+  searchParams?: Promise<{
+    toast?: string;
+    type?: "success" | "error" | "info";
+  }>;
+};
+
+const conversationToastMessages: Record<string, string> = {
+  deleted: "Conversation log deleted.",
+  delete_failed: "That conversation log could not be deleted.",
+};
+
+export default async function ConversationsPage({ searchParams }: ConversationsPageProps) {
   const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     redirect("/login");
   }
 
+  const params = await searchParams;
+  const toastMessage = params?.toast ? conversationToastMessages[params.toast] : undefined;
   const conversationSummaries = await getConversationSummariesByUser(currentUser.id, 24);
 
   return (
     <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
+      {toastMessage ? <Toast message={toastMessage} tone={params?.type} /> : null}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
         <header className="rounded-[2rem] border border-cyan-950/10 bg-white/70 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur sm:rounded-[2.5rem] sm:p-6 md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
@@ -178,6 +194,18 @@ export default async function ConversationsPage() {
                   <p className="mt-6 text-xs uppercase tracking-[0.2em] text-stone-400">
                     Saved {toColomboDateTime(summary.created_at)}
                   </p>
+
+                  <div className="mt-5">
+                    <form action={deleteConversationSummaryAction}>
+                      <input type="hidden" name="conversationId" value={summary.id} />
+                      <button
+                        type="submit"
+                        className="inline-flex rounded-full border border-rose-900/10 bg-rose-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 sm:py-2"
+                      >
+                        Delete
+                      </button>
+                    </form>
+                  </div>
                 </article>
               ))}
             </div>

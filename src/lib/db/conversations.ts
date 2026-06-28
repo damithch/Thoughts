@@ -55,3 +55,56 @@ export async function getConversationSummariesByUser(userId: number, limit = 12)
 
   return rows;
 }
+
+export async function getConversationSummariesByUserAndDate(userId: number, date: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<ConversationSummary>(
+    `
+      SELECT id, user_id,
+             TO_CHAR(conversation_date, 'YYYY-MM-DD') AS conversation_date,
+             title, key_topics, insights, action_items, mood_context, created_at
+      FROM conversation_summaries
+      WHERE user_id = $1
+        AND conversation_date = $2::date
+      ORDER BY created_at ASC, id ASC
+    `,
+    [userId, date],
+  );
+
+  return rows;
+}
+
+export async function getConversationSummariesByUserMonth(userId: number, month: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<ConversationSummary>(
+    `
+      SELECT id, user_id,
+             TO_CHAR(conversation_date, 'YYYY-MM-DD') AS conversation_date,
+             title, key_topics, insights, action_items, mood_context, created_at
+      FROM conversation_summaries
+      WHERE user_id = $1
+        AND TO_CHAR(conversation_date, 'YYYY-MM') = $2
+      ORDER BY conversation_date ASC, created_at ASC, id ASC
+    `,
+    [userId, month],
+  );
+
+  return rows;
+}
+
+export async function deleteConversationSummary(id: number, userId: number) {
+  await ensureInitialized();
+
+  const { rowCount } = await pool.query(
+    `
+      DELETE FROM conversation_summaries
+      WHERE id = $1
+        AND user_id = $2
+    `,
+    [id, userId],
+  );
+
+  return rowCount === 1;
+}

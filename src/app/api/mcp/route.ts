@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
+  deleteConversationSummary,
   createTask,
   createThought,
+  getConversationSummariesByUserAndDate,
+  getConversationSummariesByUserMonth,
   getDailyCheckInsByUserAndDate,
   getDayRecordByUserAndDate,
   getTasksByUserAndDate,
@@ -79,6 +82,26 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "get_conversation_logs",
+    description: "Fetch Claude conversation logs filtered by date or month.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: {
+          type: "string",
+          description: "Optional date in YYYY-MM-DD format.",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        },
+        month: {
+          type: "string",
+          description: "Optional month in YYYY-MM format.",
+          pattern: "^\\d{4}-\\d{2}$",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_thought",
     description:
       "Insert a new journal thought into the database for the configured MCP user. Do not use this for Claude chat/session summaries; use create_conversation_log instead.",
@@ -136,6 +159,18 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
           enum: ["todo", "in_progress", "done", "skipped"],
         },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_conversation_log",
+    description: "Delete a conversation log by id for the configured MCP user.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", minimum: 1 },
+      },
+      required: ["id"],
       additionalProperties: false,
     },
   },
@@ -237,6 +272,11 @@ function normalizeStatus(value: unknown) {
 
 function normalizePriority(value: unknown) {
   return value === "low" || value === "medium" || value === "high" ? value : "medium";
+}
+
+function normalizeMonth(value: unknown) {
+  const month = typeof value === "string" ? value.trim() : "";
+  return /^\d{4}-\d{2}$/.test(month) ? month : null;
 }
 
 function isConversationSummaryLikeThought(input: {
@@ -532,6 +572,39 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
     });
   }
 
+  if (name === "get_conversation_logs") {
+    const date = args.date === undefined ? null : normalizeDate(args.date);
+    const month = args.month === undefined ? null : normalizeMonth(args.month);
+
+    if (args.date !== undefined && !date) {
+      throw new Error("get_conversation_logs date must be in YYYY-MM-DD format.");
+    }
+
+    if (args.month !== undefined && !month) {
+      throw new Error("get_conversation_logs month must be in YYYY-MM format.");
+    }
+
+    if (date && month) {
+      throw new Error("get_conversation_logs accepts either date or month, not both.");
+    }
+
+    const conversationLogs = date
+      ? await getConversationSummariesByUserAndDate(userId, date)
+      : await getConversationSummariesByUserMonth(
+          userId,
+          month ?? new Date().toISOString().slice(0, 7),
+        );
+
+    return formatToolResult({
+      filters: {
+        date,
+        month,
+      },
+      count: conversationLogs.length,
+      conversationLogs,
+    });
+  }
+
   if (name === "create_thought") {
     const title = normalizeOptionalString(args.title);
     const category = normalizeOptionalString(args.category);
@@ -635,6 +708,25 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
     return formatToolResult({
       created: Boolean(result.created),
       conversation: result.conversation ?? null,
+    });
+  }
+
+  if (name === "delete_conversation_log") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+
+    if (id === null) {
+      throw new Error("delete_conversation_log requires a positive integer id.");
+    }
+
+    const deleted = await deleteConversationSummary(id, userId);
+
+    if (!deleted) {
+      throw new Error("Conversation log was not found or could not be deleted.");
+    }
+
+    return formatToolResult({
+      deleted: true,
+      id,
     });
   }
 

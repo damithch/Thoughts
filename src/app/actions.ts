@@ -10,6 +10,7 @@ import {
   CheckInFocus,
   createBook,
   createBookIdea,
+  deleteConversationSummary,
   createDailyCheckIn,
   createRecurringTask,
   createTask,
@@ -279,6 +280,34 @@ export async function deleteThoughtAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/");
   redirect("/dashboard?toast=deleted&type=success");
+}
+
+export async function deleteConversationSummaryAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const conversationId = Number(formData.get("conversationId"));
+
+  if (!Number.isInteger(conversationId) || conversationId <= 0) {
+    redirect("/dashboard/conversations?toast=delete_failed&type=error");
+  }
+
+  try {
+    const deleted = await deleteConversationSummary(conversationId, currentUser.id);
+
+    if (!deleted) {
+      redirect("/dashboard/conversations?toast=delete_failed&type=error");
+    }
+  } catch {
+    redirect("/dashboard/conversations?toast=delete_failed&type=error");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/conversations");
+  redirect("/dashboard/conversations?toast=deleted&type=success");
 }
 
 export async function registerAction(formData: FormData) {
