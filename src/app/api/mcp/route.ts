@@ -99,6 +99,27 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "create_conversation_log",
+    description: "Save a Claude conversation summary into the journal conversation log.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        conversationDate: {
+          type: "string",
+          description: "Conversation date in YYYY-MM-DD format.",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        },
+        title: { type: "string" },
+        keyTopics: { type: "array", items: { type: "string" } },
+        insights: { type: "string" },
+        actionItems: { type: "array", items: { type: "string" } },
+        moodContext: { type: ["integer", "null"], minimum: 1, maximum: 10 },
+      },
+      required: ["conversationDate", "title", "insights"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "get_tasks",
     description: "Fetch tasks and their status, optionally filtered by date or status.",
     inputSchema: {
@@ -359,7 +380,43 @@ async function listTasksForUser(userId: number, filters: { date?: string | null;
   return rows;
 }
 
-async function handleToolCall(name: string, args: JsonObject, userId: number) {
+async function createConversationLogViaApi(request: Request, args: JsonObject) {
+  const expectedApiKey = process.env.MCP_API_KEY;
+
+  if (!expectedApiKey) {
+    throw new Error("MCP_API_KEY is not configured.");
+  }
+
+  const response = await fetch(new URL("/api/conversations/create", request.url), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      [MCP_API_KEY_HEADER]: expectedApiKey,
+    },
+    body: JSON.stringify({
+      conversationDate: normalizeDate(args.conversationDate),
+      title: normalizeOptionalString(args.title),
+      keyTopics: normalizeStringArray(args.keyTopics),
+      insights: normalizeOptionalString(args.insights),
+      actionItems: normalizeStringArray(args.actionItems),
+      moodContext: args.moodContext === undefined ? null : normalizeMood(args.moodContext),
+    }),
+  });
+
+  const payload = (await response.json()) as {
+    error?: string;
+    created?: boolean;
+    conversation?: JsonObject;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Conversation log API request failed.");
+  }
+
+  return payload;
+}
+
+async function handleToolCall(name: string, args: JsonObject, userId: number, request: Request) {
   if (name === "get_daily_summary") {
     const date = normalizeDate(args.date);
 
@@ -492,6 +549,30 @@ async function handleToolCall(name: string, args: JsonObject, userId: number) {
     });
   }
 
+  if (name === "create_conversation_log") {
+    const conversationDate = normalizeDate(args.conversationDate);
+    const title = normalizeOptionalString(args.title);
+    const insights = normalizeOptionalString(args.insights);
+    const moodContext = args.moodContext === undefined ? null : normalizeMood(args.moodContext);
+
+    if (!conversationDate || !title || !insights) {
+      throw new Error(
+        "create_conversation_log requires conversationDate, title, and insights.",
+      );
+    }
+
+    if (args.moodContext !== undefined && args.moodContext !== null && moodContext === null) {
+      throw new Error("create_conversation_log moodContext must be an integer from 1 to 10.");
+    }
+
+    const result = await createConversationLogViaApi(request, args);
+
+    return formatToolResult({
+      created: Boolean(result.created),
+      conversation: result.conversation ?? null,
+    });
+  }
+
   if (name === "create_task") {
     const title = normalizeOptionalString(args.title);
     const scheduledDate = normalizeDate(args.scheduledDate);
@@ -597,7 +678,7 @@ export async function POST(request: Request) {
       }
 
       const user = await requireMcpUser();
-      const result = await handleToolCall(name, args, user.id);
+      const result = await handleToolCall(name, args, user.id, request);
 
       return jsonRpcResult(body.id, result);
     }

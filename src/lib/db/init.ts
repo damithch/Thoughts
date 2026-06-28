@@ -304,6 +304,26 @@ export async function ensureInitialized() {
         ON behavioural_activation_entries (user_id, entry_date ASC, created_at ASC)
       `);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS conversation_summaries (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          conversation_date DATE NOT NULL,
+          title TEXT NOT NULL,
+          key_topics TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+          insights TEXT NOT NULL DEFAULT '',
+          action_items TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+          mood_context INTEGER,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (mood_context IS NULL OR (mood_context >= 1 AND mood_context <= 10))
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS conversation_summaries_user_date_idx
+        ON conversation_summaries (user_id, conversation_date DESC, created_at DESC)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );

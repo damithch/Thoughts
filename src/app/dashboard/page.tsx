@@ -10,6 +10,7 @@ import {
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getConversationSummariesByUser,
   getBookIdeasByUser,
   getThoughtActivityByUserMonth,
   getThoughtByIdForUser,
@@ -158,6 +159,9 @@ export default async function DashboardPage({
     : [];
   const bookIdeas = databaseAvailable
     ? await getBookIdeasByUser(currentUser.id)
+    : [];
+  const conversationSummaries = databaseAvailable
+    ? await getConversationSummariesByUser(currentUser.id, 8)
     : [];
   const activityByDate = new Map(
     monthlyActivity.map((day) => [
@@ -738,6 +742,78 @@ export default async function DashboardPage({
                 then export daily entries when you want to review patterns or
                 run AI analysis.
               </p>
+            </div>
+
+            <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
+              <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                Conversation log
+              </p>
+              <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
+                Saved Claude summaries
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-stone-700">
+                Recent chat summaries land here so journal cards and assistant reflections stay in
+                the same review space.
+              </p>
+
+              <div className="mt-5 grid gap-4">
+                {conversationSummaries.length === 0 ? (
+                  <div className="rounded-[1.5rem] border border-dashed border-stone-900/12 bg-white/60 p-4 text-sm leading-7 text-stone-600">
+                    No conversation summaries saved yet.
+                  </div>
+                ) : (
+                  conversationSummaries.map((summary) => (
+                    <article
+                      key={summary.id}
+                      className="rounded-[1.5rem] border border-emerald-950/10 bg-white/82 p-4 shadow-[0_14px_30px_rgba(48,84,53,0.06)]"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                            {summary.conversation_date}
+                          </p>
+                          <h3 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900">
+                            {summary.title}
+                          </h3>
+                        </div>
+                        {summary.mood_context ? (
+                          <span className="rounded-full border border-emerald-950/10 bg-emerald-50 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-emerald-900">
+                            Mood {summary.mood_context}/10
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {summary.key_topics.length > 0 ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {summary.key_topics.map((topic) => (
+                            <span
+                              key={`${summary.id}-${topic}`}
+                              className="rounded-full border border-emerald-950/10 bg-emerald-50/70 px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-emerald-950"
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <p className="mt-4 text-sm leading-7 text-stone-700">{summary.insights}</p>
+
+                      {summary.action_items.length > 0 ? (
+                        <div className="mt-4 rounded-2xl border border-amber-900/10 bg-amber-50/70 p-4">
+                          <p className="text-xs uppercase tracking-[0.16em] text-amber-900/80">
+                            Action items
+                          </p>
+                          <ul className="mt-3 grid gap-2 text-sm leading-7 text-stone-700">
+                            {summary.action_items.map((item) => (
+                              <li key={`${summary.id}-action-${item}`}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </section>

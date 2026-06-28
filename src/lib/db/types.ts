@@ -249,3 +249,25 @@ export type BehaviouralActivationEntry = {
   created_at: Date;
   updated_at: Date;
 };
+
+export type ConversationSummary = {
+  id: number;
+  user_id: number;
+  conversation_date: string;
+  title: string;
+  key_topics: string[];
+  insights: string;
+  action_items: string[];
+  mood_context: number | null;
+  created_at: Date;
+};
+
+export type NewConversationSummary = {
+  conversationDate: string;
+  title: string;
+  keyTopics: string[];
+  insights: string;
+  actionItems: string[];
+  moodContext: number | null;
+  userId: number;
+};
