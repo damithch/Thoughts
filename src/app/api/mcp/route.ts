@@ -80,7 +80,8 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "create_thought",
-    description: "Insert a new thought into the database for the configured MCP user.",
+    description:
+      "Insert a new journal thought into the database for the configured MCP user. Do not use this for Claude chat/session summaries; use create_conversation_log instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -236,6 +237,56 @@ function normalizeStatus(value: unknown) {
 
 function normalizePriority(value: unknown) {
   return value === "low" || value === "medium" || value === "high" ? value : "medium";
+}
+
+function isConversationSummaryLikeThought(input: {
+  title: string;
+  category: string;
+  tags: string[];
+  summary: string;
+  body: string;
+}) {
+  const haystack = [
+    input.title,
+    input.category,
+    input.summary,
+    input.body,
+    ...input.tags,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const titleLooksLikeConversation =
+    input.title.toLowerCase().includes("claude conversation") ||
+    input.title.toLowerCase().includes("conversation summary") ||
+    input.title.toLowerCase().includes("session summary");
+
+  const categoryLooksLikeConversation =
+    input.category.toLowerCase() === "conversation summary" ||
+    input.category.toLowerCase() === "claude conversation log";
+
+  const tagsLookLikeConversation = input.tags.some((tag) => {
+    const normalizedTag = tag.toLowerCase();
+
+    return (
+      normalizedTag.includes("conversation-summary") ||
+      normalizedTag.includes("session-summary") ||
+      normalizedTag.includes("claude-summary") ||
+      normalizedTag === "thoughtnest"
+    );
+  });
+
+  const bodyLooksLikeConversation =
+    haystack.includes("monthly mood analysis") ||
+    haystack.includes("conversation summary feature") ||
+    haystack.includes("saved to thoughtnest");
+
+  return (
+    titleLooksLikeConversation ||
+    categoryLooksLikeConversation ||
+    tagsLookLikeConversation ||
+    bodyLooksLikeConversation
+  );
 }
 
 function formatToolResult(data: JsonObject) {
@@ -513,6 +564,20 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       insightReflection,
       userId,
     };
+
+    if (
+      isConversationSummaryLikeThought({
+        title: input.title,
+        category: input.category,
+        tags: input.tags,
+        summary: input.summary,
+        body: input.body,
+      })
+    ) {
+      throw new Error(
+        "create_thought rejected input that looks like a Claude chat/session summary. Use create_conversation_log for conversation summaries.",
+      );
+    }
 
     await createThought(input);
 
