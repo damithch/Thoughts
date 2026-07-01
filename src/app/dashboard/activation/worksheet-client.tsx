@@ -25,13 +25,13 @@ function RatingColumnsHeader() {
       <div />
       <div className="grid grid-cols-[80px_1fr_1fr_1fr] items-end gap-x-4 text-center">
         <span />
-        <span className="font-[family:var(--font-display)] text-[1.8rem] font-semibold leading-none text-stone-950">
+        <span className="font-[family:var(--font-display)] text-[1.8rem] font-semibold leading-none text-emerald-950">
           Depression
         </span>
-        <span className="font-[family:var(--font-display)] text-[1.8rem] font-semibold leading-none text-stone-950">
+        <span className="font-[family:var(--font-display)] text-[1.8rem] font-semibold leading-none text-emerald-950">
           Pleasure
         </span>
-        <span className="font-[family:var(--font-display)] text-[1.8rem] font-semibold leading-none text-stone-950">
+        <span className="font-[family:var(--font-display)] text-[1.8rem] font-semibold leading-none text-emerald-950">
           Achievement
         </span>
       </div>
@@ -53,6 +53,16 @@ const emptyEntry = (defaultDate: string): ActivationEntry => ({
   isSaving: false,
   message: "",
 });
+
+function withMinimumRows(entries: ActivationEntry[], defaultDate: string) {
+  const nextEntries = [...entries];
+
+  while (nextEntries.length < 4) {
+    nextEntries.push(emptyEntry(defaultDate));
+  }
+
+  return nextEntries;
+}
 
 function normalizeScore(value: string) {
   if (!value.trim()) {
@@ -157,33 +167,33 @@ function WorksheetRow({
         : "text-stone-500";
 
   return (
-    <section className="grid gap-4 md:grid-cols-[1.06fr_0.94fr] md:items-start md:gap-6">
-      <div className="min-h-30 self-start border-[3px] border-stone-900 bg-white p-2.5 sm:min-h-34">
-        <p className="text-[1.05rem] font-medium text-stone-950">Activity &amp; Date:</p>
+    <section className="grid gap-4 rounded-[1.75rem] border border-emerald-950/10 bg-white/78 p-4 shadow-[0_18px_40px_rgba(48,84,53,0.08)] md:grid-cols-[1.06fr_0.94fr] md:items-start md:gap-6 md:p-5">
+      <div className="min-h-30 self-start rounded-[1.25rem] border border-emerald-950/10 bg-emerald-50/45 p-3 sm:min-h-34">
+        <p className="text-[1.05rem] font-medium text-emerald-950">Activity &amp; Date</p>
         <div className="mt-2 grid gap-2">
           <input
             type="date"
             value={entry.entryDate}
             onChange={(event) => onChange("entryDate", event.target.value)}
-            className="w-full border-0 bg-transparent px-0 py-0 text-[0.98rem] text-stone-900 outline-none"
+            className="w-full rounded-xl border border-emerald-950/10 bg-white/85 px-3 py-2 text-[0.98rem] text-stone-900 outline-none transition focus:border-emerald-700"
           />
           <textarea
             value={entry.activity}
             onChange={(event) => onChange("activity", event.target.value)}
-            className="min-h-20 w-full resize-none border-0 bg-transparent px-0 py-0 text-[1rem] leading-7 text-stone-900 outline-none sm:min-h-24"
+            className="min-h-20 w-full resize-none rounded-xl border border-emerald-950/10 bg-white/85 px-3 py-3 text-[1rem] leading-7 text-stone-900 outline-none transition focus:border-emerald-700 sm:min-h-24"
           />
         </div>
       </div>
 
       <div className="grid gap-4">
         <div className="grid grid-cols-3 gap-3 text-center md:hidden">
-          <span className="font-[family:var(--font-display)] text-[1.25rem] font-semibold leading-none text-stone-950">
+          <span className="font-[family:var(--font-display)] text-[1.25rem] font-semibold leading-none text-emerald-950">
             Depression
           </span>
-          <span className="font-[family:var(--font-display)] text-[1.25rem] font-semibold leading-none text-stone-950">
+          <span className="font-[family:var(--font-display)] text-[1.25rem] font-semibold leading-none text-emerald-950">
             Pleasure
           </span>
-          <span className="font-[family:var(--font-display)] text-[1.25rem] font-semibold leading-none text-stone-950">
+          <span className="font-[family:var(--font-display)] text-[1.25rem] font-semibold leading-none text-emerald-950">
             Achievement
           </span>
         </div>
@@ -195,10 +205,10 @@ function WorksheetRow({
             key={label}
             className="grid gap-2 md:grid-cols-[80px_1fr_1fr_1fr] md:items-center md:gap-x-4"
           >
-            <span className="text-[1.2rem] text-stone-950">{label}</span>
+            <span className="text-[1.1rem] uppercase tracking-[0.14em] text-emerald-900">{label}</span>
             <div className="grid grid-cols-3 gap-3 md:contents">
               {[first, second, third].map((fieldName) => (
-                <div key={fieldName} className="h-8 border-b-[3px] border-stone-900">
+                <div key={fieldName} className="h-12 rounded-xl border border-emerald-950/10 bg-emerald-50/45">
                   <input
                     type="number"
                     min={0}
@@ -207,7 +217,7 @@ function WorksheetRow({
                     onChange={(event) =>
                       onChange(fieldName as keyof ActivationEntry, event.target.value)
                     }
-                    className="h-full w-full border-0 bg-transparent text-center text-[1.1rem] text-stone-950 outline-none"
+                    className="h-full w-full border-0 bg-transparent text-center text-[1.05rem] text-stone-950 outline-none"
                   />
                 </div>
               ))}
@@ -224,7 +234,7 @@ function WorksheetRow({
               type="button"
               onClick={onDelete}
               disabled={entry.isSaving}
-              className="w-full rounded-full border border-stone-900 bg-white px-4 py-2 text-sm uppercase tracking-[0.14em] text-stone-950 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+              className="w-full rounded-full border border-stone-900/10 bg-stone-100 px-4 py-2 text-sm uppercase tracking-[0.14em] text-stone-700 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
             >
               Delete Row
             </button>
@@ -232,7 +242,7 @@ function WorksheetRow({
               type="button"
               onClick={onSave}
               disabled={entry.isSaving}
-              className="w-full rounded-full border border-stone-900 bg-white px-4 py-2 text-sm uppercase tracking-[0.14em] text-stone-950 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-60 md:min-w-32 md:w-auto"
+              className="w-full rounded-full bg-emerald-950 px-4 py-2 text-sm uppercase tracking-[0.14em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:opacity-80 md:min-w-32 md:w-auto"
             >
               {entry.isSaving ? "Saving" : "Save Entry"}
             </button>
@@ -240,7 +250,9 @@ function WorksheetRow({
         </div>
 
         {entry.message ? (
-          <p className="text-sm leading-6 text-stone-700">{entry.message}</p>
+          <p className="rounded-2xl border border-emerald-950/10 bg-white/70 px-4 py-3 text-sm leading-6 text-stone-700">
+            {entry.message}
+          </p>
         ) : null}
       </div>
     </section>
@@ -286,10 +298,16 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
         const loadedEntries = (payload.entries ?? []).map(toClientEntry);
         const blankRowsNeeded = Math.max(4 - loadedEntries.length, 0);
 
-        setEntries([
-          ...loadedEntries,
-          ...Array.from({ length: blankRowsNeeded }, () => emptyEntry(defaultDate)),
-        ]);
+        setEntries(
+          withMinimumRows(
+            [
+              ...loadedEntries,
+              ...Array.from({ length: blankRowsNeeded }, () => emptyEntry(defaultDate)),
+            ],
+            defaultDate,
+          ),
+        );
+        setPageMessage("");
       } catch (error) {
         if (!active) {
           return;
@@ -314,6 +332,7 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
         entryIndex === index ? { ...entry, [field]: value, message: "" } : entry,
       ),
     );
+    setPageMessage("");
   }
 
   async function saveEntry(index: number) {
@@ -388,6 +407,7 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
           entryIndex === index ? { ...nextEntry, isSaving: false } : entry,
         ),
       );
+      setPageMessage("");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to save entry.";
@@ -403,6 +423,7 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
   }
 
   function addRow() {
+    setPageMessage("");
     setEntries((currentEntries) => [...currentEntries, emptyEntry(defaultDate)]);
   }
 
@@ -410,15 +431,13 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
     const targetEntry = entries[index];
 
     if (!targetEntry.id) {
-      setEntries((currentEntries) => {
-        const nextEntries = currentEntries.filter((_, entryIndex) => entryIndex !== index);
-
-        while (nextEntries.length < 4) {
-          nextEntries.push(emptyEntry(defaultDate));
-        }
-
-        return nextEntries;
-      });
+      setEntries((currentEntries) =>
+        withMinimumRows(
+          currentEntries.filter((_, entryIndex) => entryIndex !== index),
+          defaultDate,
+        ),
+      );
+      setPageMessage("");
       return;
     }
 
@@ -438,15 +457,13 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
         throw new Error(payload.error ?? "Unable to delete entry.");
       }
 
-      setEntries((currentEntries) => {
-        const nextEntries = currentEntries.filter((_, entryIndex) => entryIndex !== index);
-
-        while (nextEntries.length < 4) {
-          nextEntries.push(emptyEntry(defaultDate));
-        }
-
-        return nextEntries;
-      });
+      setEntries((currentEntries) =>
+        withMinimumRows(
+          currentEntries.filter((_, entryIndex) => entryIndex !== index),
+          defaultDate,
+        ),
+      );
+      setPageMessage("");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to delete entry.";
@@ -461,33 +478,99 @@ export function ActivationWorksheetClient({ defaultDate }: { defaultDate: string
     }
   }
 
+  const indexedEntries = entries.map((entry, index) => ({ entry, index }));
+  const historyEntries = indexedEntries.filter(({ entry }) => entry.id !== null);
+  const draftEntries = indexedEntries.filter(({ entry }) => entry.id === null);
+
   return (
     <>
       {pageMessage ? (
-        <div className="mb-6 border border-rose-900/15 bg-rose-50/80 px-4 py-3 text-sm text-rose-950">
+        <div className="mb-6 rounded-2xl border border-rose-900/15 bg-rose-50/80 px-4 py-3 text-sm text-rose-950">
           {pageMessage}
         </div>
       ) : null}
 
-      <RatingColumnsHeader />
+      <section className="mt-10 rounded-[1.75rem] border border-cyan-950/10 bg-cyan-50/50 p-5 shadow-[0_20px_50px_rgba(20,84,98,0.08)] sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-cyan-900/70">
+              History
+            </p>
+            <h3 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+              Saved activities
+            </h3>
+          </div>
+          <p className="text-sm leading-7 text-stone-700">
+            Completed and pending worksheet rows you already saved.
+          </p>
+        </div>
 
-      <div className="mt-2 grid gap-10">
-        {entries.map((entry, index) => (
-          <WorksheetRow
-            key={entry.id ?? `new-${index}`}
-            entry={entry}
-            onChange={(field, value) => updateEntry(index, field, value)}
-            onSave={() => void saveEntry(index)}
-            onDelete={() => void deleteEntry(index)}
-          />
-        ))}
-      </div>
+        <div className="mt-6">
+          {historyEntries.length === 0 ? (
+            <div className="rounded-[1.5rem] border border-dashed border-cyan-950/15 bg-white/70 p-6 text-sm leading-7 text-stone-600">
+              <p className="font-[family:var(--font-display)] text-2xl leading-none text-stone-900">
+                No saved history yet.
+              </p>
+              <p className="mt-3">
+                Save a row in the entry section below and it will move here automatically.
+              </p>
+            </div>
+          ) : (
+            <>
+              <RatingColumnsHeader />
+              <div className="mt-2 grid gap-6">
+                {historyEntries.map(({ entry, index }) => (
+                  <WorksheetRow
+                    key={entry.id ?? `history-${index}`}
+                    entry={entry}
+                    onChange={(field, value) => updateEntry(index, field, value)}
+                    onSave={() => void saveEntry(index)}
+                    onDelete={() => void deleteEntry(index)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-[1.75rem] border border-emerald-950/10 bg-white/70 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Entry
+            </p>
+            <h3 className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900">
+              Add new worksheet rows
+            </h3>
+          </div>
+          <p className="text-sm leading-7 text-stone-700">
+            Draft new activities here, then save them into the history section above.
+          </p>
+        </div>
+
+        <div className="mt-6">
+          <RatingColumnsHeader />
+
+          <div className="mt-2 grid gap-6">
+            {draftEntries.map(({ entry, index }) => (
+              <WorksheetRow
+                key={entry.id ?? `new-${index}`}
+                entry={entry}
+                onChange={(field, value) => updateEntry(index, field, value)}
+                onSave={() => void saveEntry(index)}
+                onDelete={() => void deleteEntry(index)}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
 
       <div className="mt-8 flex justify-center">
         <button
           type="button"
           onClick={addRow}
-          className="rounded-full border border-stone-900 bg-white px-5 py-2 text-sm uppercase tracking-[0.16em] text-stone-950 transition hover:bg-stone-100"
+          className="rounded-full border border-emerald-950/10 bg-white/85 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
         >
           Add Row
         </button>

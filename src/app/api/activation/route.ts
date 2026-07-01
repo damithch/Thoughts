@@ -27,6 +27,38 @@ function normalizeDate(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
 
+function validateRatings(scores: {
+  beforeDepression: number | null;
+  beforePleasure: number | null;
+  beforeAchievement: number | null;
+  afterDepression: number | null;
+  afterPleasure: number | null;
+  afterAchievement: number | null;
+}) {
+  const beforeRatings = [
+    scores.beforeDepression,
+    scores.beforePleasure,
+    scores.beforeAchievement,
+  ];
+  const afterRatings = [
+    scores.afterDepression,
+    scores.afterPleasure,
+    scores.afterAchievement,
+  ];
+  const beforeCount = beforeRatings.filter((value) => value !== null).length;
+  const afterCount = afterRatings.filter((value) => value !== null).length;
+
+  if (beforeCount !== 3) {
+    return "Fill all three Before ratings from 0 to 8 before saving.";
+  }
+
+  if (afterCount > 0 && afterCount !== 3) {
+    return "If you start the After section, fill all three After ratings.";
+  }
+
+  return null;
+}
+
 export async function GET() {
   const currentUser = await getCurrentUser();
 
@@ -82,6 +114,19 @@ export async function POST(request: Request) {
       { error: "Activity and date are required." },
       { status: 400 },
     );
+  }
+
+  const ratingError = validateRatings({
+    beforeDepression,
+    beforePleasure,
+    beforeAchievement,
+    afterDepression,
+    afterPleasure,
+    afterAchievement,
+  });
+
+  if (ratingError) {
+    return NextResponse.json({ error: ratingError }, { status: 400 });
   }
 
   try {

@@ -28,39 +28,46 @@ export default async function ActivationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#ead8c0] px-4 py-6 text-stone-950 sm:px-6 sm:py-10">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="rounded-[2rem] border border-stone-900/10 bg-white/45 p-5 shadow-[0_22px_50px_rgba(36,27,20,0.08)] backdrop-blur sm:rounded-[2.5rem] sm:p-6">
+    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
+        <header className="rounded-[2rem] border border-emerald-950/10 bg-white/70 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur sm:rounded-[2.5rem] sm:p-6 md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-stone-600">
+              <p className="text-xs uppercase tracking-[0.22em] text-emerald-800/70 sm:text-sm sm:tracking-[0.28em]">
                 Behavioural Activation
               </p>
-              <h1 className="mt-3 font-[family:var(--font-display)] text-4xl leading-none sm:text-5xl">
-                Worksheet Preview
+              <h1 className="mt-3 font-[family:var(--font-display)] text-4xl leading-none sm:text-5xl md:text-6xl">
+                Worksheet
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-700">
-                Static worksheet layout, matched to the reference image first.
+                Track activities alongside before-and-after ratings for depression,
+                pleasure, and achievement, then save the sheet directly to your journal.
               </p>
             </div>
 
             <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap">
               <Link
                 href="/dashboard"
-                className="rounded-full border border-stone-900/10 px-4 py-3 text-center text-stone-900 transition-colors hover:bg-white/70"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
                 Journal Dashboard
               </Link>
               <Link
                 href="/dashboard/today"
-                className="rounded-full border border-stone-900/10 px-4 py-3 text-center text-stone-900 transition-colors hover:bg-white/70"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
                 Today View
+              </Link>
+              <Link
+                href="/dashboard/tasks"
+                className="rounded-full border border-blue-950/10 px-4 py-3 text-center text-blue-950 transition-colors hover:bg-blue-50"
+              >
+                Task Management
               </Link>
               <form action={logoutAction}>
                 <button
                   type="submit"
-                  className="w-full rounded-full bg-stone-900 px-4 py-3 text-stone-50 transition-colors hover:bg-stone-700"
+                  className="w-full rounded-full bg-emerald-950 px-4 py-3 text-emerald-50 transition-colors hover:bg-emerald-800"
                 >
                   Logout
                 </button>
@@ -69,19 +76,58 @@ export default async function ActivationPage() {
           </div>
         </header>
 
-        <section className="border border-stone-400 bg-[#f9f7f1] px-4 py-8 shadow-[0_18px_40px_rgba(36,27,20,0.06)] sm:px-8 sm:py-10 md:px-14">
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Default date
+            </p>
+            <p className="mt-3 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
+              {getCurrentColomboDate()}
+            </p>
+            <p className="mt-3 text-sm leading-7 text-stone-700">
+              New rows start on today&apos;s Colombo date unless you change them.
+            </p>
+          </div>
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Workflow
+            </p>
+            <p className="mt-3 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
+              Before / After
+            </p>
+            <p className="mt-3 text-sm leading-7 text-stone-700">
+              Save an activity with the three before ratings, then return later to complete the after section.
+            </p>
+          </div>
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+              Scale
+            </p>
+            <p className="mt-3 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">
+              0-8
+            </p>
+            <p className="mt-3 text-sm leading-7 text-stone-700">
+              Use the same rating scale across depression, pleasure, and achievement.
+            </p>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-emerald-950/10 bg-white/74 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2.5rem] sm:p-6 md:p-8">
           <div className="mx-auto max-w-5xl">
             <header className="text-center">
-              <h2 className="font-[family:var(--font-display)] text-[2.3rem] font-semibold uppercase leading-none tracking-[0.04em] text-black sm:text-[3.2rem] md:text-[4rem]">
+              <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+                Guided worksheet
+              </p>
+              <h2 className="mt-3 font-[family:var(--font-display)] text-[2.3rem] font-semibold uppercase leading-none tracking-[0.04em] text-stone-900 sm:text-[3.2rem] md:text-[4rem]">
                 Behavioural Activation Worksheet
               </h2>
-              <p className="mt-3 font-[family:var(--font-display)] text-[2rem] font-semibold uppercase leading-none tracking-[0.18em] text-black sm:text-[2.7rem] md:text-[3.4rem]">
+              <p className="mt-3 font-[family:var(--font-display)] text-[2rem] font-semibold uppercase leading-none tracking-[0.18em] text-emerald-950 sm:text-[2.7rem] md:text-[3.4rem]">
                 Fun &amp; Achievement
               </p>
             </header>
 
             <div className="mt-10">
-              <div className="space-y-6 text-[1.05rem] leading-[1.6] text-black sm:text-[1.28rem] sm:leading-[1.6]">
+              <div className="space-y-6 text-[1.02rem] leading-[1.75] text-stone-700 sm:text-[1.12rem]">
                 <p>
                   One simple way of combating depression is to prescribe some fun for
                   yourself. By engaging in some simple, pleasant activities, you can
@@ -102,13 +148,13 @@ export default async function ActivationPage() {
               </div>
             </div>
 
-            <section className="mt-10 border border-stone-400 bg-white px-4 py-3 sm:px-5 sm:py-4">
+            <section className="mt-10 rounded-[1.75rem] border border-emerald-950/10 bg-[linear-gradient(180deg,rgba(243,250,243,0.95)_0%,rgba(232,245,233,0.82)_100%)] px-4 py-4 shadow-[0_16px_36px_rgba(48,84,53,0.08)] sm:px-5 sm:py-5">
               <div className="overflow-x-auto">
                 <div className="grid min-w-[760px] grid-cols-9 gap-3 text-center">
                   {ratingScale.map((item) => (
                     <div key={item.value} className="flex flex-col items-center gap-1">
-                      <span className="text-[1.45rem] text-black sm:text-[1.7rem]">{item.value}</span>
-                      <span className="max-w-[6rem] text-sm leading-5 text-black sm:text-base">
+                      <span className="text-[1.45rem] text-emerald-950 sm:text-[1.7rem]">{item.value}</span>
+                      <span className="max-w-[6rem] text-sm leading-5 text-stone-700 sm:text-base">
                         {item.label}
                       </span>
                     </div>
@@ -120,7 +166,7 @@ export default async function ActivationPage() {
             <ActivationWorksheetClient defaultDate={getCurrentColomboDate()} />
 
             <footer className="mt-10 text-center">
-              <p className="font-[family:var(--font-display)] text-[2rem] font-semibold text-black sm:text-[2.5rem]">
+              <p className="font-[family:var(--font-display)] text-[2rem] font-semibold text-stone-900 sm:text-[2.5rem]">
                 What did you notice about yourself?
               </p>
             </footer>
