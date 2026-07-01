@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  getBehaviouralActivationEntriesByUser,
   deleteConversationSummary,
   createTask,
   createThought,
@@ -163,6 +164,26 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "get_behavioural_activation_entries",
+    description:
+      "Fetch behavioural activation worksheet entries, optionally filtered by date or completion status.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: {
+          type: "string",
+          description: "Optional worksheet date in YYYY-MM-DD format.",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        },
+        status: {
+          type: "string",
+          enum: ["pending", "completed"],
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "delete_conversation_log",
     description: "Delete a conversation log by id for the configured MCP user.",
     inputSchema: {
@@ -272,6 +293,10 @@ function normalizeStatus(value: unknown) {
 
 function normalizePriority(value: unknown) {
   return value === "low" || value === "medium" || value === "high" ? value : "medium";
+}
+
+function normalizeActivationStatus(value: unknown) {
+  return value === "pending" || value === "completed" ? value : null;
 }
 
 function normalizeMonth(value: unknown) {
@@ -469,6 +494,25 @@ async function listTasksForUser(userId: number, filters: { date?: string | null;
   );
 
   return rows;
+}
+
+async function listBehaviouralActivationEntriesForUser(
+  userId: number,
+  filters: { date?: string | null; status?: "pending" | "completed" | null },
+) {
+  const entries = await getBehaviouralActivationEntriesByUser(userId);
+
+  return entries.filter((entry) => {
+    if (filters.date && entry.entry_date !== filters.date) {
+      return false;
+    }
+
+    if (filters.status && entry.status !== filters.status) {
+      return false;
+    }
+
+    return true;
+  });
 }
 
 async function createConversationLogViaApi(request: Request, args: JsonObject) {
@@ -684,6 +728,35 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       filters: { date, status },
       count: tasks.length,
       tasks,
+    });
+  }
+
+  if (name === "get_behavioural_activation_entries") {
+    const date = args.date === undefined ? null : normalizeDate(args.date);
+    const status =
+      args.status === undefined ? null : normalizeActivationStatus(args.status);
+
+    if (args.date !== undefined && !date) {
+      throw new Error(
+        "get_behavioural_activation_entries date must be in YYYY-MM-DD format.",
+      );
+    }
+
+    if (args.status !== undefined && !status) {
+      throw new Error(
+        "get_behavioural_activation_entries status must be pending or completed.",
+      );
+    }
+
+    const entries = await listBehaviouralActivationEntriesForUser(userId, {
+      date,
+      status,
+    });
+
+    return formatToolResult({
+      filters: { date, status },
+      count: entries.length,
+      entries,
     });
   }
 
