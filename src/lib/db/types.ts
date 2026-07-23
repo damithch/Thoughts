@@ -271,3 +271,39 @@ export type NewConversationSummary = {
   moodContext: number | null;
   userId: number;
 };
+
+export type RagDocumentKind =
+  | "thought"
+  | "book_idea"
+  | "conversation_summary"
+  | "ba_entry"
+  | "day_note"
+  | "daily_rollup";
+
+export type RagDocument = {
+  id: number;
+  user_id: number;
+  document_key: string;
+  document_kind: RagDocumentKind;
+  source_entity_id: string;
+  source_date: string | null;
+  title: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  source_updated_at: Date;
+  indexed_at: Date;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type RagDocumentUpsertInput = {
+  documentKey: string;
+  documentKind: RagDocumentKind;
+  sourceEntityId: string;
+  sourceDate: string | null;
+  title: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  sourceUpdatedAt: Date;
+  userId: number;
+};

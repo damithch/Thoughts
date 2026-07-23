@@ -21,6 +21,7 @@ import {
   getCurrentColomboMonth,
   toColomboDate,
 } from "@/lib/time";
+import RagSearch from "@/app/components/rag-search";
 
 export const dynamic = "force-dynamic";
 
@@ -291,6 +292,10 @@ export default async function DashboardPage({
               {averageMood}/10
             </p>
           </div>
+        </section>
+
+        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] sm:rounded-[2rem] sm:p-5">
+          <RagSearch />
         </section>
 
         <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">

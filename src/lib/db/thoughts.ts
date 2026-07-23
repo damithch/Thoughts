@@ -176,11 +176,24 @@ export async function createThought(input: NewThought) {
       input.linkedBookIdeaId,
       input.insightReflection,
     );
+    // Trigger RAG document sync in background (avoid circular static imports)
+    (async () => {
+      try {
+        const mod = await import("./rag");
+        if (mod?.syncRagDocumentsForUser) {
+          await mod.syncRagDocumentsForUser(input.userId);
+        }
+      } catch (e) {
+        // don't block on errors
+        console.error("Background RAG sync failed:", e);
+      }
+    })();
   }
 }
 
-export async function getThoughtsByUser(userId: number) {
+export async function getThoughtsByUser(userId: number, limit = 24) {
   await ensureInitialized();
+  const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 24;
 
   const { rows } = await pool.query<Thought>(
       `
@@ -188,9 +201,9 @@ export async function getThoughtsByUser(userId: number) {
       WHERE t.user_id = $1
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
       ORDER BY t.created_at DESC, t.id DESC
-      LIMIT 24
+      LIMIT $2
     `,
-    [userId],
+    [userId, safeLimit],
   );
 
   return rows;
@@ -303,6 +316,17 @@ export async function updateThought(input: UpdateThought) {
       input.linkedBookIdeaId,
       input.insightReflection,
     );
+    // Trigger RAG document sync in background (avoid circular static imports)
+    (async () => {
+      try {
+        const mod = await import("./rag");
+        if (mod?.syncRagDocumentsForUser) {
+          await mod.syncRagDocumentsForUser(input.userId);
+        }
+      } catch (e) {
+        console.error("Background RAG sync failed:", e);
+      }
+    })();
   }
 
   return rowCount === 1;

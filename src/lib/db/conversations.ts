@@ -38,7 +38,7 @@ export async function createConversationSummary(input: NewConversationSummary) {
 export async function getConversationSummariesByUser(userId: number, limit = 12) {
   await ensureInitialized();
 
-  const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 50) : 12;
+  const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 12;
 
   const { rows } = await pool.query<ConversationSummary>(
     `

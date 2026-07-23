@@ -1,0 +1,83 @@
+import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
+import { pool } from "@/lib/db/client";
+import { embedTexts, generateFromPrompt } from "@/lib/gemini";
+import crypto from "node:crypto";
+
+export async function POST(request: Request) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let payload: { question?: string; k?: number };
+
+  try {
+    payload = (await request.json()) as any;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const question = (payload.question ?? "").toString().trim();
+  const k = Math.max(1, Math.min(Number(payload.k ?? 6), 50));
+
+  if (!question) return NextResponse.json({ error: "Question is required." }, { status: 400 });
+
+  try {
+    let qEmb: number[] = [];
+    const useSynthetic = request.headers.get("x-use-synthetic-embedding") === "1";
+
+    if (useSynthetic) {
+      const hash = crypto.createHash("sha256").update(question).digest();
+      qEmb = Array.from({ length: 1536 }, (_, i) => hash[i % hash.length] / 255);
+    } else {
+      qEmb = (await embedTexts([question]))[0] ?? [];
+    }
+
+    const embStr = `[${qEmb.join(",")} ]`;
+
+    const { rows } = await pool.query(
+      `
+        SELECT document_key, source_entity_id, chunk_index, chunk_text, metadata,
+               embedding <-> $1::vector AS distance
+        FROM embeddings
+        WHERE user_id = $2
+        ORDER BY embedding <-> $1::vector
+        LIMIT $3
+      `,
+      [embStr, currentUser.id, k],
+    );
+
+    // Build prompt parts: instruction + each retrieved chunk as its own part + question
+    const instruction = `You are a helpful assistant with access to the user's private journal excerpts. Use ONLY the excerpts to answer the question. If the answer cannot be found, say "I don't know".`;
+
+    const chunkParts = rows.map((r: any, i: number) => {
+      return `[${i + 1}] (source: ${r.source_entity_id})\n${r.chunk_text}`;
+    });
+
+    const questionPart = `QUESTION:\n${question}\n\nAnswer:`;
+
+    const parts = [instruction, ...chunkParts, questionPart];
+
+    // If synthetic testing mode is enabled, avoid calling Gemini to generate
+    // an answer. Instead return a simple summary composed from the retrieved
+    // excerpts so local testing doesn't require LLM calls.
+    if (useSynthetic) {
+      if (!rows || rows.length === 0) {
+        return NextResponse.json({ answer: "I don't know.", provenance: rows });
+      }
+
+      const excerpts = rows.map((r: any, i: number) => `(${i + 1}) ${r.chunk_text.slice(0, 200).replace(/\n+/g, ' ')}...`);
+      const answer = `Found ${rows.length} relevant excerpts. First excerpts: ${excerpts.slice(0, 3).join(' | ')}`;
+
+      return NextResponse.json({ answer, provenance: rows });
+    }
+
+    const answer = await generateFromPrompt(parts, 512, 0.0);
+
+    return NextResponse.json({ answer, provenance: rows });
+  } catch (error) {
+    console.error("RAG generate failed", error);
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "RAG generation failed.", details: message }, { status: 500 });
+  }
+}

@@ -324,6 +324,75 @@ export async function ensureInitialized() {
         ON conversation_summaries (user_id, conversation_date DESC, created_at DESC)
       `);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rag_documents (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          document_key TEXT NOT NULL,
+          document_kind TEXT NOT NULL,
+          source_entity_id TEXT NOT NULL,
+          source_date DATE,
+          title TEXT NOT NULL DEFAULT '',
+          content TEXT NOT NULL DEFAULT '',
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          source_updated_at TIMESTAMPTZ NOT NULL,
+          indexed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (user_id, document_key),
+          CHECK (
+            document_kind IN (
+              'thought',
+              'book_idea',
+              'conversation_summary',
+              'ba_entry',
+              'day_note',
+              'daily_rollup'
+            )
+          )
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS rag_documents_user_kind_idx
+        ON rag_documents (user_id, document_kind, source_updated_at DESC)
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS rag_documents_user_source_date_idx
+        ON rag_documents (user_id, source_date DESC, indexed_at DESC)
+      `);
+
+      await pool.query(`
+        -- pgvector extension and embeddings table for RAG
+        CREATE EXTENSION IF NOT EXISTS vector;
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS embeddings (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          document_key TEXT NOT NULL,
+          source_entity_id TEXT NOT NULL,
+          chunk_index INTEGER NOT NULL,
+          chunk_text TEXT NOT NULL,
+          embedding VECTOR(1536),
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (user_id, document_key, chunk_index)
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS embeddings_user_idx
+        ON embeddings (user_id, created_at DESC)
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS embeddings_embedding_idx
+        ON embeddings USING ivfflat (embedding vector_l2_ops) WITH (lists = 100)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );
