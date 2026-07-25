@@ -16,6 +16,7 @@ import {
 import type { NewTask, NewThought, TaskItem, Thought } from "@/lib/db";
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
+import { embedTexts } from "@/lib/gemini";
 
 const MCP_API_KEY_HEADER = "x-api-key";
 const MCP_API_KEY_QUERY_PARAM = "api_key";
@@ -212,6 +213,28 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
       },
       required: ["title", "scheduledDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "search_journal",
+    description:
+      "Semantically search the user's journal entries, thoughts, conversation summaries, and daily reflections using vector similarity. Returns relevant excerpts with metadata for the assistant to synthesize an answer. Use for open-ended, thematic, or cross-date questions that get_thoughts/get_daily_summary/get_tasks can't answer directly.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Natural language question or topic to search for.",
+        },
+        k: {
+          type: "integer",
+          description: "Number of excerpts to retrieve (default 6, max 50).",
+          minimum: 1,
+          maximum: 50,
+        },
+      },
+      required: ["query"],
       additionalProperties: false,
     },
   },
@@ -825,6 +848,47 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
     return formatToolResult({
       created: true,
       task: input,
+    });
+  }
+
+  if (name === "search_journal") {
+    const query = normalizeOptionalString(args.query);
+    const k = Math.max(1, Math.min(Number(args.k ?? 6), 50));
+
+    if (!query) {
+      throw new Error("search_journal requires a query string.");
+    }
+
+    const [qEmb] = await embedTexts([query]);
+
+    if (!qEmb || qEmb.length === 0) {
+      throw new Error("Failed to generate embedding for search query.");
+    }
+
+    const embStr = `[${qEmb.join(",")}]`;
+
+    const { rows } = await pool.query(
+      `
+        SELECT document_key, source_entity_id, chunk_index, chunk_text, metadata,
+               embedding <-> $1::vector AS distance
+        FROM embeddings
+        WHERE user_id = $2
+        ORDER BY embedding <-> $1::vector
+        LIMIT $3
+      `,
+      [embStr, userId, k],
+    );
+
+    return formatToolResult({
+      query,
+      count: rows.length,
+      results: rows.map((r: any) => ({
+        documentKey: r.document_key,
+        sourceEntityId: r.source_entity_id,
+        distance: Number(r.distance),
+        metadata: r.metadata,
+        text: r.chunk_text,
+      })),
     });
   }
 
