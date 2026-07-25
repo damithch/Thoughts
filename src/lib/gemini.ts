@@ -118,7 +118,7 @@ export async function embedTexts(texts: string[]) {
   return normalized;
 }
 
-export async function generateFromPrompt(promptOrParts: string | string[], maxOutputTokens = 512, temperature = 0.0) {
+export async function generateFromPrompt(promptOrParts: string | string[], maxOutputTokens = 2048, temperature = 0.0) {
   // Use the modern generateContent method and the nested `contents.parts` body shape
   const path = `${GEMINI_LLM_MODEL}:generateContent`;
 
@@ -130,6 +130,10 @@ export async function generateFromPrompt(promptOrParts: string | string[], maxOu
         parts: parts.map((p) => ({ text: p })),
       },
     ],
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+    },
   } as any;
 
   const json = await callGenerativeApi(path, body);
@@ -183,6 +187,17 @@ export async function ingestMaterializedDocument(userId: number, documentKey: st
       [userId, documentKey, sourceEntityId, i, chunk, embeddingStr, JSON.stringify(metadata)],
     );
   }
+
+  // Delete any stale chunks if the document was shortened
+  await pool.query(
+    `
+      DELETE FROM embeddings
+      WHERE user_id = $1
+        AND document_key = $2
+        AND chunk_index >= $3
+    `,
+    [userId, documentKey, chunks.length],
+  );
 
   return chunks.length;
 }

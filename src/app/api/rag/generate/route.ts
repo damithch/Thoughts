@@ -48,13 +48,13 @@ export async function POST(request: Request) {
     );
 
     // Build prompt parts: instruction + each retrieved chunk as its own part + question
-    const instruction = `You are a helpful assistant with access to the user's private journal excerpts. Use ONLY the excerpts to answer the question. If the answer cannot be found, say "I don't know".`;
+    const instruction = `You are a helpful assistant with access to the user's private journal excerpts. Rely strictly on the information provided in the excerpts to give a direct, clear, and comprehensive answer to the user's question. If the information is not present in the excerpts, respond with "I don't know".`;
 
     const chunkParts = rows.map((r: any, i: number) => {
-      return `[${i + 1}] (source: ${r.source_entity_id})\n${r.chunk_text}`;
+      return `[Excerpt #${i + 1}] (Document: ${r.document_key})\n${r.chunk_text}`;
     });
 
-    const questionPart = `QUESTION:\n${question}\n\nAnswer:`;
+    const questionPart = `USER QUESTION:\n${question}\n\nANSWER:`;
 
     const parts = [instruction, ...chunkParts, questionPart];
 
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ answer, provenance: rows });
     }
 
-    const answer = await generateFromPrompt(parts, 512, 0.0);
+    const answer = await generateFromPrompt(parts, 2048, 0.0);
 
     return NextResponse.json({ answer, provenance: rows });
   } catch (error) {

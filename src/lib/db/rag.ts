@@ -502,6 +502,14 @@ export async function syncRagDocumentsForUser(userId: number) {
       `,
       [userId, keys],
     );
+    await pool.query(
+      `
+        DELETE FROM embeddings
+        WHERE user_id = $1
+          AND document_key <> ALL($2::text[])
+      `,
+      [userId, keys],
+    );
   } else {
     await pool.query(
       `
@@ -510,6 +518,35 @@ export async function syncRagDocumentsForUser(userId: number) {
       `,
       [userId],
     );
+    await pool.query(
+      `
+        DELETE FROM embeddings
+        WHERE user_id = $1
+      `,
+      [userId],
+    );
+  }
+
+  // Automatically chunk and embed all materialized documents into vector database
+  try {
+    const geminiMod = await import("@/lib/gemini");
+    if (geminiMod?.ingestMaterializedDocument) {
+      for (const doc of materialized) {
+        try {
+          await geminiMod.ingestMaterializedDocument(
+            userId,
+            doc.documentKey,
+            doc.sourceEntityId,
+            doc.content,
+            doc.metadata,
+          );
+        } catch (err) {
+          console.error("Failed auto-ingest for doc:", doc.documentKey, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load gemini module during sync:", err);
   }
 
   return {
@@ -543,7 +580,7 @@ export async function getRagDocumentsByUser(
 
   const safeLimit =
     Number.isInteger(options?.limit) && (options?.limit ?? 0) > 0
-      ? Math.min(options?.limit ?? 50, 200)
+      ? Math.min(options?.limit ?? 50, 10000)
       : 50;
   values.push(safeLimit);
 
