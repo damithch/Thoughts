@@ -40,19 +40,49 @@ export async function POST(request: Request) {
 
     const embStr = `[${qEmb.join(",")} ]`;
 
-    const { rows } = await pool.query(
-      `
-        SELECT id, user_id, document_key, source_entity_id, chunk_index, chunk_text, metadata,
-               embedding <-> $1::vector AS distance
-        FROM embeddings
-        WHERE user_id = $2
-        ORDER BY embedding <-> $1::vector
-        LIMIT $3
-      `,
-      [embStr, currentUser.id, k],
+    console.log(`[RAG Retrieval] Query: "${query}" | Embedding length: ${qEmb.length} | First 5 values:`, qEmb.slice(0, 5));
+
+    const kThought = Math.max(1, Math.min(Number((payload as any).kThought ?? 10), 50));
+    const kSummary = Math.max(1, Math.min(Number((payload as any).kSummary ?? 10), 50));
+
+    // Parallel retrieval for thoughts/general docs and conversation_summary logs
+    const [thoughtRes, summaryRes] = await Promise.all([
+      pool.query(
+        `
+          SELECT e.id, e.user_id, e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+                 e.embedding <-> $1::vector AS distance
+          FROM embeddings e
+          JOIN rag_documents d ON e.document_key = d.document_key
+          WHERE e.user_id = $2 AND d.document_kind <> 'conversation_summary'
+          ORDER BY distance ASC
+          LIMIT $3
+        `,
+        [embStr, currentUser.id, kThought],
+      ),
+      pool.query(
+        `
+          SELECT e.id, e.user_id, e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+                 e.embedding <-> $1::vector AS distance
+          FROM embeddings e
+          JOIN rag_documents d ON e.document_key = d.document_key
+          WHERE e.user_id = $2 AND d.document_kind = 'conversation_summary'
+          ORDER BY distance ASC
+          LIMIT $3
+        `,
+        [embStr, currentUser.id, kSummary],
+      ),
+    ]);
+
+    const merged = [...thoughtRes.rows, ...summaryRes.rows].sort(
+      (a: any, b: any) => Number(a.distance) - Number(b.distance),
     );
 
-    return NextResponse.json({ results: rows });
+    console.log(
+      `[RAG Retrieval] Returned ${merged.length} rows (${thoughtRes.rows.length} general, ${summaryRes.rows.length} summaries). Top distances:`,
+      merged.map((r: any) => ({ key: r.document_key, dist: Number(r.distance).toFixed(4) })),
+    );
+
+    return NextResponse.json({ results: merged });
   } catch (error) {
     console.error("Retrieval failed", error);
     return NextResponse.json({ error: "Retrieval failed." }, { status: 500 });

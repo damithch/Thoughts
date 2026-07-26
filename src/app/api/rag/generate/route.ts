@@ -35,16 +35,39 @@ export async function POST(request: Request) {
 
     const embStr = `[${qEmb.join(",")} ]`;
 
-    const { rows } = await pool.query(
-      `
-        SELECT document_key, source_entity_id, chunk_index, chunk_text, metadata,
-               embedding <-> $1::vector AS distance
-        FROM embeddings
-        WHERE user_id = $2
-        ORDER BY embedding <-> $1::vector
-        LIMIT $3
-      `,
-      [embStr, currentUser.id, k],
+    const kThought = Math.max(1, Math.min(Number((payload as any).kThought ?? 10), 50));
+    const kSummary = Math.max(1, Math.min(Number((payload as any).kSummary ?? 10), 50));
+
+    // Parallel retrieval for thoughts/general docs and conversation_summary logs
+    const [thoughtRes, summaryRes] = await Promise.all([
+      pool.query(
+        `
+          SELECT e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+                 e.embedding <-> $1::vector AS distance
+          FROM embeddings e
+          JOIN rag_documents d ON e.document_key = d.document_key
+          WHERE e.user_id = $2 AND d.document_kind <> 'conversation_summary'
+          ORDER BY distance ASC
+          LIMIT $3
+        `,
+        [embStr, currentUser.id, kThought],
+      ),
+      pool.query(
+        `
+          SELECT e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+                 e.embedding <-> $1::vector AS distance
+          FROM embeddings e
+          JOIN rag_documents d ON e.document_key = d.document_key
+          WHERE e.user_id = $2 AND d.document_kind = 'conversation_summary'
+          ORDER BY distance ASC
+          LIMIT $3
+        `,
+        [embStr, currentUser.id, kSummary],
+      ),
+    ]);
+
+    const rows = [...thoughtRes.rows, ...summaryRes.rows].sort(
+      (a: any, b: any) => Number(a.distance) - Number(b.distance),
     );
 
     // Build prompt parts: instruction + each retrieved chunk as its own part + question
@@ -67,7 +90,7 @@ export async function POST(request: Request) {
       }
 
       const excerpts = rows.map((r: any, i: number) => `(${i + 1}) ${r.chunk_text.slice(0, 200).replace(/\n+/g, ' ')}...`);
-      const answer = `Found ${rows.length} relevant excerpts. First excerpts: ${excerpts.slice(0, 3).join(' | ')}`;
+      const answer = `Found ${rows.length} relevant excerpts (${thoughtRes.rows.length} general, ${summaryRes.rows.length} summaries). First excerpts: ${excerpts.slice(0, 3).join(' | ')}`;
 
       return NextResponse.json({ answer, provenance: rows });
     }
