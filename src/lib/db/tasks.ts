@@ -503,3 +503,23 @@ export async function getTasksByUserMonth(userId: number, month: string) {
 
   return rows;
 }
+
+export async function getTasksByUser(userId: number) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+      ORDER BY scheduled_date DESC, created_at DESC
+      LIMIT 1000
+    `,
+    [userId],
+  );
+
+  return rows;
+}

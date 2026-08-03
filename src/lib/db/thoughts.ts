@@ -176,18 +176,14 @@ export async function createThought(input: NewThought) {
       input.linkedBookIdeaId,
       input.insightReflection,
     );
-    // Trigger RAG document sync in background (avoid circular static imports)
-    (async () => {
-      try {
-        const mod = await import("./rag");
-        if (mod?.syncRagDocumentsForUser) {
-          await mod.syncRagDocumentsForUser(input.userId);
-        }
-      } catch (e) {
-        // don't block on errors
-        console.error("Background RAG sync failed:", e);
+    try {
+      const mod = await import("./rag");
+      if (mod?.syncRagDocumentsForUser) {
+        await mod.syncRagDocumentsForUser(input.userId);
       }
-    })();
+    } catch (e) {
+      console.error("RAG sync failed:", e);
+    }
   }
 }
 
@@ -316,17 +312,14 @@ export async function updateThought(input: UpdateThought) {
       input.linkedBookIdeaId,
       input.insightReflection,
     );
-    // Trigger RAG document sync in background (avoid circular static imports)
-    (async () => {
-      try {
-        const mod = await import("./rag");
-        if (mod?.syncRagDocumentsForUser) {
-          await mod.syncRagDocumentsForUser(input.userId);
-        }
-      } catch (e) {
-        console.error("Background RAG sync failed:", e);
+    try {
+      const mod = await import("./rag");
+      if (mod?.syncRagDocumentsForUser) {
+        await mod.syncRagDocumentsForUser(input.userId);
       }
-    })();
+    } catch (e) {
+      console.error("RAG sync failed:", e);
+    }
   }
 
   return rowCount === 1;

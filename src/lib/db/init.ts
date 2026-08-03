@@ -363,35 +363,39 @@ export async function ensureInitialized() {
         ON rag_documents (user_id, source_date DESC, indexed_at DESC)
       `);
 
-      await pool.query(`
-        -- pgvector extension and embeddings table for RAG
-        CREATE EXTENSION IF NOT EXISTS vector;
-      `);
+      try {
+        await pool.query(`
+          -- pgvector extension and embeddings table for RAG
+          CREATE EXTENSION IF NOT EXISTS vector;
+        `);
 
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS embeddings (
-          id BIGSERIAL PRIMARY KEY,
-          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          document_key TEXT NOT NULL,
-          source_entity_id TEXT NOT NULL,
-          chunk_index INTEGER NOT NULL,
-          chunk_text TEXT NOT NULL,
-          embedding VECTOR(1536),
-          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE (user_id, document_key, chunk_index)
-        )
-      `);
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS embeddings (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            document_key TEXT NOT NULL,
+            source_entity_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            chunk_text TEXT NOT NULL,
+            embedding VECTOR(1536),
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (user_id, document_key, chunk_index)
+          )
+        `);
 
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS embeddings_user_idx
-        ON embeddings (user_id, created_at DESC)
-      `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS embeddings_user_idx
+          ON embeddings (user_id, created_at DESC)
+        `);
 
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS embeddings_embedding_idx
-        ON embeddings USING ivfflat (embedding vector_l2_ops) WITH (lists = 100)
-      `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS embeddings_embedding_idx
+          ON embeddings USING ivfflat (embedding vector_l2_ops) WITH (lists = 100)
+        `);
+      } catch (vectorError) {
+        console.warn("pgvector extension or vector index initialization skipped/failed:", vectorError);
+      }
 
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",

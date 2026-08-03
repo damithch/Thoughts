@@ -174,6 +174,60 @@ function StatCard({
   );
 }
 
+function CompletionTrendChart({ stats }: { stats: Array<{ date: string; total_tasks: number; completed_tasks: number }> }) {
+  if (!stats || stats.length === 0) return null;
+
+  const height = 120;
+  const width = 600;
+  const padding = 20;
+
+  const points = stats.map((d, i) => {
+    const rate = d.total_tasks > 0 ? (d.completed_tasks / d.total_tasks) : 0;
+    const x = padding + (i / Math.max(1, stats.length - 1)) * (width - 2 * padding);
+    const y = height - padding - rate * (height - 2 * padding);
+    return { x, y, rate, date: d.date.split("-").slice(1).join("/") };
+  });
+
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+
+  return (
+    <div className="mb-6 rounded-[1.5rem] border border-purple-950/10 bg-white/80 p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-900">
+          Daily Completion Rate Trend ({stats.length} Days)
+        </h3>
+        <span className="text-xs text-stone-500">0% – 100%</span>
+      </div>
+      <div className="w-full overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-32 overflow-visible">
+          {/* Grid lines */}
+          <line x1={padding} y1={padding} x2={width - padding} y2={padding} stroke="#e2e8f0" strokeDasharray="3 3" />
+          <line x1={padding} y1={height / 2} x2={width - padding} y2={height / 2} stroke="#e2e8f0" strokeDasharray="3 3" />
+          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#cbd5e1" />
+
+          {/* Area fill */}
+          {points.length > 1 && (
+            <path
+              d={`${pathD} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`}
+              fill="rgba(147, 51, 234, 0.08)"
+            />
+          )}
+
+          {/* Trend line */}
+          <path d={pathD} fill="none" stroke="#7e22ce" strokeWidth="2.5" strokeLinecap="round" />
+
+          {/* Data dots */}
+          {points.map((p, idx) => (
+            <g key={idx}>
+              <circle cx={p.x} cy={p.y} r="3.5" className="fill-purple-700 stroke-white" strokeWidth="1.5" />
+            </g>
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function buildMatrixRows(
   recurringTasks: RecurringTask[],
   monthTasks: TaskItem[],
@@ -388,9 +442,11 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
           <StatCard
             label="Perfect Days"
             value={`${perfectDays}`}
-            sublabel="all scheduled tasks closed"
+            sublabel="100% completed"
           />
         </div>
+
+        <CompletionTrendChart stats={monthDayStats} />
 
         <div className="overflow-x-auto rounded-[1.5rem] border border-stone-900/10 bg-white/80 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
           <table className="w-full border-collapse" style={{ minWidth: `${340 + monthDays.length * 34}px` }}>

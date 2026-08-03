@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { ServiceWorkerRegistration } from "@/app/components/service-worker-registration";
+import { GlobalSearch } from "@/app/components/global-search";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -34,6 +35,7 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         {children}
+        <GlobalSearch />
         <ServiceWorkerRegistration />
       </body>
     </html>

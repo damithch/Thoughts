@@ -23,6 +23,7 @@ import {
 } from "@/lib/time";
 import RagSearch from "@/app/components/rag-search";
 import SmartCapture from "@/app/components/smart-capture";
+import { BackupRestore } from "@/app/components/backup-restore";
 
 export const dynamic = "force-dynamic";
 
