@@ -63,15 +63,17 @@ export function RagSearch() {
   return (
     <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)]">
       <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">Search your journal</p>
-      <div className="mt-3 flex gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <input
-          className="flex-1 rounded-lg border px-3 py-2"
+          className="w-full rounded-lg border px-3 py-2 sm:flex-1"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="e.g. What have I written about feeling anxious?"
         />
-        <button className="rounded-lg bg-emerald-900 px-3 py-2 text-white" onClick={runRetrieval} disabled={loading}>Retrieve</button>
-        <button className="rounded-lg bg-emerald-600 px-3 py-2 text-white" onClick={runGenerate} disabled={loading}>Generate</button>
+        <div className="flex gap-2">
+          <button className="flex-1 rounded-lg bg-emerald-900 px-3 py-2 text-sm text-white sm:flex-none" onClick={runRetrieval} disabled={loading}>Retrieve</button>
+          <button className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white sm:flex-none" onClick={runGenerate} disabled={loading}>Generate</button>
+        </div>
       </div>
 
       {error ? <div className="mt-3 text-sm text-red-700">{error}</div> : null}
