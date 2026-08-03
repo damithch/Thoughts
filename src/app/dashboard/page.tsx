@@ -209,6 +209,12 @@ export default async function DashboardPage({
 
             <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap">
               <Link
+                href="/dashboard/agent"
+                className="rounded-full border border-cyan-950/20 bg-cyan-950 px-4 py-3 text-center text-cyan-50 font-semibold transition-colors hover:bg-cyan-900 shadow-md"
+              >
+                🤖 AI Task Agent
+              </Link>
+              <Link
                 href="/dashboard/today"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
@@ -293,6 +299,28 @@ export default async function DashboardPage({
             <p className="mt-3 text-sm leading-7 text-stone-700">
               {averageMood}/10
             </p>
+          </div>
+        </section>
+
+        <section className="rounded-[1.75rem] border border-cyan-950/20 bg-gradient-to-r from-cyan-950 via-slate-900 to-emerald-950 p-5 text-white shadow-xl backdrop-blur sm:rounded-[2rem] sm:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-cyan-300 border border-cyan-400/30">
+                🤖 AI Automation
+              </span>
+              <h2 className="mt-2 font-[family:var(--font-display)] text-2xl font-bold text-white sm:text-3xl">
+                AI Agent & Task Control Center
+              </h2>
+              <p className="mt-1 text-sm text-cyan-100/80 max-w-xl">
+                Command your AI task agent using natural language or quick action presets to auto-plan your day, complete urgent tasks, and roll forward uncompleted routines.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/agent"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 shadow-lg transition-all hover:bg-cyan-300 hover:scale-105 shrink-0 text-sm"
+            >
+              🚀 Launch Agent Control Center
+            </Link>
           </div>
         </section>
 

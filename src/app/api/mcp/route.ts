@@ -4,6 +4,15 @@ import {
   getBehaviouralActivationEntriesByUser,
   deleteConversationSummary,
   createTask,
+  updateTaskStatus,
+  updateTask,
+  deleteTask,
+  moveOpenTasksToDate,
+  getRecurringTasksByUser,
+  createRecurringTask,
+  updateRecurringTask,
+  deleteRecurringTask,
+  generateDailyTasksFromRecurring,
   createThought,
   getConversationSummariesByUserAndDate,
   getConversationSummariesByUserMonth,
@@ -13,7 +22,7 @@ import {
   getThoughtsByUserAndDate,
   getUserById,
 } from "@/lib/db";
-import type { NewTask, NewThought, TaskItem, Thought } from "@/lib/db";
+import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskItem, Thought } from "@/lib/db";
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import { embedTexts } from "@/lib/gemini";
@@ -213,6 +222,107 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
       },
       required: ["title", "scheduledDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_task_status",
+    description: "Update the status of a daily task (todo, in_progress, done, skipped).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", minimum: 1, description: "ID of the task to update." },
+        status: { type: "string", enum: ["todo", "in_progress", "done", "skipped"] },
+      },
+      required: ["id", "status"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_task",
+    description: "Update details of an existing daily task (title, priority, status, tags, note, scheduled date).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", minimum: 1 },
+        title: { type: "string" },
+        priority: { type: "string", enum: ["low", "medium", "high"] },
+        status: { type: "string", enum: ["todo", "in_progress", "done", "skipped"] },
+        tags: { type: "array", items: { type: "string" } },
+        note: { type: "string" },
+        scheduledDate: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_task",
+    description: "Delete a daily task by ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", minimum: 1 },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "roll_forward_tasks",
+    description: "Move all open (todo / in_progress) tasks from a source date to a target date.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        toDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      },
+      required: ["fromDate", "toDate"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_recurring_tasks",
+    description: "Get all active and inactive recurring task templates for the user.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_recurring_task",
+    description: "Create a new recurring task rule/template.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        priority: { type: "string", enum: ["low", "medium", "high"] },
+        tags: { type: "array", items: { type: "string" } },
+        note: { type: "string" },
+        daysOfWeek: {
+          type: "array",
+          items: { type: "string", enum: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] },
+        },
+        startDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        endDate: { type: ["string", "null"], pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      },
+      required: ["title", "startDate", "daysOfWeek"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "apply_recurring_tasks",
+    description: "Auto-generate daily tasks for a specific date from active recurring templates.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      },
+      required: ["date"],
       additionalProperties: false,
     },
   },
@@ -849,6 +959,106 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       created: true,
       task: input,
     });
+  }
+
+  if (name === "update_task_status") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    const status = normalizeStatus(args.status);
+
+    if (id === null || !status) {
+      throw new Error("update_task_status requires a valid task id and status (todo, in_progress, done, skipped).");
+    }
+
+    const updated = await updateTaskStatus({ id, status, userId });
+    if (!updated) {
+      throw new Error("Task not found or failed to update status.");
+    }
+
+    return formatToolResult({ updated: true, id, status });
+  }
+
+  if (name === "update_task") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (id === null) {
+      throw new Error("update_task requires a valid task id.");
+    }
+
+    const updated = await updateTask({
+      id,
+      userId,
+      title: args.title !== undefined ? normalizeOptionalString(args.title) : undefined,
+      priority: args.priority !== undefined ? normalizePriority(args.priority) : undefined,
+      status: args.status !== undefined ? (normalizeStatus(args.status) ?? undefined) : undefined,
+      tags: args.tags !== undefined ? normalizeStringArray(args.tags) : undefined,
+      note: args.note !== undefined ? normalizeOptionalString(args.note) : undefined,
+      scheduledDate: args.scheduledDate !== undefined ? (normalizeDate(args.scheduledDate) ?? undefined) : undefined,
+    });
+
+    return formatToolResult({ updated: Boolean(updated), id });
+  }
+
+  if (name === "delete_task") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (id === null) {
+      throw new Error("delete_task requires a valid task id.");
+    }
+
+    const deleted = await deleteTask(id, userId);
+    if (!deleted) {
+      throw new Error("Task not found or could not be deleted.");
+    }
+
+    return formatToolResult({ deleted: true, id });
+  }
+
+  if (name === "roll_forward_tasks") {
+    const fromDate = normalizeDate(args.fromDate);
+    const toDate = normalizeDate(args.toDate);
+    if (!fromDate || !toDate) {
+      throw new Error("roll_forward_tasks requires valid fromDate and toDate in YYYY-MM-DD format.");
+    }
+
+    const movedCount = await moveOpenTasksToDate(userId, fromDate, toDate);
+    return formatToolResult({ movedCount, fromDate, toDate });
+  }
+
+  if (name === "get_recurring_tasks") {
+    const recurringTasks = await getRecurringTasksByUser(userId);
+    return formatToolResult({ count: recurringTasks.length, recurringTasks });
+  }
+
+  if (name === "create_recurring_task") {
+    const title = normalizeOptionalString(args.title);
+    const startDate = normalizeDate(args.startDate);
+    const daysOfWeek = Array.isArray(args.daysOfWeek) ? (args.daysOfWeek as string[]) : [];
+
+    if (!title || !startDate || daysOfWeek.length === 0) {
+      throw new Error("create_recurring_task requires title, startDate, and daysOfWeek.");
+    }
+
+    const input: NewRecurringTask = {
+      userId,
+      title,
+      priority: normalizePriority(args.priority),
+      tags: normalizeStringArray(args.tags),
+      note: normalizeOptionalString(args.note),
+      daysOfWeek,
+      startDate,
+      endDate: args.endDate ? normalizeDate(args.endDate) : null,
+    };
+
+    const id = await createRecurringTask(input);
+    return formatToolResult({ created: true, id, task: input });
+  }
+
+  if (name === "apply_recurring_tasks") {
+    const date = normalizeDate(args.date);
+    if (!date) {
+      throw new Error("apply_recurring_tasks requires a valid date in YYYY-MM-DD format.");
+    }
+
+    const count = await generateDailyTasksFromRecurring(userId, date);
+    return formatToolResult({ appliedCount: count, date });
   }
 
   if (name === "search_journal") {

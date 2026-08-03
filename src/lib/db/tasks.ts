@@ -10,7 +10,9 @@ import type {
   TaskCompletionStats,
   TaskItem,
   TaskPriority,
+  TaskStatus,
   UpdateRecurringTask,
+  UpdateTaskInput,
   UpdateTaskStatusInput,
   UpsertDayRecordInput,
 } from "@/lib/db/types";
@@ -523,3 +525,112 @@ export async function getTasksByUser(userId: number) {
 
   return rows;
 }
+
+export async function deleteTask(id: number, userId: number) {
+  await ensureInitialized();
+
+  const { rowCount } = await pool.query(
+    `
+      DELETE FROM daily_tasks
+      WHERE id = $1
+        AND user_id = $2
+    `,
+    [id, userId],
+  );
+
+  return rowCount === 1;
+}
+
+export async function updateTask(input: UpdateTaskInput) {
+  await ensureInitialized();
+
+  const updates: string[] = [];
+  const values: unknown[] = [input.id, input.userId];
+  let paramIdx = 3;
+
+  if (input.title !== undefined) {
+    updates.push(`title = $${paramIdx++}`);
+    values.push(input.title);
+  }
+
+  if (input.priority !== undefined) {
+    updates.push(`priority = $${paramIdx++}`);
+    values.push(input.priority);
+  }
+
+  if (input.status !== undefined) {
+    updates.push(`status = $${paramIdx++}`);
+    values.push(input.status);
+
+    if (input.status === "in_progress") {
+      updates.push(`started_at = COALESCE(started_at, NOW())`);
+    } else if (input.status === "todo") {
+      updates.push(`started_at = NULL, completed_at = NULL`);
+    } else if (input.status === "done" || input.status === "skipped") {
+      updates.push(`completed_at = COALESCE(completed_at, NOW())`);
+    }
+  }
+
+  if (input.tags !== undefined) {
+    updates.push(`tags = $${paramIdx++}`);
+    values.push(input.tags);
+  }
+
+  if (input.note !== undefined) {
+    updates.push(`note = $${paramIdx++}`);
+    values.push(input.note);
+  }
+
+  if (input.scheduledDate !== undefined) {
+    updates.push(`scheduled_date = $${paramIdx++}::date`);
+    values.push(input.scheduledDate);
+  }
+
+  if (updates.length === 0) {
+    return false;
+  }
+
+  updates.push(`updated_at = NOW()`);
+
+  const query = `
+    UPDATE daily_tasks
+    SET ${updates.join(", ")}
+    WHERE id = $1 AND user_id = $2
+  `;
+
+  const { rowCount } = await pool.query(query, values);
+  return rowCount === 1;
+}
+
+export async function batchUpdateTaskStatus(
+  userId: number,
+  taskIds: number[],
+  status: TaskStatus,
+) {
+  await ensureInitialized();
+
+  if (taskIds.length === 0) return 0;
+
+  const { rowCount } = await pool.query(
+    `
+      UPDATE daily_tasks
+      SET status = $1,
+          started_at = CASE
+            WHEN $1 = 'in_progress' AND started_at IS NULL THEN NOW()
+            WHEN $1 = 'todo' THEN NULL
+            ELSE started_at
+          END,
+          completed_at = CASE
+            WHEN $1 IN ('done', 'skipped') THEN NOW()
+            ELSE NULL
+          END,
+          updated_at = NOW()
+      WHERE user_id = $2
+        AND id = ANY($3::bigint[])
+    `,
+    [status, userId, taskIds],
+  );
+
+  return rowCount ?? 0;
+}
+

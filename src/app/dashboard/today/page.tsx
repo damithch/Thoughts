@@ -354,6 +354,12 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
 
             <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap">
               <Link
+                href="/dashboard/agent"
+                className="rounded-full border border-cyan-950/20 bg-cyan-950 px-4 py-3 text-center text-cyan-50 font-semibold transition-colors hover:bg-cyan-900 shadow-md"
+              >
+                🤖 AI Task Agent
+              </Link>
+              <Link
                 href="/dashboard"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >

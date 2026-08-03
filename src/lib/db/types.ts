@@ -296,6 +296,17 @@ export type RagDocument = {
   updated_at: Date;
 };
 
+export type UpdateTaskInput = {
+  id: number;
+  userId: number;
+  title?: string;
+  priority?: TaskPriority;
+  status?: TaskStatus;
+  tags?: string[];
+  note?: string;
+  scheduledDate?: string;
+};
+
 export type RagDocumentUpsertInput = {
   documentKey: string;
   documentKind: RagDocumentKind;

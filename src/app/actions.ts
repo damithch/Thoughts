@@ -17,6 +17,7 @@ import {
   createThought,
   createUser,
   deleteRecurringTask,
+  deleteTask,
   deleteThought,
   generateDailyTasksFromRecurring,
   getUserByEmail,
@@ -25,6 +26,7 @@ import {
   TaskStatus,
   updateBookIdeaStatus,
   updateRecurringTask,
+  updateTask,
   updateTaskStatus,
   updateThought,
   upsertDayRecord,
@@ -788,3 +790,57 @@ export async function updateBookIdeaStatusAction(formData: FormData) {
   revalidatePath("/dashboard");
   redirect("/dashboard/insights?toast=idea_updated&type=success");
 }
+
+export async function deleteTaskAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const taskId = Number(formData.get("taskId"));
+  const date = formData.get("date")?.toString() || "";
+
+  if (Number.isInteger(taskId) && taskId > 0) {
+    await deleteTask(taskId, currentUser.id);
+  }
+
+  revalidatePath("/dashboard/today");
+  revalidatePath("/dashboard/agent");
+
+  if (date) {
+    redirect(`/dashboard/today?date=${date}&toast=task_deleted&type=success`);
+  } else {
+    redirect("/dashboard/today?toast=task_deleted&type=success");
+  }
+}
+
+export async function updateTaskAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const taskId = Number(formData.get("taskId"));
+  const title = formData.get("title")?.toString().trim();
+  const priority = formData.get("priority")?.toString() as TaskPriority;
+  const status = formData.get("status")?.toString() as TaskStatus;
+  const note = formData.get("note")?.toString().trim();
+
+  if (Number.isInteger(taskId) && taskId > 0) {
+    await updateTask({
+      id: taskId,
+      userId: currentUser.id,
+      ...(title ? { title } : {}),
+      ...(priority ? { priority } : {}),
+      ...(status ? { status } : {}),
+      ...(note !== undefined ? { note } : {}),
+    });
+  }
+
+  revalidatePath("/dashboard/today");
+  revalidatePath("/dashboard/agent");
+  revalidatePath("/dashboard/completion");
+}
+
