@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
+import { logoutAction } from "@/app/actions";
 import type { RecurringTask, TaskItem, TaskPriority, TaskStatus } from "@/lib/db";
 
 type ActionLog = {
@@ -35,22 +37,22 @@ export function AgentTaskControlCenter({
   const [agentLogs, setAgentLogs] = useState<ActionLog[]>([
     {
       tool: "agent_ready",
-      details: `AI Task Control Agent initialized for user ${userName}. Ready for natural language commands or preset actions.`,
+      details: `AI Task Control Agent active for ${userName}. Ready to process natural language commands or preset automation.`,
       status: "info",
     },
   ]);
   const [agentSummary, setAgentSummary] = useState<string>(
-    "Agent is active. Enter a command or click a preset action to manage tasks automatically.",
+    "Agent is active. Type a command or pick a preset action to manage tasks automatically.",
   );
 
-  // New Quick Task state
+  // Quick Add Form state
   const [newTitle, setNewTitle] = useState("");
   const [newPriority, setNewPriority] = useState<TaskPriority>("medium");
   const [newTag, setNewTag] = useState("");
 
   const [isPending, startTransition] = useTransition();
 
-  // Execute Agent Command (Preset or Natural Language)
+  // Execute Agent Command
   async function runAgentCommand(actionPayload: { action?: string; customPrompt?: string }) {
     setIsProcessing(true);
     try {
@@ -107,10 +109,10 @@ export function AgentTaskControlCenter({
     }
   }
 
-  // Directly update task status
+  // Update Task Status
   async function handleStatusChange(taskId: number, newStatus: TaskStatus) {
     try {
-      const response = await fetch("/api/mcp", {
+      await fetch("/api/mcp", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -127,7 +129,7 @@ export function AgentTaskControlCenter({
         }),
       });
 
-      // Optimistic update
+      // Optimistic state update
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
       );
@@ -135,7 +137,7 @@ export function AgentTaskControlCenter({
       setAgentLogs((prev) => [
         {
           tool: "update_task_status",
-          details: `Manually updated task #${taskId} status to "${newStatus}"`,
+          details: `Updated task #${taskId} status to "${newStatus}"`,
           status: "success",
         },
         ...prev,
@@ -145,7 +147,7 @@ export function AgentTaskControlCenter({
     }
   }
 
-  // Directly delete task
+  // Delete Task
   async function handleDeleteTask(taskId: number) {
     if (!confirm("Are you sure you want to delete this task?")) return;
 
@@ -181,7 +183,7 @@ export function AgentTaskControlCenter({
     }
   }
 
-  // Handle Quick Add Task
+  // Quick Add
   async function handleQuickAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -209,113 +211,135 @@ export function AgentTaskControlCenter({
   const completionRate = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 p-4 sm:p-6 md:p-8">
-      {/* Header */}
-      <header className="relative overflow-hidden rounded-[2.5rem] border border-cyan-950/15 bg-slate-900 p-6 text-white shadow-2xl backdrop-blur-xl sm:p-8">
-        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-cyan-500/20 blur-3xl" />
-        <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-emerald-500/20 blur-3xl" />
-
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
+      {/* Header Card */}
+      <header className="rounded-[2rem] border border-cyan-950/10 bg-white/70 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur sm:rounded-[2.5rem] sm:p-6 md:p-8">
+        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-950/60 px-3.5 py-1 text-xs uppercase tracking-[0.25em] text-cyan-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-950/10 bg-cyan-50 px-3.5 py-1 text-xs uppercase tracking-[0.22em] text-cyan-950 font-semibold sm:tracking-[0.25em]">
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400"></span>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-600 opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-600"></span>
               </span>
               AI Task Agent Active
             </div>
-            <h1 className="mt-3 font-[family:var(--font-display)] text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl">
+            <h1 className="mt-3 font-[family:var(--font-display)] text-4xl leading-none text-stone-900 sm:text-5xl md:text-6xl">
               Task Control Center
             </h1>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-300">
-              Use natural language or quick presets to command your agent, automate daily workflows, roll forward unfinished tasks, and monitor task completion.
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-700 sm:mt-4 sm:leading-7">
+              Command your agent using natural language prompts or quick presets to auto-plan your day, roll forward unfinished tasks, and execute routines.
             </p>
+
+            {/* Target Date Picker */}
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label htmlFor="agent-target-date" className="text-xs font-medium uppercase tracking-[0.16em] text-stone-500">
+                Target Date:
+              </label>
+              <input
+                id="agent-target-date"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => {
+                  const newD = e.target.value;
+                  setSelectedDate(newD);
+                  runAgentCommand({ customPrompt: `Fetch tasks for date ${newD}` });
+                }}
+                className="rounded-full border border-cyan-950/15 bg-white px-4 py-1.5 text-xs font-semibold text-stone-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-950/20"
+              />
+            </div>
           </div>
 
-          {/* Navigation Controls */}
-          <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
+          {/* Navigation Bar */}
+          <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap">
             <Link
               href="/dashboard/today"
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2.5 font-medium text-white transition-all hover:bg-white/20 hover:scale-105"
+              className="rounded-full border border-emerald-950/10 px-4 py-2.5 text-center text-emerald-950 transition-colors hover:bg-white text-xs font-medium sm:text-sm"
             >
-              📅 Today View
+              Today View
             </Link>
             <Link
               href="/dashboard/tasks"
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2.5 font-medium text-white transition-all hover:bg-white/20 hover:scale-105"
+              className="rounded-full border border-blue-950/10 px-4 py-2.5 text-center text-blue-950 transition-colors hover:bg-blue-50 text-xs font-medium sm:text-sm"
             >
-              🔄 Recurring Routines
+              Task Management
             </Link>
             <Link
               href="/dashboard/completion"
-              className="rounded-full border border-white/20 bg-white/10 px-4 py-2.5 font-medium text-white transition-all hover:bg-white/20 hover:scale-105"
+              className="rounded-full border border-purple-950/10 px-4 py-2.5 text-center text-purple-950 transition-colors hover:bg-purple-50 text-xs font-medium sm:text-sm"
             >
-              📊 Completion Metrics
+              Completion Stats
             </Link>
             <Link
               href="/dashboard"
-              className="rounded-full border border-emerald-500/40 bg-emerald-950/60 px-4 py-2.5 font-medium text-emerald-300 transition-all hover:bg-emerald-900"
+              className="rounded-full border border-emerald-950/10 px-4 py-2.5 text-center text-emerald-950 transition-colors hover:bg-white text-xs font-medium sm:text-sm"
             >
-              📓 Journal Dashboard
+              Journal Dashboard
             </Link>
-          </div>
-        </div>
-
-        {/* Date Selector & Key Metrics Bar */}
-        <div className="relative mt-8 grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Target Date</label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                const newD = e.target.value;
-                setSelectedDate(newD);
-                runAgentCommand({ customPrompt: `Fetch tasks for date ${newD}` });
-              }}
-              className="rounded-xl border border-white/20 bg-slate-800/90 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1 rounded-xl bg-slate-800/50 p-2.5 text-center">
-            <span className="text-[11px] uppercase tracking-wider text-slate-400">Total Scheduled</span>
-            <span className="font-[family:var(--font-display)] text-2xl font-bold text-white">{totalTasks}</span>
-          </div>
-
-          <div className="flex flex-col gap-1 rounded-xl bg-slate-800/50 p-2.5 text-center">
-            <span className="text-[11px] uppercase tracking-wider text-slate-400">Completion Rate</span>
-            <span className="font-[family:var(--font-display)] text-2xl font-bold text-emerald-400">{completionRate}%</span>
-          </div>
-
-          <div className="flex flex-col gap-1 rounded-xl bg-slate-800/50 p-2.5 text-center">
-            <span className="text-[11px] uppercase tracking-wider text-slate-400">In Progress</span>
-            <span className="font-[family:var(--font-display)] text-2xl font-bold text-amber-400">{inProgressTasks}</span>
-          </div>
-
-          <div className="flex flex-col gap-1 rounded-xl bg-slate-800/50 p-2.5 text-center">
-            <span className="text-[11px] uppercase tracking-wider text-slate-400">Open High Priority</span>
-            <span className="font-[family:var(--font-display)] text-2xl font-bold text-rose-400">{openHighTasks}</span>
+            <form action={logoutAction} className="w-full sm:w-auto">
+              <button
+                type="submit"
+                className="w-full rounded-full bg-emerald-950 px-4 py-2.5 text-center text-emerald-50 transition-colors hover:bg-emerald-800 text-xs font-medium sm:text-sm"
+              >
+                Logout
+              </button>
+            </form>
           </div>
         </div>
       </header>
 
-      {/* Main Grid: Command Console & Tasks */}
+      {/* Metrics Summary Section */}
+      <section className="grid gap-3 grid-cols-2 md:grid-cols-4 sm:gap-4">
+        <div className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:p-5">
+          <p className="text-xs uppercase tracking-[0.18em] text-cyan-900/70">
+            Total Tasks
+          </p>
+          <p className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-900 sm:text-4xl">
+            {totalTasks}
+          </p>
+        </div>
+        <div className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:p-5">
+          <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
+            Completion Rate
+          </p>
+          <p className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-emerald-900 sm:text-4xl">
+            {completionRate}%
+          </p>
+        </div>
+        <div className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:p-5">
+          <p className="text-xs uppercase tracking-[0.18em] text-amber-800/70">
+            In Progress
+          </p>
+          <p className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-amber-900 sm:text-4xl">
+            {inProgressTasks}
+          </p>
+        </div>
+        <div className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:p-5">
+          <p className="text-xs uppercase tracking-[0.18em] text-rose-800/70">
+            Open High Priority
+          </p>
+          <p className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-rose-900 sm:text-4xl">
+            {openHighTasks}
+          </p>
+        </div>
+      </section>
+
+      {/* Main Interactive Grid */}
       <div className="grid gap-6 lg:grid-cols-12">
-        {/* Left Column: Command Bar & Presets (5 cols) */}
+        {/* Left Column: Command & Log Console (5 cols) */}
         <div className="flex flex-col gap-6 lg:col-span-5">
-          {/* Agent Command Prompt */}
-          <div className="rounded-[2rem] border border-stone-200/80 bg-white/90 p-5 shadow-xl backdrop-blur sm:p-6">
+          {/* Command Agent Card */}
+          <section className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-5 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6">
             <div className="flex items-center justify-between">
-              <h2 className="font-[family:var(--font-display)] text-xl font-bold text-stone-900">
+              <h2 className="font-[family:var(--font-display)] text-2xl leading-none text-stone-900">
                 🤖 Command Agent
               </h2>
               {isProcessing && (
-                <span className="flex items-center gap-1.5 text-xs text-cyan-700 font-medium">
-                  <span className="h-2 w-2 animate-ping rounded-full bg-cyan-600" /> Executing...
+                <span className="flex items-center gap-1.5 text-xs text-cyan-900 font-semibold animate-pulse">
+                  <span className="h-2 w-2 rounded-full bg-cyan-600"></span> Executing...
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-stone-500">
+            <p className="mt-2 text-xs leading-6 text-stone-600 sm:text-sm">
               Type what you want the agent to do with your tasks for {selectedDate}.
             </p>
 
@@ -327,85 +351,87 @@ export function AgentTaskControlCenter({
               }}
               className="mt-4 flex flex-col gap-3"
             >
-              <div className="relative">
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder='e.g., "Complete all high priority tasks", "Roll forward open tasks from yesterday", "Add workout task for 7am"'
-                  rows={3}
-                  className="w-full rounded-2xl border border-stone-300/80 bg-stone-50/80 p-3 text-sm text-stone-900 placeholder-stone-400 shadow-inner transition-all focus:border-cyan-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
-                />
-              </div>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder='e.g. "Complete all high priority tasks", "Roll forward open tasks from yesterday", "Add workout task for 7am"'
+                rows={3}
+                className="w-full rounded-2xl border border-cyan-950/15 bg-white/80 p-3.5 text-sm leading-6 text-stone-900 placeholder-stone-400 shadow-inner transition-all focus:border-cyan-950 focus:bg-white focus:outline-none focus:ring-2 focus:ring-cyan-950/20"
+              />
 
               <button
                 type="submit"
                 disabled={isProcessing || !prompt.trim()}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-900 to-emerald-900 px-5 py-3 font-medium text-white shadow-md transition-all hover:from-cyan-800 hover:to-emerald-800 disabled:opacity-50"
+                className="w-full rounded-full bg-cyan-950 px-5 py-3 text-center text-sm font-semibold text-cyan-50 shadow-md transition-colors hover:bg-cyan-900 disabled:opacity-50"
               >
-                {isProcessing ? "Processing Command..." : "⚡ Execute Agent Command"}
+                {isProcessing ? "Executing Command..." : "⚡ Execute Agent Command"}
               </button>
             </form>
 
-            {/* Quick Action Presets */}
-            <div className="mt-6 border-t border-stone-200/80 pt-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
-                Agent Action Presets
+            {/* Agent Action Presets */}
+            <div className="mt-6 border-t border-cyan-950/10 pt-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-cyan-900/70 font-semibold">
+                Preset Action Commands
               </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-3 grid gap-2 grid-cols-1 sm:grid-cols-2">
                 <button
+                  type="button"
                   onClick={() => runAgentCommand({ action: "auto_plan" })}
                   disabled={isProcessing}
-                  className="flex items-center gap-2.5 rounded-xl border border-cyan-200 bg-cyan-50/70 p-3 text-left text-xs font-semibold text-cyan-950 transition-all hover:bg-cyan-100 hover:shadow-sm"
+                  className="flex items-center gap-2 rounded-2xl border border-cyan-950/10 bg-cyan-50/70 p-3 text-left transition-colors hover:bg-cyan-100 disabled:opacity-50"
                 >
-                  <span className="text-base">🎯</span>
-                  <div>
-                    <div>Auto-Plan Day</div>
-                    <div className="text-[10px] font-normal text-cyan-800">Roll forward & apply rules</div>
+                  <span className="text-lg">🎯</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-cyan-950">Auto-Plan Day</p>
+                    <p className="text-[10px] text-stone-600 truncate">Roll forward & apply rules</p>
                   </div>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => runAgentCommand({ action: "complete_high_priority" })}
                   disabled={isProcessing}
-                  className="flex items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-left text-xs font-semibold text-rose-950 transition-all hover:bg-rose-100 hover:shadow-sm"
+                  className="flex items-center gap-2 rounded-2xl border border-rose-900/10 bg-rose-50/70 p-3 text-left transition-colors hover:bg-rose-100 disabled:opacity-50"
                 >
-                  <span className="text-base">⚡</span>
-                  <div>
-                    <div>Finish High Priority</div>
-                    <div className="text-[10px] font-normal text-rose-800">Complete urgent open tasks</div>
+                  <span className="text-lg">⚡</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-rose-950">Finish High Priority</p>
+                    <p className="text-[10px] text-stone-600 truncate">Complete urgent tasks</p>
                   </div>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => runAgentCommand({ action: "roll_forward" })}
                   disabled={isProcessing}
-                  className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-left text-xs font-semibold text-amber-950 transition-all hover:bg-amber-100 hover:shadow-sm"
+                  className="flex items-center gap-2 rounded-2xl border border-amber-900/10 bg-amber-50/70 p-3 text-left transition-colors hover:bg-amber-100 disabled:opacity-50"
                 >
-                  <span className="text-base">⏩</span>
-                  <div>
-                    <div>Roll Forward</div>
-                    <div className="text-[10px] font-normal text-amber-800">Carry over yesterday's tasks</div>
+                  <span className="text-lg">⏩</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-amber-950">Roll Forward</p>
+                    <p className="text-[10px] text-stone-600 truncate">Carry over yesterday</p>
                   </div>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => runAgentCommand({ action: "apply_routines" })}
                   disabled={isProcessing}
-                  className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-left text-xs font-semibold text-emerald-950 transition-all hover:bg-emerald-100 hover:shadow-sm"
+                  className="flex items-center gap-2 rounded-2xl border border-emerald-950/10 bg-emerald-50/70 p-3 text-left transition-colors hover:bg-emerald-100 disabled:opacity-50"
                 >
-                  <span className="text-base">🔄</span>
-                  <div>
-                    <div>Apply Routines</div>
-                    <div className="text-[10px] font-normal text-emerald-800">Generate active templates</div>
+                  <span className="text-lg">🔄</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-emerald-950">Apply Routines</p>
+                    <p className="text-[10px] text-stone-600 truncate">Generate active rules</p>
                   </div>
                 </button>
               </div>
             </div>
-          </div>
+          </section>
 
-          {/* Quick Create Task Form */}
-          <div className="rounded-[2rem] border border-stone-200/80 bg-white/90 p-5 shadow-xl backdrop-blur sm:p-6">
-            <h3 className="font-[family:var(--font-display)] text-lg font-bold text-stone-900">
+          {/* Quick Task Creation Card */}
+          <section className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-5 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6">
+            <h3 className="font-[family:var(--font-display)] text-xl leading-none text-stone-900">
               ➕ Quick Task Addition
             </h3>
             <form onSubmit={handleQuickAdd} className="mt-3 flex flex-col gap-3">
@@ -414,13 +440,13 @@ export function AgentTaskControlCenter({
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 placeholder="Task title..."
-                className="w-full rounded-xl border border-stone-300/80 p-2.5 text-sm text-stone-900 focus:border-cyan-600 focus:outline-none"
+                className="w-full rounded-2xl border border-cyan-950/15 bg-white/80 p-3 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-cyan-950/20"
               />
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <select
                   value={newPriority}
                   onChange={(e) => setNewPriority(e.target.value as TaskPriority)}
-                  className="rounded-xl border border-stone-300/80 p-2 text-xs text-stone-900 focus:outline-none"
+                  className="rounded-2xl border border-cyan-950/15 bg-white/80 p-2.5 text-xs text-stone-900 focus:outline-none"
                 >
                   <option value="low">Low Priority</option>
                   <option value="medium">Medium Priority</option>
@@ -431,82 +457,83 @@ export function AgentTaskControlCenter({
                   value={newTag}
                   onChange={(e) => setNewTag(e.target.value)}
                   placeholder="Tag (optional)"
-                  className="w-full rounded-xl border border-stone-300/80 p-2 text-xs text-stone-900 focus:outline-none"
+                  className="w-full rounded-2xl border border-cyan-950/15 bg-white/80 p-2.5 text-xs text-stone-900 focus:outline-none"
                 />
               </div>
               <button
                 type="submit"
-                className="rounded-xl bg-stone-900 py-2.5 text-xs font-semibold text-white transition-all hover:bg-stone-800"
+                className="w-full rounded-full bg-stone-900 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors hover:bg-stone-800"
               >
                 Add Task to {selectedDate}
               </button>
             </form>
-          </div>
+          </section>
 
-          {/* Agent Activity Console Log */}
-          <div className="rounded-[2rem] border border-stone-200/80 bg-stone-950 p-5 text-stone-100 shadow-xl backdrop-blur sm:p-6">
+          {/* Agent Action Log Console Card */}
+          <section className="rounded-[1.75rem] border border-cyan-950/20 bg-cyan-950 p-5 text-cyan-50 shadow-xl backdrop-blur sm:rounded-[2rem] sm:p-6">
             <div className="flex items-center justify-between">
-              <h3 className="font-[family:var(--font-display)] text-base font-bold text-emerald-400">
-                💻 Agent Action Log
+              <h3 className="font-[family:var(--font-display)] text-lg leading-none text-emerald-400">
+                💻 Agent Activity Log
               </h3>
-              <span className="text-[10px] uppercase tracking-widest text-stone-400">{agentLogs.length} events</span>
+              <span className="text-[10px] uppercase tracking-[0.18em] text-cyan-200/70">{agentLogs.length} events</span>
             </div>
 
-            <div className="mt-3 rounded-xl border border-stone-800 bg-stone-900/80 p-3 text-xs leading-relaxed text-stone-300">
-              <p className="font-semibold text-cyan-300">Summary:</p>
-              <p className="mt-1">{agentSummary}</p>
+            <div className="mt-3 rounded-2xl border border-cyan-800/40 bg-cyan-900/50 p-3 text-xs leading-relaxed text-cyan-100">
+              <p className="font-semibold text-emerald-300">Summary:</p>
+              <p className="mt-1 whitespace-pre-wrap">{agentSummary}</p>
             </div>
 
             <div className="mt-4 max-h-56 overflow-y-auto space-y-2 pr-1 text-xs">
               {agentLogs.map((log, idx) => (
                 <div
                   key={idx}
-                  className="flex flex-col gap-0.5 rounded-lg border border-stone-800 bg-stone-900/60 p-2.5 font-mono text-[11px]"
+                  className="flex flex-col gap-1 rounded-xl border border-cyan-900/80 bg-cyan-900/40 p-2.5 font-mono text-[11px]"
                 >
-                  <div className="flex items-center justify-between text-stone-400">
-                    <span className="font-bold text-cyan-400">tool: {log.tool}</span>
+                  <div className="flex items-center justify-between text-cyan-300">
+                    <span className="font-bold">tool: {log.tool}</span>
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-sans ${
+                      className={`px-2 py-0.5 rounded-full text-[9px] uppercase font-sans font-semibold ${
                         log.status === "success"
                           ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
                           : log.status === "warning"
                           ? "bg-rose-950 text-rose-300 border border-rose-800"
-                          : "bg-cyan-950 text-cyan-300 border border-cyan-800"
+                          : "bg-cyan-900 text-cyan-200 border border-cyan-700"
                       }`}
                     >
                       {log.status}
                     </span>
                   </div>
-                  <div className="text-stone-300">{log.details}</div>
+                  <div className="text-cyan-100/90 break-words">{log.details}</div>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         </div>
 
-        {/* Right Column: Interactive Tasks Board (7 cols) */}
+        {/* Right Column: Task Execution Board (7 cols) */}
         <div className="flex flex-col gap-6 lg:col-span-7">
-          <div className="rounded-[2rem] border border-stone-200/80 bg-white/90 p-5 shadow-xl backdrop-blur sm:p-6">
+          <section className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-5 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="font-[family:var(--font-display)] text-2xl font-bold text-stone-900">
+                <h2 className="font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
                   Task Execution Board
                 </h2>
-                <p className="text-xs text-stone-500">
-                  Showing {filteredTasks.length} task(s) for <span className="font-semibold text-stone-800">{selectedDate}</span>
+                <p className="mt-2 text-xs text-stone-600 sm:text-sm">
+                  Showing {filteredTasks.length} task(s) for <span className="font-semibold text-stone-900">{selectedDate}</span>
                 </p>
               </div>
 
-              {/* Filter Tabs */}
-              <div className="flex flex-wrap gap-1.5 rounded-xl border border-stone-200 bg-stone-100/80 p-1 text-xs">
+              {/* Mobile-Responsive Filter Tabs */}
+              <div className="flex flex-wrap gap-1.5 rounded-2xl border border-cyan-950/10 bg-white/80 p-1 text-xs">
                 {(["all", "todo", "in_progress", "done", "high"] as const).map((filterKey) => (
                   <button
                     key={filterKey}
+                    type="button"
                     onClick={() => setActiveFilter(filterKey)}
-                    className={`rounded-lg px-3 py-1.5 capitalize transition-all ${
+                    className={`rounded-xl px-3 py-1.5 capitalize transition-colors ${
                       activeFilter === filterKey
-                        ? "bg-white font-semibold text-stone-900 shadow-sm"
-                        : "text-stone-600 hover:text-stone-900"
+                        ? "bg-cyan-950 font-semibold text-cyan-50 shadow-sm"
+                        : "text-stone-700 hover:bg-stone-100"
                     }`}
                   >
                     {filterKey.replace("_", " ")}
@@ -518,156 +545,169 @@ export function AgentTaskControlCenter({
             {/* Task List */}
             <div className="mt-6 space-y-3">
               {filteredTasks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50/50 p-8 text-center text-stone-500">
-                  <p className="text-base font-semibold text-stone-700">No tasks match filter for {selectedDate}</p>
-                  <p className="mt-1 text-xs">Use the Command Agent or Quick Add form to schedule tasks.</p>
+                <div className="rounded-[1.5rem] border border-dashed border-cyan-950/15 bg-white/60 p-8 text-center text-stone-600 sm:p-10">
+                  <p className="font-[family:var(--font-display)] text-2xl text-stone-900">
+                    No tasks match filter for {selectedDate}
+                  </p>
+                  <p className="mt-3 text-xs leading-6 text-stone-600 sm:text-sm">
+                    Use the Command Agent above or Quick Add form to schedule tasks.
+                  </p>
                 </div>
               ) : (
                 filteredTasks.map((task) => (
-                  <div
+                  <article
                     key={task.id}
-                    className={`group relative flex flex-col gap-3 rounded-2xl border p-4 transition-all hover:shadow-md sm:flex-row sm:items-center sm:justify-between ${
+                    className={`rounded-[1.5rem] border p-4 shadow-[0_18px_40px_rgba(48,84,53,0.08)] transition-all ${
                       task.status === "done"
-                        ? "border-emerald-200/80 bg-emerald-50/30 text-stone-500"
+                        ? "border-emerald-900/10 bg-emerald-50/90"
                         : task.status === "in_progress"
-                        ? "border-amber-200/90 bg-amber-50/40 text-stone-900"
-                        : "border-stone-200/80 bg-white text-stone-900"
+                        ? "border-amber-900/10 bg-amber-50/85"
+                        : "border-stone-900/10 bg-white/80"
                     }`}
                   >
-                    <div className="flex items-start gap-3 sm:items-center">
-                      {/* Status Toggle Button */}
-                      <button
-                        onClick={() => {
-                          const nextStatus: TaskStatus =
-                            task.status === "todo"
-                              ? "in_progress"
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        {/* Interactive Status Cycle Button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextStatus: TaskStatus =
+                              task.status === "todo"
+                                ? "in_progress"
+                                : task.status === "in_progress"
+                                ? "done"
+                                : "todo";
+                            handleStatusChange(task.id, nextStatus);
+                          }}
+                          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-all ${
+                            task.status === "done"
+                              ? "border-emerald-950 bg-emerald-950 text-white"
                               : task.status === "in_progress"
-                              ? "done"
-                              : "todo";
-                          handleStatusChange(task.id, nextStatus);
-                        }}
-                        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-all sm:mt-0 ${
-                          task.status === "done"
-                            ? "border-emerald-600 bg-emerald-600 text-white"
-                            : task.status === "in_progress"
-                            ? "border-amber-500 bg-amber-50 text-amber-700 font-bold"
-                            : "border-stone-300 bg-stone-50 hover:border-stone-400"
-                        }`}
-                        title="Click to cycle status: Todo -> In Progress -> Done"
-                      >
-                        {task.status === "done" ? "✓" : task.status === "in_progress" ? "⋯" : ""}
-                      </button>
+                              ? "border-amber-700 bg-amber-100 text-amber-950 font-bold"
+                              : "border-stone-400 bg-white hover:border-stone-600"
+                          }`}
+                          title="Click to cycle status: Todo -> In Progress -> Done"
+                        >
+                          {task.status === "done" ? "✓" : task.status === "in_progress" ? "⋯" : ""}
+                        </button>
 
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`font-medium ${
-                              task.status === "done" ? "line-through text-stone-400" : "text-stone-900"
-                            }`}
-                          >
-                            {task.title}
-                          </span>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3
+                              className={`font-[family:var(--font-display)] text-xl leading-none ${
+                                task.status === "done" ? "line-through text-stone-400" : "text-stone-900"
+                              }`}
+                            >
+                              {task.title}
+                            </h3>
 
-                          {/* Priority Badge */}
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                              task.priority === "high"
-                                ? "bg-rose-100 text-rose-800 border border-rose-200"
-                                : task.priority === "medium"
-                                ? "bg-amber-100 text-amber-800 border border-amber-200"
-                                : "bg-slate-100 text-slate-700 border border-slate-200"
-                            }`}
-                          >
-                            {task.priority}
-                          </span>
-
-                          {/* Recurring Indicator */}
-                          {task.recurring_task_id && (
-                            <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-medium text-cyan-800 border border-cyan-200">
-                              🔄 Routine
+                            {/* Priority Badge */}
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.14em] font-semibold ${
+                                task.priority === "high"
+                                  ? "bg-rose-100 text-rose-900 border-rose-900/10"
+                                  : task.priority === "medium"
+                                  ? "bg-amber-100 text-amber-900 border-amber-900/10"
+                                  : "bg-stone-100 text-stone-700 border-stone-900/10"
+                              }`}
+                            >
+                              {task.priority}
                             </span>
+
+                            {/* Recurring Routine Indicator */}
+                            {task.recurring_task_id && (
+                              <span className="rounded-full border border-cyan-950/10 bg-cyan-50 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-cyan-950 font-semibold">
+                                🔄 Routine
+                              </span>
+                            )}
+                          </div>
+
+                          {task.note && <p className="mt-2 text-xs leading-6 text-stone-700 sm:text-sm">{task.note}</p>}
+
+                          {task.tags && task.tags.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {task.tags.map((t, idx) => (
+                                <span
+                                  key={idx}
+                                  className="rounded-full border border-emerald-950/10 bg-emerald-50/70 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-950"
+                                >
+                                  #{t}
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </div>
+                      </div>
 
-                        {task.note && <p className="mt-1 text-xs text-stone-500">{task.note}</p>}
+                      {/* Controls: Status Select & Delete */}
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <select
+                          value={task.status}
+                          onChange={(e) => handleStatusChange(task.id, e.target.value as TaskStatus)}
+                          className="rounded-full border border-emerald-950/10 bg-white px-3 py-1.5 text-xs text-stone-900 focus:outline-none"
+                        >
+                          <option value="todo">To do</option>
+                          <option value="in_progress">In progress</option>
+                          <option value="done">Done</option>
+                          <option value="skipped">Skipped</option>
+                        </select>
 
-                        {task.tags && task.tags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {task.tags.map((t, idx) => (
-                              <span key={idx} className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] text-stone-600">
-                                #{t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="rounded-full border border-rose-900/10 bg-rose-50 px-3 py-1.5 text-xs text-rose-900 transition-colors hover:bg-rose-100"
+                          title="Delete task"
+                        >
+                          🗑️
+                        </button>
                       </div>
                     </div>
-
-                    {/* Actions & Status Select */}
-                    <div className="flex items-center gap-2 text-xs">
-                      <select
-                        value={task.status}
-                        onChange={(e) => handleStatusChange(task.id, e.target.value as TaskStatus)}
-                        className="rounded-xl border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-xs text-stone-800 focus:outline-none"
-                      >
-                        <option value="todo">Todo</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
-                        <option value="skipped">Skipped</option>
-                      </select>
-
-                      <button
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-rose-700 transition-all hover:bg-rose-100"
-                        title="Delete task"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
+                  </article>
                 ))
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Recurring Routines Summary Drawer */}
-          <div className="rounded-[2rem] border border-stone-200/80 bg-white/90 p-5 shadow-xl backdrop-blur sm:p-6">
-            <div className="flex items-center justify-between">
+          {/* Active Recurring Routines Panel */}
+          <section className="rounded-[1.75rem] border border-cyan-950/10 bg-white/72 p-5 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="font-[family:var(--font-display)] text-lg font-bold text-stone-900">
+                <h3 className="font-[family:var(--font-display)] text-xl leading-none text-stone-900">
                   🔄 Active Recurring Templates ({recurringTasks.filter((r) => r.is_active).length})
                 </h3>
-                <p className="text-xs text-stone-500">
+                <p className="mt-2 text-xs text-stone-600 sm:text-sm">
                   Rules used by the agent to auto-generate daily routines.
                 </p>
               </div>
               <Link
                 href="/dashboard/tasks"
-                className="rounded-xl border border-cyan-800 bg-cyan-950 px-3.5 py-2 text-xs font-semibold text-cyan-50 transition-all hover:bg-cyan-900"
+                className="rounded-full border border-blue-950/10 px-4 py-2 text-center text-xs font-semibold text-blue-950 transition-colors hover:bg-blue-50 self-start sm:self-auto"
               >
                 Manage Routines
               </Link>
             </div>
 
-            <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+            <div className="mt-4 grid gap-3 grid-cols-1 sm:grid-cols-2">
               {recurringTasks.map((rec) => (
                 <div
                   key={rec.id}
-                  className={`flex flex-col gap-1 rounded-xl border p-3 text-xs ${
-                    rec.is_active ? "border-stone-200 bg-stone-50/80" : "border-stone-200/50 bg-stone-100/40 opacity-60"
+                  className={`rounded-2xl border p-3.5 text-xs ${
+                    rec.is_active
+                      ? "border-cyan-950/10 bg-white/80 text-stone-900"
+                      : "border-stone-200 bg-stone-100/50 opacity-60 text-stone-500"
                   }`}
                 >
-                  <div className="flex items-center justify-between font-medium text-stone-900">
+                  <div className="flex items-center justify-between font-semibold">
                     <span>{rec.title}</span>
-                    <span className="uppercase text-[10px] font-bold text-stone-500">{rec.priority}</span>
+                    <span className="uppercase text-[10px] text-stone-500">{rec.priority}</span>
                   </div>
-                  <div className="text-[10px] text-stone-500">
-                    Schedule: {rec.days_of_week.join(", ").toUpperCase()}
+                  <div className="mt-1.5 text-[11px] text-stone-600">
+                    Schedule: <span className="font-semibold">{rec.days_of_week.join(", ").toUpperCase()}</span>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>

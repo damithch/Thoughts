@@ -30,7 +30,7 @@ export default async function AgentPage({ searchParams }: AgentPageProps) {
   ]);
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#f0f7f4_0%,#e1ede8_50%,#d2e3dc_100%)] text-stone-900">
+    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
       <AgentTaskControlCenter
         initialDate={targetDate}
         initialTasks={initialTasks}
