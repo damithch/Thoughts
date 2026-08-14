@@ -2,7 +2,19 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { embedTexts } from "@/lib/gemini";
+import { resolveTemporalRange } from "@/lib/temporal";
 import crypto from "node:crypto";
+
+type RetrievalRow = {
+  id: number;
+  user_id: number;
+  document_key: string;
+  source_entity_id: string;
+  chunk_index: number;
+  chunk_text: string;
+  metadata: Record<string, unknown>;
+  distance: number;
+};
 
 export async function POST(request: Request) {
   const currentUser = await getCurrentUser();
@@ -11,16 +23,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let payload: { query?: string; k?: number };
+  let payload: { query?: string; k?: number; mode?: string; kThought?: number; kSummary?: number };
 
   try {
-    payload = (await request.json()) as any;
+    payload = await request.json() as typeof payload;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
+  const isLiveSuggestion = payload.mode === "live_suggestion";
+  const defaultK = isLiveSuggestion ? 3 : 6;
   const query = (payload.query ?? "").toString().trim();
-  const k = Math.max(1, Math.min(Number(payload.k ?? 6), 50));
+  const k = Math.max(1, Math.min(Number(payload.k ?? defaultK), 50));
 
   if (!query) return NextResponse.json({ error: "Query is required." }, { status: 400 });
 
@@ -38,19 +52,21 @@ export async function POST(request: Request) {
       qEmb = (await embedTexts([query]))[0] ?? [];
     }
 
-    const embStr = `[${qEmb.join(",")} ]`;
+    const embStr = `[${qEmb.join(",")}]`;
 
-    console.log(`[RAG Retrieval] Query: "${query}" | Embedding length: ${qEmb.length} | First 5 values:`, qEmb.slice(0, 5));
+    console.log(
+      `[RAG Retrieval] Mode: "${payload.mode ?? "search"}" | Query: "${query.slice(0, 60)}..." | Embedding length: ${qEmb.length}`,
+    );
 
-    const kThought = Math.max(1, Math.min(Number((payload as any).kThought ?? 10), 50));
-    const kSummary = Math.max(1, Math.min(Number((payload as any).kSummary ?? 10), 50));
+    const kThought = Math.max(1, Math.min(Number(payload.kThought ?? (isLiveSuggestion ? 5 : 10)), 50));
+    const kSummary = Math.max(1, Math.min(Number(payload.kSummary ?? (isLiveSuggestion ? 5 : 10)), 50));
 
-    let merged: any[] = [];
+    let merged: RetrievalRow[] = [];
 
     try {
       // Parallel retrieval for thoughts/general docs and conversation_summary logs via vector
       const [thoughtRes, summaryRes] = await Promise.all([
-        pool.query(
+        pool.query<RetrievalRow>(
           `
             SELECT e.id, e.user_id, e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
                    e.embedding <-> $1::vector AS distance
@@ -62,7 +78,7 @@ export async function POST(request: Request) {
           `,
           [embStr, currentUser.id, kThought],
         ),
-        pool.query(
+        pool.query<RetrievalRow>(
           `
             SELECT e.id, e.user_id, e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
                    e.embedding <-> $1::vector AS distance
@@ -77,7 +93,7 @@ export async function POST(request: Request) {
       ]);
 
       merged = [...thoughtRes.rows, ...summaryRes.rows].sort(
-        (a: any, b: any) => Number(a.distance) - Number(b.distance),
+        (a, b) => Number(a.distance) - Number(b.distance),
       );
     } catch (err) {
       console.warn("[RAG Retrieval] Vector search query failed, using text fallback:", err);
@@ -86,7 +102,7 @@ export async function POST(request: Request) {
     // Fallback: If no vector results were found, search rag_documents directly using ILIKE
     if (merged.length === 0) {
       const searchPattern = `%${query.replace(/[%_]/g, "\\$&")}%`;
-      const fallbackRes = await pool.query(
+      const fallbackRes = await pool.query<RetrievalRow>(
         `
           SELECT id, user_id, document_key, source_entity_id, 0 AS chunk_index, content AS chunk_text, metadata, 0 AS distance
           FROM rag_documents
@@ -100,9 +116,40 @@ export async function POST(request: Request) {
       merged = fallbackRes.rows;
     }
 
-    console.log(`[RAG Retrieval] Returned ${merged.length} rows.`);
+    // Temporal date-range augmentation: if the query mentions "today", "this week", etc.,
+    // fetch matching rag_documents by source_date and merge them ahead of vector results.
+    const temporalRange = resolveTemporalRange(query);
 
-    return NextResponse.json({ results: merged });
+    if (temporalRange) {
+      console.log(
+        `[RAG Retrieval] Temporal range detected: "${temporalRange.label}" → ${temporalRange.startDate} to ${temporalRange.endDate}`,
+      );
+
+      const temporalRes = await pool.query<RetrievalRow>(
+        `
+          SELECT id, user_id, document_key, source_entity_id, 0 AS chunk_index, content AS chunk_text, metadata, 0 AS distance
+          FROM rag_documents
+          WHERE user_id = $1
+            AND source_date >= $2::date
+            AND source_date <= $3::date
+          ORDER BY source_date DESC, source_updated_at DESC
+          LIMIT $4
+        `,
+        [currentUser.id, temporalRange.startDate, temporalRange.endDate, k],
+      );
+
+      // Merge temporal results ahead of vector results, de-duplicating by document_key
+      const existingKeys = new Set(temporalRes.rows.map((row) => row.document_key));
+      const vectorOnly = merged.filter((row) => !existingKeys.has(row.document_key));
+      merged = [...temporalRes.rows, ...vectorOnly];
+    }
+
+    // Slice to top k results
+    const results = merged.slice(0, k);
+
+    console.log(`[RAG Retrieval] Returned ${results.length} rows.`);
+
+    return NextResponse.json({ results });
   } catch (error) {
     console.error("Retrieval failed", error);
     return NextResponse.json({ error: "Retrieval failed." }, { status: 500 });

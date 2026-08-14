@@ -24,6 +24,7 @@ import {
 import RagSearch from "@/app/components/rag-search";
 import SmartCapture from "@/app/components/smart-capture";
 import { BackupRestore } from "@/app/components/backup-restore";
+import LiveRagContext from "@/app/components/live-rag-context";
 
 export const dynamic = "force-dynamic";
 
@@ -443,6 +444,7 @@ export default async function DashboardPage({
         <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="grid gap-6">
             {!editingThought ? <SmartCapture /> : null}
+            <LiveRagContext />
             <form
               action={editingThought ? updateThoughtAction : createThoughtAction}
               className="rounded-[1.5rem] border border-emerald-950/10 bg-white/75 p-4 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"

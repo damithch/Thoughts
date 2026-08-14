@@ -1,9 +1,10 @@
 "use client";
 import React, { useState } from "react";
+import type { RagResultItem } from "./live-rag-context";
 
 export function RagSearch() {
   const [query, setQuery] = useState("");
-  const [retrieved, setRetrieved] = useState<any[]>([]);
+  const [retrieved, setRetrieved] = useState<RagResultItem[]>([]);
   const [answer, setAnswer] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,8 +26,8 @@ export function RagSearch() {
       if (!r.ok) throw new Error(`Retrieval failed: ${r.status}`);
       const j = await r.json();
       setRetrieved(j.results ?? []);
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -52,9 +53,9 @@ export function RagSearch() {
 
       const j = await r.json();
       setAnswer(j.answer ?? JSON.stringify(j));
-      setRetrieved(j.provenance ?? j.provenance ?? []);
-    } catch (e: any) {
-      setError(String(e?.message ?? e));
+      setRetrieved(j.provenance ?? []);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }

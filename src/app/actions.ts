@@ -178,6 +178,8 @@ export async function createThoughtAction(formData: FormData) {
     redirect("/dashboard?toast=invalid_entry&type=error");
   }
 
+  let failed = false;
+
   try {
     await createThought({
       title,
@@ -192,6 +194,10 @@ export async function createThoughtAction(formData: FormData) {
       userId: currentUser.id,
     });
   } catch {
+    failed = true;
+  }
+
+  if (failed) {
     redirect("/dashboard?toast=save_failed&type=error");
   }
 
@@ -226,8 +232,11 @@ export async function updateThoughtAction(formData: FormData) {
     redirect("/dashboard?toast=update_failed&type=error");
   }
 
+  let updated = false;
+  let failed = false;
+
   try {
-    const updated = await updateThought({
+    const result = await updateThought({
       id: thoughtId,
       title,
       category,
@@ -240,12 +249,17 @@ export async function updateThoughtAction(formData: FormData) {
       insightReflection,
       userId: currentUser.id,
     });
-
-    if (!updated) {
-      redirect("/dashboard?toast=update_failed&type=error");
-    }
+    updated = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed) {
     redirect("/dashboard?toast=save_failed&type=error");
+  }
+
+  if (!updated) {
+    redirect("/dashboard?toast=update_failed&type=error");
   }
 
   revalidatePath("/dashboard");
@@ -266,16 +280,20 @@ export async function deleteThoughtAction(formData: FormData) {
     redirect("/dashboard?toast=delete_failed&type=error");
   }
 
+  let deleted = false;
+  let failed = false;
+
   try {
-    const deleted = await deleteThought({
+    const result = await deleteThought({
       id: thoughtId,
       userId: currentUser.id,
     });
-
-    if (!deleted) {
-      redirect("/dashboard?toast=delete_failed&type=error");
-    }
+    deleted = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed || !deleted) {
     redirect("/dashboard?toast=delete_failed&type=error");
   }
 
@@ -297,13 +315,17 @@ export async function deleteConversationSummaryAction(formData: FormData) {
     redirect("/dashboard/conversations?toast=delete_failed&type=error");
   }
 
-  try {
-    const deleted = await deleteConversationSummary(conversationId, currentUser.id);
+  let deleted = false;
+  let failed = false;
 
-    if (!deleted) {
-      redirect("/dashboard/conversations?toast=delete_failed&type=error");
-    }
+  try {
+    const result = await deleteConversationSummary(conversationId, currentUser.id);
+    deleted = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed || !deleted) {
     redirect("/dashboard/conversations?toast=delete_failed&type=error");
   }
 
@@ -432,17 +454,21 @@ export async function updateTaskStatusAction(formData: FormData) {
     redirect("/dashboard/today?toast=task_update_failed&type=error");
   }
 
+  let updated = false;
+  let failed = false;
+
   try {
-    const updated = await updateTaskStatus({
+    const result = await updateTaskStatus({
       id: taskId,
       status,
       userId: currentUser.id,
     });
-
-    if (!updated) {
-      redirect(`/dashboard/today?date=${date}&toast=task_update_failed&type=error`);
-    }
+    updated = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed || !updated) {
     redirect(`/dashboard/today?date=${date}&toast=task_update_failed&type=error`);
   }
 
@@ -502,14 +528,21 @@ export async function rolloverTasksAction(formData: FormData) {
 
   const toDate = shiftColomboDate(fromDate, 1);
 
-  try {
-    const moved = await moveOpenTasksToDate(currentUser.id, fromDate, toDate);
+  let moved = 0;
+  let failed = false;
 
-    if (moved === 0) {
-      redirect(`/dashboard/today?date=${fromDate}&toast=rollover_empty&type=info`);
-    }
+  try {
+    moved = await moveOpenTasksToDate(currentUser.id, fromDate, toDate);
   } catch {
+    failed = true;
+  }
+
+  if (failed) {
     redirect(`/dashboard/today?date=${fromDate}&toast=rollover_failed&type=error`);
+  }
+
+  if (moved === 0) {
+    redirect(`/dashboard/today?date=${fromDate}&toast=rollover_empty&type=info`);
   }
 
   revalidatePath("/dashboard/today");
@@ -617,8 +650,11 @@ export async function updateRecurringTaskAction(formData: FormData) {
     redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
   }
 
+  let updated = false;
+  let failed = false;
+
   try {
-    const updated = await updateRecurringTask({
+    const result = await updateRecurringTask({
       id: taskId,
       title,
       priority,
@@ -630,11 +666,12 @@ export async function updateRecurringTaskAction(formData: FormData) {
       endDate,
       userId: currentUser.id,
     });
-
-    if (!updated) {
-      redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
-    }
+    updated = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed || !updated) {
     redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
   }
 
@@ -655,13 +692,17 @@ export async function deleteRecurringTaskAction(formData: FormData) {
     redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
   }
 
-  try {
-    const deleted = await deleteRecurringTask(taskId, currentUser.id);
+  let deleted = false;
+  let failed = false;
 
-    if (!deleted) {
-      redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
-    }
+  try {
+    const result = await deleteRecurringTask(taskId, currentUser.id);
+    deleted = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed || !deleted) {
     redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
   }
 
@@ -682,18 +723,25 @@ export async function applyRecurringTasksAction(formData: FormData) {
     redirect("/dashboard/today?toast=apply_failed&type=error");
   }
 
+  let count = 0;
+  let failed = false;
+
   try {
-    const count = await generateDailyTasksFromRecurring(currentUser.id, date);
-
-    if (count === 0) {
-      redirect(`/dashboard/today?date=${date}&toast=apply_empty&type=info`);
-    }
-
-    revalidatePath("/dashboard/today");
-    redirect(`/dashboard/today?date=${date}&toast=recurring_applied&type=success`);
+    count = await generateDailyTasksFromRecurring(currentUser.id, date);
   } catch {
+    failed = true;
+  }
+
+  if (failed) {
     redirect(`/dashboard/today?date=${date}&toast=apply_failed&type=error`);
   }
+
+  if (count === 0) {
+    redirect(`/dashboard/today?date=${date}&toast=apply_empty&type=info`);
+  }
+
+  revalidatePath("/dashboard/today");
+  redirect(`/dashboard/today?date=${date}&toast=recurring_applied&type=success`);
 }
 
 export async function createBookAction(formData: FormData) {
@@ -741,8 +789,11 @@ export async function createBookIdeaAction(formData: FormData) {
     redirect("/dashboard/insights?toast=idea_invalid&type=error");
   }
 
+  let created = false;
+  let failed = false;
+
   try {
-    const created = await createBookIdea(
+    const result = await createBookIdea(
       {
         bookId,
         ideaText,
@@ -750,12 +801,17 @@ export async function createBookIdeaAction(formData: FormData) {
       },
       currentUser.id,
     );
-
-    if (!created) {
-      redirect("/dashboard/insights?toast=idea_invalid&type=error");
-    }
+    created = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed) {
     redirect("/dashboard/insights?toast=idea_failed&type=error");
+  }
+
+  if (!created) {
+    redirect("/dashboard/insights?toast=idea_invalid&type=error");
   }
 
   revalidatePath("/dashboard/insights");
@@ -776,13 +832,17 @@ export async function updateBookIdeaStatusAction(formData: FormData) {
     redirect("/dashboard/insights?toast=idea_update_failed&type=error");
   }
 
-  try {
-    const updated = await updateBookIdeaStatus(bookIdeaId, status, currentUser.id);
+  let updated = false;
+  let failed = false;
 
-    if (!updated) {
-      redirect("/dashboard/insights?toast=idea_update_failed&type=error");
-    }
+  try {
+    const result = await updateBookIdeaStatus(bookIdeaId, status, currentUser.id);
+    updated = Boolean(result);
   } catch {
+    failed = true;
+  }
+
+  if (failed || !updated) {
     redirect("/dashboard/insights?toast=idea_update_failed&type=error");
   }
 

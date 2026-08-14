@@ -175,7 +175,7 @@ export async function ingestMaterializedDocument(userId: number, documentKey: st
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const embedding = embeddings[i] ?? [];
-    const embeddingStr = `[${embedding.join(",")} ]`;
+    const embeddingStr = `[${embedding.join(",")}]`;
 
     await pool.query(
       `
