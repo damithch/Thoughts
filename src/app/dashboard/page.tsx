@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 
 import {
   createThoughtAction,
+  hideThoughtAction,
   deleteThoughtAction,
   logoutAction,
+  unhideThoughtAction,
   updateThoughtAction,
 } from "@/app/actions";
 import { Toast } from "@/app/components/toast";
@@ -23,7 +25,6 @@ import {
 } from "@/lib/time";
 import RagSearch from "@/app/components/rag-search";
 import SmartCapture from "@/app/components/smart-capture";
-import { BackupRestore } from "@/app/components/backup-restore";
 import LiveRagContext from "@/app/components/live-rag-context";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ type DashboardPageProps = {
     edit?: string;
     month?: string;
     tag?: string;
+    vis?: "active" | "hidden" | "all";
     toast?: string;
     type?: "success" | "error" | "info";
   }>;
@@ -45,6 +47,10 @@ const dashboardToastMessages: Record<string, string> = {
   invalid_entry: "Add a title, category, mood level, and summary before saving.",
   registered: "Account created. Your dashboard is ready.",
   save_failed: "The card could not be saved.",
+  hidden: "Thought card hidden.",
+  hide_failed: "That card could not be hidden.",
+  unhidden: "Thought card restored.",
+  unhide_failed: "That card could not be restored.",
   update_failed: "That card could not be updated.",
   updated: "Thought card updated.",
   welcome_back: "Signed in successfully.",
@@ -119,17 +125,19 @@ export default async function DashboardPage({
     redirect("/login");
   }
 
+  const params = await searchParams;
+  const visibility =
+    params?.vis === "hidden" || params?.vis === "all" ? params.vis : "active";
+
   let databaseAvailable = true;
   let thoughts: Awaited<ReturnType<typeof getThoughtsByUser>> = [];
 
   try {
-    thoughts = await getThoughtsByUser(currentUser.id);
+    thoughts = await getThoughtsByUser(currentUser.id, 24, visibility);
   } catch (error) {
     console.error("Failed to load dashboard thoughts.", error);
     databaseAvailable = false;
   }
-
-  const params = await searchParams;
   const toastMessage = params?.toast
     ? dashboardToastMessages[params.toast]
     : undefined;
@@ -189,6 +197,13 @@ export default async function DashboardPage({
   const latestActivity = latestThought
     ? toColomboDate(latestThought.created_at)
     : "No entries";
+  const visibilitySuffix = visibility === "active" ? "" : `&vis=${visibility}`;
+  const archiveHeading =
+    visibility === "hidden"
+      ? "Hidden archive"
+      : visibility === "all"
+        ? "All cards"
+        : "Archive";
 
   return (
     <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
@@ -250,6 +265,12 @@ export default async function DashboardPage({
                 className="rounded-full border border-cyan-950/10 px-4 py-3 text-center text-cyan-950 transition-colors hover:bg-cyan-50"
               >
                 Claude Log
+              </Link>
+              <Link
+                href="/dashboard/settings"
+                className="rounded-full border border-indigo-950/10 px-4 py-3 text-center text-indigo-950 transition-colors hover:bg-indigo-50"
+              >
+                ⚙️ Settings
               </Link>
               <Link
                 href="/"
@@ -319,7 +340,7 @@ export default async function DashboardPage({
             </div>
             {activeTag ? (
               <Link
-                href="/dashboard"
+                href={visibility === "active" ? "/dashboard" : `/dashboard?vis=${visibility}`}
                 className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
               >
                 Clear filter
@@ -333,7 +354,7 @@ export default async function DashboardPage({
               visibleTags.map((tag) => (
                 <Link
                   key={tag}
-                  href={`/dashboard?tag=${encodeURIComponent(tag)}`}
+                  href={`/dashboard?tag=${encodeURIComponent(tag)}${visibilitySuffix}`}
                   className={`inline-flex rounded-full px-3 py-2 text-xs uppercase tracking-[0.14em] transition sm:px-4 sm:tracking-[0.16em] ${
                     activeTag === tag
                       ? "bg-emerald-950 text-emerald-50"
@@ -362,13 +383,13 @@ export default async function DashboardPage({
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link
-                href={`/dashboard?month=${shiftMonth(activeMonth, -1)}${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                href={`/dashboard?month=${shiftMonth(activeMonth, -1)}${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}${visibilitySuffix}`}
                 className="rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-center text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
               >
                 Previous
               </Link>
               <Link
-                href={`/dashboard?month=${shiftMonth(activeMonth, 1)}${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                href={`/dashboard?month=${shiftMonth(activeMonth, 1)}${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}${visibilitySuffix}`}
                 className="rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 text-center text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
               >
                 Next
@@ -808,11 +829,43 @@ export default async function DashboardPage({
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-sm uppercase tracking-[0.24em] text-stone-500">
-                {activeTag ? `Archive: ${activeTag}` : "Archive"}
+                {activeTag ? `${archiveHeading}: ${activeTag}` : archiveHeading}
               </p>
               <h2 className="mt-2 font-[family:var(--font-display)] text-4xl leading-none md:text-5xl">
                 {filteredThoughts.length === 1 ? "1 card" : `${filteredThoughts.length} cards`}
               </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/dashboard?vis=active${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                className={`rounded-full px-4 py-2 text-xs uppercase tracking-[0.16em] transition ${
+                  visibility === "active"
+                    ? "bg-emerald-950 text-emerald-50"
+                    : "border border-emerald-950/10 bg-white/70 text-emerald-950 hover:bg-white"
+                }`}
+              >
+                Active
+              </Link>
+              <Link
+                href={`/dashboard?vis=hidden${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                className={`rounded-full px-4 py-2 text-xs uppercase tracking-[0.16em] transition ${
+                  visibility === "hidden"
+                    ? "bg-emerald-950 text-emerald-50"
+                    : "border border-emerald-950/10 bg-white/70 text-emerald-950 hover:bg-white"
+                }`}
+              >
+                Hidden
+              </Link>
+              <Link
+                href={`/dashboard?vis=all${activeTag ? `&tag=${encodeURIComponent(activeTag)}` : ""}`}
+                className={`rounded-full px-4 py-2 text-xs uppercase tracking-[0.16em] transition ${
+                  visibility === "all"
+                    ? "bg-emerald-950 text-emerald-50"
+                    : "border border-emerald-950/10 bg-white/70 text-emerald-950 hover:bg-white"
+                }`}
+              >
+                All
+              </Link>
             </div>
           </div>
 
@@ -907,6 +960,29 @@ export default async function DashboardPage({
                     >
                       Edit
                     </Link>
+                    {thought.is_hidden ? (
+                      <form action={unhideThoughtAction}>
+                        <input type="hidden" name="thoughtId" value={thought.id} />
+                        <button
+                          type="submit"
+                          disabled={!databaseAvailable}
+                          className="inline-flex w-full justify-center rounded-full border border-cyan-950/10 bg-cyan-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2"
+                        >
+                          Restore
+                        </button>
+                      </form>
+                    ) : (
+                      <form action={hideThoughtAction}>
+                        <input type="hidden" name="thoughtId" value={thought.id} />
+                        <button
+                          type="submit"
+                          disabled={!databaseAvailable}
+                          className="inline-flex w-full justify-center rounded-full border border-amber-900/10 bg-amber-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2"
+                        >
+                          Hide
+                        </button>
+                      </form>
+                    )}
                     <form action={deleteThoughtAction}>
                       <input type="hidden" name="thoughtId" value={thought.id} />
                       <button

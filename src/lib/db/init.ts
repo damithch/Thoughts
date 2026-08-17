@@ -93,6 +93,11 @@ export async function ensureInitialized() {
       `);
 
       await pool.query(`
+        ALTER TABLE thoughts
+        ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT false
+      `);
+
+      await pool.query(`
         CREATE TABLE IF NOT EXISTS daily_tasks (
           id BIGSERIAL PRIMARY KEY,
           user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -396,6 +401,16 @@ export async function ensureInitialized() {
       } catch (vectorError) {
         console.warn("pgvector extension or vector index initialization skipped/failed:", vectorError);
       }
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_settings (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+          settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
 
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",

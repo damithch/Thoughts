@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
+import { getUserSettings } from "@/lib/db/settings";
 import { embedTexts } from "@/lib/gemini";
 import { resolveTemporalRange } from "@/lib/temporal";
 import crypto from "node:crypto";
@@ -23,6 +24,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const settings = await getUserSettings(currentUser.id);
+
   let payload: { query?: string; k?: number; mode?: string; kThought?: number; kSummary?: number };
 
   try {
@@ -32,7 +35,7 @@ export async function POST(request: Request) {
   }
 
   const isLiveSuggestion = payload.mode === "live_suggestion";
-  const defaultK = isLiveSuggestion ? 3 : 6;
+  const defaultK = isLiveSuggestion ? settings.live_context_k : settings.rag_default_k;
   const query = (payload.query ?? "").toString().trim();
   const k = Math.max(1, Math.min(Number(payload.k ?? defaultK), 50));
 
@@ -58,8 +61,8 @@ export async function POST(request: Request) {
       `[RAG Retrieval] Mode: "${payload.mode ?? "search"}" | Query: "${query.slice(0, 60)}..." | Embedding length: ${qEmb.length}`,
     );
 
-    const kThought = Math.max(1, Math.min(Number(payload.kThought ?? (isLiveSuggestion ? 5 : 10)), 50));
-    const kSummary = Math.max(1, Math.min(Number(payload.kSummary ?? (isLiveSuggestion ? 5 : 10)), 50));
+    const kThought = Math.max(1, Math.min(Number(payload.kThought ?? (isLiveSuggestion ? settings.live_context_k + 2 : settings.rag_k_thought)), 50));
+    const kSummary = Math.max(1, Math.min(Number(payload.kSummary ?? (isLiveSuggestion ? settings.live_context_k + 2 : settings.rag_k_summary)), 50));
 
     let merged: RetrievalRow[] = [];
 

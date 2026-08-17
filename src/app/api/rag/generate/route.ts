@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
+import { getUserSettings } from "@/lib/db/settings";
 import { embedTexts, generateFromPrompt } from "@/lib/gemini";
 import { resolveTemporalRange } from "@/lib/temporal";
 import crypto from "node:crypto";
@@ -19,6 +20,8 @@ export async function POST(request: Request) {
 
   if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const settings = await getUserSettings(currentUser.id);
+
   let payload: { question?: string; k?: number; kThought?: number; kSummary?: number };
 
   try {
@@ -28,7 +31,7 @@ export async function POST(request: Request) {
   }
 
   const question = (payload.question ?? "").toString().trim();
-  const k = Math.max(1, Math.min(Number(payload.k ?? 6), 50));
+  const k = Math.max(1, Math.min(Number(payload.k ?? settings.rag_default_k), 50));
 
   if (!question) return NextResponse.json({ error: "Question is required." }, { status: 400 });
 
@@ -45,8 +48,8 @@ export async function POST(request: Request) {
 
     const embStr = `[${qEmb.join(",")}]`;
 
-    const kThought = Math.max(1, Math.min(Number(payload.kThought ?? 10), 50));
-    const kSummary = Math.max(1, Math.min(Number(payload.kSummary ?? 10), 50));
+    const kThought = Math.max(1, Math.min(Number(payload.kThought ?? settings.rag_k_thought), 50));
+    const kSummary = Math.max(1, Math.min(Number(payload.kSummary ?? settings.rag_k_summary), 50));
 
     let rows: RetrievalRow[] = [];
 
@@ -135,7 +138,10 @@ export async function POST(request: Request) {
       ? `\n\nThe user is asking about the period from ${temporalRange.startDate} to ${temporalRange.endDate} (${temporalRange.label}). Prioritise information from this date range in your answer.`
       : "";
 
-    const instruction = `You are a helpful assistant with access to the user's private journal excerpts. Rely strictly on the information provided in the excerpts to give a direct, clear, and comprehensive answer to the user's question. If the information is not present in the excerpts, respond with "I don't know".${temporalContext}`;
+    const baseInstruction = `You are a helpful assistant with access to the user's private journal excerpts. Rely strictly on the information provided in the excerpts to give a direct, clear, and comprehensive answer to the user's question. If the information is not present in the excerpts, respond with "I don't know".${temporalContext}`;
+    const instruction = settings.rag_custom_prompt
+      ? `${baseInstruction}\n\nAdditional instructions from user: ${settings.rag_custom_prompt}`
+      : baseInstruction;
 
     const chunkParts = rows.map((r, i) => {
       return `[Excerpt #${i + 1}] (Document: ${r.document_key})\n${r.chunk_text}`;
@@ -159,7 +165,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ answer, provenance: rows });
     }
 
-    const answer = await generateFromPrompt(parts, 2048, 0.0);
+    const answer = await generateFromPrompt(parts, 2048, 0.0, settings.llm_model);
 
     return NextResponse.json({ answer, provenance: rows });
   } catch (error) {

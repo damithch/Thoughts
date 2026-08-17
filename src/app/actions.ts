@@ -28,8 +28,10 @@ import {
   updateRecurringTask,
   updateTask,
   updateTaskStatus,
+  setThoughtHiddenState,
   updateThought,
   upsertDayRecord,
+  upsertUserSettings,
 } from "@/lib/db";
 import { shiftColomboDate } from "@/lib/time";
 
@@ -300,6 +302,74 @@ export async function deleteThoughtAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/");
   redirect("/dashboard?toast=deleted&type=success");
+}
+
+export async function hideThoughtAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const thoughtId = Number(formData.get("thoughtId"));
+
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0) {
+    redirect("/dashboard?toast=hide_failed&type=error");
+  }
+
+  let updated = false;
+  let failed = false;
+
+  try {
+    updated = await setThoughtHiddenState({
+      id: thoughtId,
+      userId: currentUser.id,
+      isHidden: true,
+    });
+  } catch {
+    failed = true;
+  }
+
+  if (failed || !updated) {
+    redirect("/dashboard?toast=hide_failed&type=error");
+  }
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard?toast=hidden&type=success");
+}
+
+export async function unhideThoughtAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const thoughtId = Number(formData.get("thoughtId"));
+
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0) {
+    redirect("/dashboard?toast=unhide_failed&type=error");
+  }
+
+  let updated = false;
+  let failed = false;
+
+  try {
+    updated = await setThoughtHiddenState({
+      id: thoughtId,
+      userId: currentUser.id,
+      isHidden: false,
+    });
+  } catch {
+    failed = true;
+  }
+
+  if (failed || !updated) {
+    redirect("/dashboard?toast=unhide_failed&type=error");
+  }
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard?toast=unhidden&type=success");
 }
 
 export async function deleteConversationSummaryAction(formData: FormData) {
@@ -904,3 +974,78 @@ export async function updateTaskAction(formData: FormData) {
   revalidatePath("/dashboard/completion");
 }
 
+export async function updateUserSettingsAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const patch: Record<string, unknown> = {};
+
+  // RAG Retrieval
+  const ragDefaultK = Number(formData.get("rag_default_k"));
+  if (Number.isFinite(ragDefaultK)) patch.rag_default_k = ragDefaultK;
+
+  const ragKThought = Number(formData.get("rag_k_thought"));
+  if (Number.isFinite(ragKThought)) patch.rag_k_thought = ragKThought;
+
+  const ragKSummary = Number(formData.get("rag_k_summary"));
+  if (Number.isFinite(ragKSummary)) patch.rag_k_summary = ragKSummary;
+
+  const ragChunkSize = Number(formData.get("rag_chunk_size"));
+  if (Number.isFinite(ragChunkSize)) patch.rag_chunk_size = ragChunkSize;
+
+  const ragChunkOverlap = Number(formData.get("rag_chunk_overlap"));
+  if (Number.isFinite(ragChunkOverlap)) patch.rag_chunk_overlap = ragChunkOverlap;
+
+  const ragEnabledKinds = formData.getAll("rag_enabled_kinds");
+  if (ragEnabledKinds.length > 0) {
+    patch.rag_enabled_kinds = ragEnabledKinds.map((k) => k.toString());
+  }
+
+  const ragCustomPrompt = formData.get("rag_custom_prompt");
+  if (ragCustomPrompt !== null) patch.rag_custom_prompt = ragCustomPrompt.toString();
+
+  // AI Agent
+  const agentTemp = Number(formData.get("agent_temperature"));
+  if (Number.isFinite(agentTemp)) patch.agent_temperature = agentTemp;
+
+  const agentMaxTokens = Number(formData.get("agent_max_tokens"));
+  if (Number.isFinite(agentMaxTokens)) patch.agent_max_tokens = agentMaxTokens;
+
+  const agentCustomPrompt = formData.get("agent_custom_prompt");
+  if (agentCustomPrompt !== null) patch.agent_custom_prompt = agentCustomPrompt.toString();
+
+  const agentDefaultTag = formData.get("agent_default_tag");
+  if (agentDefaultTag !== null) patch.agent_default_tag = agentDefaultTag.toString().trim();
+
+  // Smart Capture
+  const scTemp = Number(formData.get("smart_capture_temperature"));
+  if (Number.isFinite(scTemp)) patch.smart_capture_temperature = scTemp;
+
+  const scMaxTokens = Number(formData.get("smart_capture_max_tokens"));
+  if (Number.isFinite(scMaxTokens)) patch.smart_capture_max_tokens = scMaxTokens;
+
+  // Live Context
+  const liveEnabled = formData.get("live_context_enabled");
+  patch.live_context_enabled = liveEnabled === "on" || liveEnabled === "true";
+
+  const liveDebounce = Number(formData.get("live_context_debounce_ms"));
+  if (Number.isFinite(liveDebounce)) patch.live_context_debounce_ms = liveDebounce;
+
+  const liveMinLength = Number(formData.get("live_context_min_length"));
+  if (Number.isFinite(liveMinLength)) patch.live_context_min_length = liveMinLength;
+
+  const liveK = Number(formData.get("live_context_k"));
+  if (Number.isFinite(liveK)) patch.live_context_k = liveK;
+
+  // Model Selection
+  const llmModel = formData.get("llm_model");
+  if (llmModel !== null) patch.llm_model = llmModel.toString();
+
+  await upsertUserSettings(currentUser.id, patch);
+
+  revalidatePath("/dashboard/settings");
+  redirect("/dashboard/settings?toast=Settings+saved&type=success");
+}

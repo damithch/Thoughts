@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { getBookIdeasByUser } from "@/lib/db/insights";
+import { getUserSettings } from "@/lib/db/settings";
 import { generateFromPrompt } from "@/lib/gemini";
 
 export async function POST(request: Request) {
@@ -30,6 +31,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    const settings = await getUserSettings(currentUser.id);
+
     // Fetch user's existing tags and categories for context consistency
     const [tagsResult, categoriesResult, bookIdeas] = await Promise.all([
       pool.query<{ tag: string }>(
@@ -95,7 +98,7 @@ OUTPUT JSON SCHEMA:
 
     const userPrompt = `RAW JOURNAL TEXT:\n${rawText}`;
 
-    const result = await generateFromPrompt([systemPrompt, userPrompt], 2048, 0.3);
+    const result = await generateFromPrompt([systemPrompt, userPrompt], settings.smart_capture_max_tokens, settings.smart_capture_temperature, settings.llm_model);
 
     // Parse the LLM response — strip markdown fences if present
     let cleaned = result.trim();

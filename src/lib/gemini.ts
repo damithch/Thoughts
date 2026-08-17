@@ -118,9 +118,10 @@ export async function embedTexts(texts: string[]) {
   return normalized;
 }
 
-export async function generateFromPrompt(promptOrParts: string | string[], maxOutputTokens = 2048, temperature = 0.0) {
+export async function generateFromPrompt(promptOrParts: string | string[], maxOutputTokens = 2048, temperature = 0.0, modelOverride?: string) {
   // Use the modern generateContent method and the nested `contents.parts` body shape
-  const path = `${GEMINI_LLM_MODEL}:generateContent`;
+  const model = modelOverride || GEMINI_LLM_MODEL;
+  const path = `${model}:generateContent`;
 
   const parts = Array.isArray(promptOrParts) ? promptOrParts : [promptOrParts];
 

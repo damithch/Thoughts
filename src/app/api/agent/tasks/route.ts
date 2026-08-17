@@ -13,6 +13,7 @@ import {
   updateTaskStatus,
 } from "@/lib/db";
 import type { TaskItem, TaskPriority, TaskStatus } from "@/lib/db";
+import { getUserSettings } from "@/lib/db/settings";
 import { generateFromPrompt } from "@/lib/gemini";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
 
   const selectedDate = body.date || getCurrentColomboDate();
   const userId = currentUser.id;
+  const settings = await getUserSettings(userId);
   const actionLogs: ActionLog[] = [];
   let summaryMessage = "";
 
@@ -133,7 +135,7 @@ export async function POST(request: Request) {
     const recurring = await getRecurringTasksByUser(userId);
 
     // Build prompt for LLM intent parsing
-    const systemPrompt = `You are an AI Task Execution Agent for the personal productivity app 'Thoughts'.
+    const baseSystemPrompt = `You are an AI Task Execution Agent for the personal productivity app 'Thoughts'.
 The user current date is "${selectedDate}".
 Current daily tasks for ${selectedDate}:
 ${JSON.stringify(tasks, null, 2)}
@@ -158,11 +160,14 @@ Respond strictly with a JSON object of the following format without markdown wra
   ],
   "summary": "Clear, concise message summarizing what was executed or retrieved for the user."
 }`;
+    const systemPrompt = settings.agent_custom_prompt
+      ? `${settings.agent_custom_prompt}\n\n${baseSystemPrompt}`
+      : baseSystemPrompt;
 
     let parsed: { actions?: any[]; summary?: string } | null = null;
 
     try {
-      const llmOutput = await generateFromPrompt(systemPrompt, 1024, 0.1);
+      const llmOutput = await generateFromPrompt(systemPrompt, settings.agent_max_tokens, settings.agent_temperature, settings.llm_model);
       const jsonMatch = llmOutput.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         parsed = JSON.parse(jsonMatch[0]);
@@ -227,8 +232,8 @@ Respond strictly with a JSON object of the following format without markdown wra
             userId,
             title,
             priority,
-            tags: act.tags || ["agent"],
-            note: act.note || "Created via AI Task Agent",
+            tags: act.tags || [settings.agent_default_tag],
+            note: act.note || `Created via AI Task Agent`,
             scheduledDate,
           });
           actionLogs.push({

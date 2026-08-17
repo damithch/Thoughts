@@ -3,6 +3,7 @@ export type Thought = {
   title: string;
   category: string;
   mood: number;
+  is_hidden: boolean;
   tags: string[];
   concept_tags: string[];
   summary: string;
@@ -78,6 +79,12 @@ export type UpdateThought = {
 export type DeleteThought = {
   id: number;
   userId: number;
+};
+
+export type SetThoughtHiddenState = {
+  id: number;
+  userId: number;
+  isHidden: boolean;
 };
 
 export type NewUser = {
@@ -317,4 +324,34 @@ export type RagDocumentUpsertInput = {
   metadata: Record<string, unknown>;
   sourceUpdatedAt: Date;
   userId: number;
+};
+
+export type UserSettings = {
+  // RAG Retrieval
+  rag_default_k: number;           // default: 6
+  rag_k_thought: number;           // default: 10
+  rag_k_summary: number;           // default: 10
+  rag_chunk_size: number;          // default: 1500
+  rag_chunk_overlap: number;       // default: 200
+  rag_enabled_kinds: RagDocumentKind[]; // default: all 6 kinds
+  rag_custom_prompt: string;       // default: "" (appended to built-in prompt)
+
+  // AI Agent
+  agent_temperature: number;       // default: 0.1
+  agent_max_tokens: number;        // default: 1024
+  agent_custom_prompt: string;     // default: ""
+  agent_default_tag: string;       // default: "agent"
+
+  // Smart Capture
+  smart_capture_temperature: number; // default: 0.3
+  smart_capture_max_tokens: number;  // default: 2048
+
+  // Live Context Panel
+  live_context_enabled: boolean;    // default: true
+  live_context_debounce_ms: number; // default: 600
+  live_context_min_length: number;  // default: 20
+  live_context_k: number;           // default: 3
+
+  // Model Selection
+  llm_model: string;               // default: "gemini-flash-latest"
 };

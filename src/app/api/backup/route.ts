@@ -74,11 +74,20 @@ export async function POST(request: Request) {
       if (t.title && t.category) {
         await pool.query(
           `
-            INSERT INTO thoughts (title, category, mood, tags, excerpt, body, user_id, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            INSERT INTO thoughts (title, category, mood, tags, excerpt, body, is_hidden, user_id, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             ON CONFLICT DO NOTHING
           `,
-          [t.title, t.category, t.mood ?? 5, t.tags ?? [], t.summary ?? t.excerpt ?? "", t.body ?? "", currentUser.id],
+          [
+            t.title,
+            t.category,
+            t.mood ?? 5,
+            t.tags ?? [],
+            t.summary ?? t.excerpt ?? "",
+            t.body ?? "",
+            t.is_hidden ?? false,
+            currentUser.id,
+          ],
         );
         importedCount++;
       }

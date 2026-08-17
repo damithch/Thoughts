@@ -3,6 +3,7 @@ import { ensureInitialized, seedThoughts } from "@/lib/db/init";
 import type {
   DeleteThought,
   NewThought,
+  SetThoughtHiddenState,
   Thought,
   ThoughtActivityDay,
   ThoughtsResult,
@@ -17,6 +18,7 @@ function getFallbackThoughts(): Thought[] {
     title: thought.title,
     category: thought.category,
     mood: thought.mood,
+    is_hidden: false,
     tags: thought.tags,
     concept_tags: [],
     summary: thought.summary,
@@ -34,6 +36,7 @@ function getFallbackThoughts(): Thought[] {
 const thoughtSelect = `
   SELECT t.id, t.title, t.category, t.excerpt AS summary, t.body, t.user_id, t.created_at,
          t.updated_at, t.mood, t.tags,
+         t.is_hidden,
          COALESCE(
            ARRAY_AGG(DISTINCT ct.name) FILTER (WHERE ct.name IS NOT NULL),
            ARRAY[]::TEXT[]
@@ -187,14 +190,25 @@ export async function createThought(input: NewThought) {
   }
 }
 
-export async function getThoughtsByUser(userId: number, limit = 24) {
+export async function getThoughtsByUser(
+  userId: number,
+  limit = 24,
+  visibility: "active" | "hidden" | "all" = "all",
+) {
   await ensureInitialized();
   const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 24;
+  const visibilityClause =
+    visibility === "active"
+      ? "AND t.is_hidden = false"
+      : visibility === "hidden"
+        ? "AND t.is_hidden = true"
+        : "";
 
   const { rows } = await pool.query<Thought>(
       `
         ${thoughtSelect}
       WHERE t.user_id = $1
+        ${visibilityClause}
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
       ORDER BY t.created_at DESC, t.id DESC
       LIMIT $2
@@ -335,6 +349,23 @@ export async function deleteThought(input: DeleteThought) {
         AND user_id = $2
     `,
     [input.id, input.userId],
+  );
+
+  return rowCount === 1;
+}
+
+export async function setThoughtHiddenState(input: SetThoughtHiddenState) {
+  await ensureInitialized();
+
+  const { rowCount } = await pool.query(
+    `
+      UPDATE thoughts
+      SET is_hidden = $1,
+          updated_at = NOW()
+      WHERE id = $2
+        AND user_id = $3
+    `,
+    [input.isHidden, input.id, input.userId],
   );
 
   return rowCount === 1;
