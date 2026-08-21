@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { updateUserSettingsAction, logoutAction } from "@/app/actions";
 import { Toast } from "@/app/components/toast";
+import RangeSlider from "@/app/components/range-slider";
+import SyncStatus from "@/app/components/sync-status";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserSettings, DEFAULT_USER_SETTINGS } from "@/lib/db/settings";
 import type { RagDocumentKind } from "@/lib/db/types";
@@ -91,21 +93,15 @@ export default async function SettingsPage({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label className="block text-xs font-medium text-stone-700 mb-1" htmlFor="rag_default_k">
-                  Default Top K Results
-                </label>
-                <input
-                  id="rag_default_k"
-                  name="rag_default_k"
-                  type="number"
-                  min={1}
-                  max={50}
-                  defaultValue={settings.rag_default_k}
-                  className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-                />
-                <p className="mt-1 text-[11px] text-stone-400">Final results returned (1–50)</p>
-              </div>
+              <RangeSlider
+                id="rag_default_k"
+                name="rag_default_k"
+                min={1}
+                max={50}
+                defaultValue={settings.rag_default_k}
+                label="Default Top K Results"
+                description="Final context chunks clamped for injection (1–50)"
+              />
               <div>
                 <label className="block text-xs font-medium text-stone-700 mb-1" htmlFor="rag_k_thought">
                   Thought Vector Pool
@@ -443,6 +439,11 @@ export default async function SettingsPage({
               </div>
             </div>
           </section>
+
+          {/* Sync History & Usage Widget */}
+          <div className="mb-6">
+            <SyncStatus />
+          </div>
 
           {/* Defaults Reference & Save */}
           <section className="rounded-[1.75rem] border border-stone-900/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,48,48,0.06)] sm:p-6">

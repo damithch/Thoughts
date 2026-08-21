@@ -324,6 +324,7 @@ export type RagDocumentUpsertInput = {
   metadata: Record<string, unknown>;
   sourceUpdatedAt: Date;
   userId: number;
+  contentHash?: string;
 };
 
 export type UserSettings = {

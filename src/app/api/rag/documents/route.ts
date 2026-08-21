@@ -99,8 +99,9 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url);
     const limitParam = searchParams.get("limit");
     const limit = parseLimit(limitParam);
+    const forceReEmbed = searchParams.get("force") === "1";
 
-    const result = await syncRagDocumentsForUser(currentUser.id);
+    const result = await syncRagDocumentsForUser(currentUser.id, { forceReEmbed });
 
     // After syncing rag_documents, ingest each materialized document into the
     // embeddings table so retrieval/generation endpoints can work end-to-end.
@@ -135,6 +136,9 @@ export async function POST(request: Request) {
       return NextResponse.json({
         synced: true,
         count: result.count,
+        embedded: result.embedded,
+        skipped: result.skipped,
+        forced: forceReEmbed,
         document_kinds: result.documentKinds,
         processed_documents: docs.length,
         ingested_chunks: ingestedChunks,

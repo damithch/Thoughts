@@ -82,9 +82,9 @@ export async function POST(request: Request) {
         ),
       ]);
 
-      rows = [...thoughtRes.rows, ...summaryRes.rows].sort(
-        (a, b) => Number(a.distance) - Number(b.distance),
-      );
+      rows = [...thoughtRes.rows, ...summaryRes.rows]
+        .sort((a, b) => Number(a.distance) - Number(b.distance))
+        .slice(0, k);
     } catch (err) {
       console.warn("[RAG Generate] Vector search query failed, using text fallback:", err);
     }

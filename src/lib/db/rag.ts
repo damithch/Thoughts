@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { pool } from "@/lib/db/client";
 import { getBehaviouralActivationEntriesByUser } from "@/lib/db/activation";
 import { getConversationSummariesByUser } from "@/lib/db/conversations";
@@ -33,6 +35,10 @@ type RagMaterializedDocument = {
   metadata: Record<string, unknown>;
   sourceUpdatedAt: Date;
 };
+
+function sha256(text: string): string {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
 
 function uniqueStrings(values: string[]) {
   return Array.from(
@@ -366,10 +372,11 @@ async function upsertRagDocument(input: RagDocumentUpsertInput) {
         content,
         metadata,
         source_updated_at,
+        content_hash,
         indexed_at,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8::jsonb, $9, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8::jsonb, $9, $10, NOW(), NOW())
       ON CONFLICT (user_id, document_key)
       DO UPDATE SET
         document_kind = EXCLUDED.document_kind,
@@ -379,6 +386,7 @@ async function upsertRagDocument(input: RagDocumentUpsertInput) {
         content = EXCLUDED.content,
         metadata = EXCLUDED.metadata,
         source_updated_at = EXCLUDED.source_updated_at,
+        content_hash = EXCLUDED.content_hash,
         indexed_at = NOW(),
         updated_at = NOW()
     `,
@@ -392,6 +400,7 @@ async function upsertRagDocument(input: RagDocumentUpsertInput) {
       input.content,
       JSON.stringify(input.metadata),
       input.sourceUpdatedAt,
+      input.contentHash ?? null,
     ],
   );
 }
@@ -444,7 +453,10 @@ async function getUserActiveMonths(userId: number) {
   return rows.map((row) => row.month);
 }
 
-export async function syncRagDocumentsForUser(userId: number) {
+export async function syncRagDocumentsForUser(
+  userId: number,
+  options?: { forceReEmbed?: boolean },
+) {
   await ensureInitialized();
 
   const thoughts = await getThoughtsByUser(userId, 1000);
@@ -484,14 +496,27 @@ export async function syncRagDocumentsForUser(userId: number) {
     }),
   ];
 
-  for (const document of materialized) {
+  // Compute content hashes for each materialized document
+  const materializedWithHashes = materialized.map((doc) => ({
+    ...doc,
+    contentHash: sha256(doc.content),
+  }));
+
+  // Fetch existing content hashes to detect unchanged documents
+  const { rows: existingHashRows } = await pool.query<{ document_key: string; content_hash: string | null }>(
+    `SELECT document_key, content_hash FROM rag_documents WHERE user_id = $1`,
+    [userId],
+  );
+  const existingHashes = new Map(existingHashRows.map((row) => [row.document_key, row.content_hash]));
+
+  for (const document of materializedWithHashes) {
     await upsertRagDocument({
       ...document,
       userId,
     });
   }
 
-  const keys = materialized.map((document) => document.documentKey);
+  const keys = materializedWithHashes.map((document) => document.documentKey);
 
   if (keys.length > 0) {
     await pool.query(
@@ -527,11 +552,21 @@ export async function syncRagDocumentsForUser(userId: number) {
     );
   }
 
-  // Automatically chunk and embed all materialized documents into vector database
+  // Automatically chunk and embed only documents whose content has changed
+  let embedded = 0;
+  let skipped = 0;
   try {
     const geminiMod = await import("@/lib/gemini");
     if (geminiMod?.ingestMaterializedDocument) {
-      for (const doc of materialized) {
+      for (const doc of materializedWithHashes) {
+        const storedHash = existingHashes.get(doc.documentKey);
+
+        // Skip embedding if content hash matches the previously stored hash
+        if (!options?.forceReEmbed && storedHash && storedHash === doc.contentHash) {
+          skipped++;
+          continue;
+        }
+
         try {
           await geminiMod.ingestMaterializedDocument(
             userId,
@@ -540,6 +575,7 @@ export async function syncRagDocumentsForUser(userId: number) {
             doc.content,
             doc.metadata,
           );
+          embedded++;
         } catch (err) {
           console.error("Failed auto-ingest for doc:", doc.documentKey, err);
         }
@@ -550,8 +586,10 @@ export async function syncRagDocumentsForUser(userId: number) {
   }
 
   return {
-    count: materialized.length,
-    documentKinds: Array.from(new Set(materialized.map((document) => document.documentKind))),
+    count: materializedWithHashes.length,
+    embedded,
+    skipped,
+    documentKinds: Array.from(new Set(materializedWithHashes.map((document) => document.documentKind))),
   };
 }
 

@@ -359,6 +359,11 @@ export async function ensureInitialized() {
       `);
 
       await pool.query(`
+        ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS content_hash TEXT
+      `);
+
+      await pool.query(`
         CREATE INDEX IF NOT EXISTS rag_documents_user_kind_idx
         ON rag_documents (user_id, document_kind, source_updated_at DESC)
       `);

@@ -414,7 +414,7 @@ export default async function DashboardPage({
                   ) : (
                     <a
                       key={cell.key}
-                      href={`/api/reports/daily?date=${cell.date}&format=json`}
+                      href={`/dashboard/day?date=${cell.date}`}
                       className={`flex aspect-square flex-col justify-between rounded-2xl border p-2 text-left transition sm:p-3 ${
                         cell.isLogged
                           ? "border-emerald-900/15 bg-emerald-100/80 text-emerald-950 hover:bg-emerald-100"
