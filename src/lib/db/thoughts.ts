@@ -179,14 +179,16 @@ export async function createThought(input: NewThought) {
       input.linkedBookIdeaId,
       input.insightReflection,
     );
-    try {
-      const mod = await import("./rag");
-      if (mod?.syncRagDocumentsForUser) {
-        await mod.syncRagDocumentsForUser(input.userId);
-      }
-    } catch (e) {
-      console.error("RAG sync failed:", e);
-    }
+    // Fire-and-forget: don't block the response waiting for RAG sync
+    import("./rag")
+      .then((mod) => {
+        if (mod?.syncRagDocumentsForUser) {
+          return mod.syncRagDocumentsForUser(input.userId);
+        }
+      })
+      .catch((e) => {
+        console.error("RAG sync failed:", e);
+      });
   }
 }
 
@@ -326,14 +328,16 @@ export async function updateThought(input: UpdateThought) {
       input.linkedBookIdeaId,
       input.insightReflection,
     );
-    try {
-      const mod = await import("./rag");
-      if (mod?.syncRagDocumentsForUser) {
-        await mod.syncRagDocumentsForUser(input.userId);
-      }
-    } catch (e) {
-      console.error("RAG sync failed:", e);
-    }
+    // Fire-and-forget: don't block the response waiting for RAG sync
+    import("./rag")
+      .then((mod) => {
+        if (mod?.syncRagDocumentsForUser) {
+          return mod.syncRagDocumentsForUser(input.userId);
+        }
+      })
+      .catch((e) => {
+        console.error("RAG sync failed:", e);
+      });
   }
 
   return rowCount === 1;

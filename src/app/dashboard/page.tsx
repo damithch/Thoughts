@@ -26,6 +26,7 @@ import {
 import RagSearch from "@/app/components/rag-search";
 import SmartCapture from "@/app/components/smart-capture";
 import LiveRagContext from "@/app/components/live-rag-context";
+import SubmitButton from "@/app/components/submit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -128,16 +129,6 @@ export default async function DashboardPage({
   const params = await searchParams;
   const visibility =
     params?.vis === "hidden" || params?.vis === "all" ? params.vis : "active";
-
-  let databaseAvailable = true;
-  let thoughts: Awaited<ReturnType<typeof getThoughtsByUser>> = [];
-
-  try {
-    thoughts = await getThoughtsByUser(currentUser.id, 24, visibility);
-  } catch (error) {
-    console.error("Failed to load dashboard thoughts.", error);
-    databaseAvailable = false;
-  }
   const toastMessage = params?.toast
     ? dashboardToastMessages[params.toast]
     : undefined;
@@ -152,6 +143,25 @@ export default async function DashboardPage({
     editThoughtId && Number.isInteger(editThoughtId) && editThoughtId > 0
       ? editThoughtId
       : null;
+
+  let databaseAvailable = true;
+  let thoughts: Awaited<ReturnType<typeof getThoughtsByUser>> = [];
+  let monthlyActivity: Awaited<ReturnType<typeof getThoughtActivityByUserMonth>> = [];
+  let bookIdeas: Awaited<ReturnType<typeof getBookIdeasByUser>> = [];
+  let conversationSummaries: Awaited<ReturnType<typeof getConversationSummariesByUser>> = [];
+
+  try {
+    [thoughts, monthlyActivity, bookIdeas, conversationSummaries] = await Promise.all([
+      getThoughtsByUser(currentUser.id, 24, visibility),
+      getThoughtActivityByUserMonth(currentUser.id, activeMonth),
+      getBookIdeasByUser(currentUser.id),
+      getConversationSummariesByUser(currentUser.id, 8),
+    ]);
+  } catch (error) {
+    console.error("Failed to load dashboard data.", error);
+    databaseAvailable = false;
+  }
+
   const editingThought = validEditThoughtId
     ? await getThoughtByIdForUser(validEditThoughtId, currentUser.id)
     : null;
@@ -166,15 +176,7 @@ export default async function DashboardPage({
   const visibleTags = Array.from(
     new Set(filteredThoughts.flatMap((thought: DashboardThought) => thought.tags)),
   ).slice(0, 12);
-  const monthlyActivity = databaseAvailable
-    ? await getThoughtActivityByUserMonth(currentUser.id, activeMonth)
-    : [];
-  const bookIdeas = databaseAvailable
-    ? await getBookIdeasByUser(currentUser.id)
-    : [];
-  const conversationSummaries = databaseAvailable
-    ? await getConversationSummariesByUser(currentUser.id, 8)
-    : [];
+
   const activityByDate = new Map(
     monthlyActivity.map((day) => [
       day.date,
@@ -656,13 +658,12 @@ export default async function DashboardPage({
                         Cancel
                       </Link>
                     ) : null}
-                    <button
-                      type="submit"
+                    <SubmitButton
+                      label={editingThought ? "Update Card" : "Create Card"}
+                      pendingLabel={editingThought ? "Updating…" : "Creating…"}
                       disabled={!databaseAvailable}
                       className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                    >
-                      {editingThought ? "Update Card" : "Create Card"}
-                    </button>
+                    />
                   </div>
                 </div>
               </div>
