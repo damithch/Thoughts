@@ -64,6 +64,12 @@ export default async function ActivationPage() {
               >
                 Task Management
               </Link>
+              <Link
+                href="/dashboard/worry-postponement"
+                className="rounded-full border border-teal-950/10 px-4 py-3 text-center text-teal-950 transition-colors hover:bg-teal-50"
+              >
+                Worry Postponement
+              </Link>
               <form action={logoutAction}>
                 <button
                   type="submit"

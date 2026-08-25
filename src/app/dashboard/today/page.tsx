@@ -378,6 +378,12 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                 Completion Stats
               </Link>
               <Link
+                href="/dashboard/worry-postponement"
+                className="rounded-full border border-teal-950/10 px-4 py-3 text-center text-teal-950 transition-colors hover:bg-teal-50"
+              >
+                Worry Postponement
+              </Link>
+              <Link
                 href="/"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >

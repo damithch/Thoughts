@@ -263,6 +263,12 @@ export default async function DashboardPage({
                 BA Worksheet
               </Link>
               <Link
+                href="/dashboard/worry-postponement"
+                className="rounded-full border border-teal-950/10 px-4 py-3 text-center text-teal-950 transition-colors hover:bg-teal-50"
+              >
+                Worry Postponement
+              </Link>
+              <Link
                 href="/dashboard/conversations"
                 className="rounded-full border border-cyan-950/10 px-4 py-3 text-center text-cyan-950 transition-colors hover:bg-cyan-50"
               >
