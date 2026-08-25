@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 
 import {
   getBehaviouralActivationEntriesByUser,
@@ -129,7 +130,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         linkedBookIdeaId: { type: ["integer", "null"] },
         insightReflection: { type: "string" },
       },
-      required: ["title", "category", "mood", "summary", "body"],
+      required: ["title", "category", "mood", "summary"],
       additionalProperties: false,
     },
   },
@@ -444,47 +445,14 @@ function isConversationSummaryLikeThought(input: {
   summary: string;
   body: string;
 }) {
-  const haystack = [
-    input.title,
-    input.category,
-    input.summary,
-    input.body,
-    ...input.tags,
-  ]
-    .join(" ")
-    .toLowerCase();
+  const categoryLooksLikeConversation =
+    input.category.toLowerCase() === "claude conversation log" ||
+    input.category.toLowerCase() === "conversation summary log";
 
   const titleLooksLikeConversation =
-    input.title.toLowerCase().includes("claude conversation") ||
-    input.title.toLowerCase().includes("conversation summary") ||
-    input.title.toLowerCase().includes("session summary");
+    input.title.toLowerCase().startsWith("claude conversation log:");
 
-  const categoryLooksLikeConversation =
-    input.category.toLowerCase() === "conversation summary" ||
-    input.category.toLowerCase() === "claude conversation log";
-
-  const tagsLookLikeConversation = input.tags.some((tag) => {
-    const normalizedTag = tag.toLowerCase();
-
-    return (
-      normalizedTag.includes("conversation-summary") ||
-      normalizedTag.includes("session-summary") ||
-      normalizedTag.includes("claude-summary") ||
-      normalizedTag === "thoughtnest"
-    );
-  });
-
-  const bodyLooksLikeConversation =
-    haystack.includes("monthly mood analysis") ||
-    haystack.includes("conversation summary feature") ||
-    haystack.includes("saved to thoughtnest");
-
-  return (
-    titleLooksLikeConversation ||
-    categoryLooksLikeConversation ||
-    tagsLookLikeConversation ||
-    bodyLooksLikeConversation
-  );
+  return categoryLooksLikeConversation || titleLooksLikeConversation;
 }
 
 function formatToolResult(data: JsonObject) {
@@ -786,7 +754,7 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
     const title = normalizeOptionalString(args.title);
     const category = normalizeOptionalString(args.category);
     const summary = normalizeOptionalString(args.summary);
-    const body = normalizeOptionalString(args.body);
+    const body = normalizeOptionalString(args.body) ?? "";
     const insightReflection = normalizeOptionalString(args.insightReflection);
     const mood = normalizeMood(args.mood);
     const linkedBookIdeaId =
@@ -798,8 +766,8 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
           ? args.linkedBookIdeaId
           : null;
 
-    if (!title || !category || !summary || !body || mood === null) {
-      throw new Error("create_thought requires title, category, mood, summary, and body.");
+    if (!title || !category || !summary || mood === null) {
+      throw new Error("create_thought requires title, category, mood, and summary.");
     }
 
     const input: NewThought = {
@@ -1105,7 +1073,12 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
   throw new Error(`Unknown tool: ${name}`);
 }
 
-function isAuthorized(request: Request) {
+async function isAuthorized(request: Request) {
+  const currentUser = await getCurrentUser();
+  if (currentUser) {
+    return { ok: true as const, userId: currentUser.id };
+  }
+
   const expectedApiKey = process.env.MCP_API_KEY;
 
   if (!expectedApiKey) {
@@ -1124,11 +1097,11 @@ function isAuthorized(request: Request) {
     };
   }
 
-  return { ok: true as const };
+  return { ok: true as const, userId: null };
 }
 
 export async function POST(request: Request) {
-  const auth = isAuthorized(request);
+  const auth = await isAuthorized(request);
 
   if (!auth.ok) {
     return jsonRpcError(null, -32001, auth.reason, 401);
@@ -1181,7 +1154,7 @@ export async function POST(request: Request) {
         return jsonRpcError(body.id, -32602, "Tool name is required.", 400);
       }
 
-      const user = await requireMcpUser();
+      const user = auth.userId ? { id: auth.userId } : await requireMcpUser();
       const result = await handleToolCall(name, args, user.id, request);
 
       return jsonRpcResult(body.id, result);
@@ -1197,7 +1170,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const auth = isAuthorized(request);
+  const auth = await isAuthorized(request);
 
   if (!auth.ok) {
     return NextResponse.json({ error: auth.reason }, { status: 401 });

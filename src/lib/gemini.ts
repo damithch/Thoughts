@@ -10,6 +10,72 @@ const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 1536);
 // We only support API-key auth in this environment to avoid requiring
 // google-auth-library / ADC. Use `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
 
+export type GeminiErrorType = "rate_limit" | "token_exceeded" | "auth_error" | "api_error" | "overloaded";
+
+export class GeminiApiError extends Error {
+  statusCode: number;
+  errorType: GeminiErrorType;
+  rawBody: string;
+
+  constructor(statusCode: number, errorType: GeminiErrorType, message: string, rawBody: string) {
+    super(message);
+    this.name = "GeminiApiError";
+    this.statusCode = statusCode;
+    this.errorType = errorType;
+    this.rawBody = rawBody;
+  }
+}
+
+function classifyGeminiError(status: number, body: string): { errorType: GeminiErrorType; message: string } {
+  const lower = body.toLowerCase();
+
+  // Try to parse the JSON error body for a more specific message.
+  let apiMessage = "";
+  try {
+    const parsed = JSON.parse(body);
+    apiMessage = parsed?.error?.message ?? parsed?.message ?? "";
+  } catch {
+    // body is not JSON — use raw text
+  }
+
+  if (status === 429) {
+    return {
+      errorType: "rate_limit",
+      message: apiMessage || "API rate limit exceeded — please wait a moment and try again.",
+    };
+  }
+
+  if (status === 401 || status === 403) {
+    return {
+      errorType: "auth_error",
+      message: apiMessage || "API key is invalid or missing permissions. Check your Gemini API key in settings.",
+    };
+  }
+
+  if (
+    status === 400 &&
+    (lower.includes("token") || lower.includes("too long") || lower.includes("exceeds") || lower.includes("max_tokens"))
+  ) {
+    return {
+      errorType: "token_exceeded",
+      message: apiMessage || "Input is too long for the model to process. Try with shorter text.",
+    };
+  }
+
+  // "The model is currently experiencing high demand" — Gemini overload (503/429/other).
+  if (lower.includes("high demand") || lower.includes("overloaded") || lower.includes("resource exhausted")) {
+    return {
+      errorType: "overloaded",
+      message: apiMessage || "The model is experiencing high demand. Please try again in a few minutes.",
+    };
+  }
+
+  return {
+    errorType: "api_error",
+    message: apiMessage || `Gemini API error (HTTP ${status}).`,
+  };
+}
+
 async function callGenerativeApi(path: string, body: unknown) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${path}`;
 
@@ -21,6 +87,9 @@ async function callGenerativeApi(path: string, body: unknown) {
 
   // Retry transient server errors (503, 429) with exponential backoff.
   const maxAttempts = 3;
+  let lastStatus = 0;
+  let lastBody = "";
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const resp = await fetch(url, {
       method: "POST",
@@ -29,6 +98,8 @@ async function callGenerativeApi(path: string, body: unknown) {
     });
 
     const text = await resp.text();
+    lastStatus = resp.status;
+    lastBody = text;
 
     if (resp.ok) {
       try {
@@ -45,11 +116,14 @@ async function callGenerativeApi(path: string, body: unknown) {
       continue;
     }
 
-    // Non-retriable error: throw with response body for diagnostics.
-    throw new Error(`Gemini API error: ${resp.status} ${text}`);
+    // Non-retriable client error: classify and throw immediately.
+    const classified = classifyGeminiError(resp.status, text);
+    throw new GeminiApiError(resp.status, classified.errorType, classified.message, text);
   }
 
-  throw new Error("Gemini API error: max retries exceeded");
+  // All retries exhausted — classify the last error we saw.
+  const classified = classifyGeminiError(lastStatus, lastBody);
+  throw new GeminiApiError(lastStatus, classified.errorType, classified.message, lastBody);
 }
 
 export async function embedTexts(texts: string[]) {

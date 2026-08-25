@@ -5,6 +5,7 @@ import { updateUserSettingsAction, logoutAction } from "@/app/actions";
 import { Toast } from "@/app/components/toast";
 import RangeSlider from "@/app/components/range-slider";
 import SyncStatus from "@/app/components/sync-status";
+import ApiHealthCheck from "@/app/components/api-health-check";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserSettings, DEFAULT_USER_SETTINGS } from "@/lib/db/settings";
 import type { RagDocumentKind } from "@/lib/db/types";
@@ -443,6 +444,11 @@ export default async function SettingsPage({
           {/* Sync History & Usage Widget */}
           <div className="mb-6">
             <SyncStatus />
+          </div>
+
+          {/* API Health Check */}
+          <div className="mb-6">
+            <ApiHealthCheck />
           </div>
 
           {/* Defaults Reference & Save */}

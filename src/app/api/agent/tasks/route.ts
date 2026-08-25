@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import {
   batchUpdateTaskStatus,
   createTask,
+  createThought,
   deleteTask,
   generateDailyTasksFromRecurring,
   getRecurringTasksByUser,
@@ -135,7 +136,7 @@ export async function POST(request: Request) {
     const recurring = await getRecurringTasksByUser(userId);
 
     // Build prompt for LLM intent parsing
-    const baseSystemPrompt = `You are an AI Task Execution Agent for the personal productivity app 'Thoughts'.
+    const baseSystemPrompt = `You are an AI Task & Thought Execution Agent for the personal productivity app 'Thoughts'.
 The user current date is "${selectedDate}".
 Current daily tasks for ${selectedDate}:
 ${JSON.stringify(tasks, null, 2)}
@@ -148,12 +149,17 @@ Respond strictly with a JSON object of the following format without markdown wra
 {
   "actions": [
     {
-      "tool": "create_task" | "update_status" | "delete_task" | "roll_forward" | "apply_recurring" | "none",
+      "tool": "create_task" | "create_thought" | "update_status" | "delete_task" | "roll_forward" | "apply_recurring" | "none",
       "taskId"?: number,
       "title"?: string,
+      "category"?: string,
+      "mood"?: number,
       "priority"?: "low" | "medium" | "high",
       "status"?: "todo" | "in_progress" | "done" | "skipped",
       "tags"?: string[],
+      "conceptTags"?: string[],
+      "summary"?: string,
+      "body"?: string,
       "note"?: string,
       "scheduledDate"?: string
     }
@@ -181,7 +187,20 @@ Respond strictly with a JSON object of the following format without markdown wra
       const lower = promptText.toLowerCase();
       const actions: any[] = [];
 
-      if (lower.includes("done") || lower.includes("complete") || lower.includes("finish")) {
+      if (lower.includes("thought") || lower.includes("journal") || lower.includes("reflect") || lower.includes("capture")) {
+        const cleanTitle = promptText
+          .replace(/^(capture thought|capture|add thought|new thought|journal|reflect|thought:?)\s*/i, "")
+          .trim();
+        actions.push({
+          tool: "create_thought",
+          title: cleanTitle.length > 0 ? cleanTitle.slice(0, 100) : promptText,
+          category: "Journal",
+          mood: 7,
+          summary: promptText,
+          body: promptText,
+          tags: ["agent-capture"],
+        });
+      } else if (lower.includes("done") || lower.includes("complete") || lower.includes("finish")) {
         // Find matching tasks by title or keyword
         const targets = tasks.filter((t) => lower.includes(t.title.toLowerCase()) || lower.includes(t.priority));
         if (targets.length > 0) {
@@ -224,7 +243,34 @@ Respond strictly with a JSON object of the following format without markdown wra
     // Execute actions
     if (parsed.actions && parsed.actions.length > 0) {
       for (const act of parsed.actions) {
-        if (act.tool === "create_task") {
+        if (act.tool === "create_thought") {
+          const title = act.title || promptText;
+          const category = act.category || "Reflection";
+          const mood = typeof act.mood === "number" && act.mood >= 1 && act.mood <= 10 ? act.mood : 7;
+          const summary = act.summary || promptText;
+          const bodyText = act.body || promptText;
+          const tags = Array.isArray(act.tags) && act.tags.length > 0 ? act.tags : ["agent-capture"];
+          const conceptTags = Array.isArray(act.conceptTags) ? act.conceptTags : [];
+
+          await createThought({
+            title,
+            category,
+            mood,
+            tags,
+            conceptTags,
+            summary,
+            body: bodyText,
+            linkedBookIdeaId: null,
+            insightReflection: "",
+            userId,
+          });
+
+          actionLogs.push({
+            tool: "create_thought",
+            details: `Captured thought card "${title}" (${category}, mood ${mood}/10)`,
+            status: "success",
+          });
+        } else if (act.tool === "create_task") {
           const title = act.title || promptText;
           const priority: TaskPriority = act.priority || "medium";
           const scheduledDate = act.scheduledDate || selectedDate;
@@ -274,6 +320,7 @@ Respond strictly with a JSON object of the following format without markdown wra
         }
       }
     }
+
 
     summaryMessage = parsed.summary || `Agent executed ${actionLogs.length} action(s) for your request.`;
   }

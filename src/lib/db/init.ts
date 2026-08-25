@@ -417,6 +417,75 @@ export async function ensureInitialized() {
         )
       `);
 
+      // ── Worry Postponement Module ──────────────────────────────
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS worry_postponement_modules (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          belief_text TEXT NOT NULL DEFAULT '',
+          belief_before_pct INTEGER,
+          belief_after_pct INTEGER,
+          thinking_time_start TEXT NOT NULL DEFAULT '',
+          thinking_time_duration INTEGER NOT NULL DEFAULT 15,
+          thinking_time_place TEXT NOT NULL DEFAULT '',
+          prediction_text TEXT NOT NULL DEFAULT '',
+          prediction_confidence INTEGER,
+          reflection_text TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'active',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (belief_before_pct IS NULL OR (belief_before_pct >= 0 AND belief_before_pct <= 100)),
+          CHECK (belief_after_pct IS NULL OR (belief_after_pct >= 0 AND belief_after_pct <= 100)),
+          CHECK (prediction_confidence IS NULL OR (prediction_confidence >= 0 AND prediction_confidence <= 10)),
+          CHECK (status IN ('active', 'completed', 'abandoned'))
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS worry_modules_user_status_idx
+        ON worry_postponement_modules (user_id, status)
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS worry_evidence (
+          id BIGSERIAL PRIMARY KEY,
+          module_id BIGINT NOT NULL REFERENCES worry_postponement_modules(id) ON DELETE CASCADE,
+          side TEXT NOT NULL,
+          content TEXT NOT NULL DEFAULT '',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (side IN ('for', 'against'))
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS worry_evidence_module_side_idx
+        ON worry_evidence (module_id, side, sort_order)
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS worry_experiment_days (
+          id BIGSERIAL PRIMARY KEY,
+          module_id BIGINT NOT NULL REFERENCES worry_postponement_modules(id) ON DELETE CASCADE,
+          day_number INTEGER NOT NULL,
+          entry_date DATE NOT NULL,
+          what_happened TEXT NOT NULL DEFAULT '',
+          thinking_time_notes TEXT NOT NULL DEFAULT '',
+          controllability INTEGER NOT NULL DEFAULT 5,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (module_id, day_number),
+          CHECK (day_number >= 1 AND day_number <= 7),
+          CHECK (controllability >= 0 AND controllability <= 10)
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS worry_experiment_days_module_idx
+        ON worry_experiment_days (module_id, day_number)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );

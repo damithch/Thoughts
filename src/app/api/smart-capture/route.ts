@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { getBookIdeasByUser } from "@/lib/db/insights";
 import { getUserSettings } from "@/lib/db/settings";
-import { generateFromPrompt } from "@/lib/gemini";
+import { generateFromPrompt, GeminiApiError } from "@/lib/gemini";
 
 export async function POST(request: Request) {
   const currentUser = await getCurrentUser();
@@ -113,7 +113,7 @@ OUTPUT JSON SCHEMA:
     } catch {
       console.error("Smart capture: failed to parse LLM response as JSON:", cleaned);
       return NextResponse.json(
-        { error: "The AI returned an invalid response. Please try again.", rawResponse: cleaned },
+        { error: "The AI returned an invalid response. Please try again.", errorType: "parse_error" as const, rawResponse: cleaned },
         { status: 502 },
       );
     }
@@ -146,7 +146,30 @@ OUTPUT JSON SCHEMA:
     return NextResponse.json(output);
   } catch (error) {
     console.error("Smart capture failed", error);
+
+    if (error instanceof GeminiApiError) {
+      const statusMap: Record<string, number> = {
+        rate_limit: 429,
+        token_exceeded: 400,
+        auth_error: 401,
+        overloaded: 503,
+        api_error: 502,
+      };
+
+      return NextResponse.json(
+        {
+          error: error.message,
+          errorType: error.errorType,
+          details: error.message,
+        },
+        { status: statusMap[error.errorType] ?? 502 },
+      );
+    }
+
     const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: "Smart capture failed.", details: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Smart capture failed.", errorType: "api_error" as const, details: message },
+      { status: 500 },
+    );
   }
 }

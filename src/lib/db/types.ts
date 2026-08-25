@@ -356,3 +356,89 @@ export type UserSettings = {
   // Model Selection
   llm_model: string;               // default: "gemini-flash-latest"
 };
+
+// ── Worry Postponement Module ──────────────────────────────
+
+export type WorryModuleStatus = "active" | "completed" | "abandoned";
+
+export type WorryPostponementModule = {
+  id: number;
+  user_id: number;
+  belief_text: string;
+  belief_before_pct: number | null;
+  belief_after_pct: number | null;
+  thinking_time_start: string;
+  thinking_time_duration: number;
+  thinking_time_place: string;
+  prediction_text: string;
+  prediction_confidence: number | null;
+  reflection_text: string;
+  status: WorryModuleStatus;
+  created_at: Date;
+  updated_at: Date;
+  evidence: WorryEvidence[];
+  experiment_days: WorryExperimentDay[];
+};
+
+export type WorryEvidence = {
+  id: number;
+  module_id: number;
+  side: "for" | "against";
+  content: string;
+  sort_order: number;
+  created_at: Date;
+};
+
+export type WorryExperimentDay = {
+  id: number;
+  module_id: number;
+  day_number: number;
+  entry_date: string;
+  what_happened: string;
+  thinking_time_notes: string;
+  controllability: number;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type NewWorryModule = {
+  userId: number;
+  beliefText: string;
+  beliefBeforePct: number | null;
+};
+
+export type UpdateWorryModule = {
+  id: number;
+  userId: number;
+  beliefText?: string;
+  beliefBeforePct?: number | null;
+  beliefAfterPct?: number | null;
+  thinkingTimeStart?: string;
+  thinkingTimeDuration?: number;
+  thinkingTimePlace?: string;
+  predictionText?: string;
+  predictionConfidence?: number | null;
+  reflectionText?: string;
+  status?: WorryModuleStatus;
+};
+
+export type NewWorryEvidence = {
+  moduleId: number;
+  side: "for" | "against";
+  content: string;
+};
+
+export type UpdateWorryEvidence = {
+  id: number;
+  moduleId: number;
+  content: string;
+};
+
+export type UpsertWorryExperimentDay = {
+  moduleId: number;
+  dayNumber: number;
+  entryDate: string;
+  whatHappened: string;
+  thinkingTimeNotes: string;
+  controllability: number;
+};
