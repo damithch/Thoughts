@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 
-type SmartCaptureResult = {
+export type SmartCaptureResult = {
   title: string;
   category: string;
   mood: number;
@@ -59,11 +59,16 @@ const ERROR_CONFIG: Record<ErrorType, { icon: string; title: string; hint: strin
   },
 };
 
-export function SmartCapture() {
+type SmartCaptureProps = {
+  onAutoFill?: (result: SmartCaptureResult) => void;
+};
+
+export function SmartCapture({ onAutoFill }: SmartCaptureProps) {
   const [rawText, setRawText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<SmartCaptureError | null>(null);
   const [filled, setFilled] = useState(false);
+  const [modelUsed, setModelUsed] = useState<string | null>(null);
   const [retryCountdown, setRetryCountdown] = useState(0);
   const retryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -92,6 +97,7 @@ export function SmartCapture() {
   async function handleAutoFill() {
     setError(null);
     setFilled(false);
+    setModelUsed(null);
 
     if (!rawText.trim()) {
       setError({ message: "Paste or type your journal entry first.", errorType: "api_error" });
@@ -124,11 +130,15 @@ export function SmartCapture() {
         return;
       }
 
-      const result: SmartCaptureResult = await response.json();
+      const data = await response.json();
+      const result: SmartCaptureResult = data;
 
-      // Populate the thought form using DOM API
-      populateThoughtForm(result);
+      // Pass the structured result to the parent via callback
+      if (onAutoFill) {
+        onAutoFill(result);
+      }
       setFilled(true);
+      setModelUsed(data.modelUsed ?? null);
     } catch (e: any) {
       setError({
         message: String(e?.message ?? e),
@@ -137,65 +147,6 @@ export function SmartCapture() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function populateThoughtForm(data: SmartCaptureResult) {
-    // Find the thought form — it's the form containing an input[name="title"]
-    const titleInput = document.querySelector<HTMLInputElement>(
-      'form input[name="title"]',
-    );
-    if (!titleInput) return;
-
-    const form = titleInput.closest("form");
-    if (!form) return;
-
-    // Helper to set a form field value and trigger React-compatible events
-    function setFieldValue(name: string, value: string) {
-      const element = form!.elements.namedItem(name) as
-        | HTMLInputElement
-        | HTMLTextAreaElement
-        | HTMLSelectElement
-        | null;
-
-      if (!element) return;
-
-      // Use native setter to bypass React's synthetic event system
-      const nativeInputValueSetter =
-        Object.getOwnPropertyDescriptor(
-          element instanceof HTMLTextAreaElement
-            ? window.HTMLTextAreaElement.prototype
-            : element instanceof HTMLSelectElement
-              ? window.HTMLSelectElement.prototype
-              : window.HTMLInputElement.prototype,
-          "value",
-        )?.set;
-
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(element, value);
-      } else {
-        element.value = value;
-      }
-
-      // Dispatch events so the browser and any listeners pick up the change
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-      element.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-
-    setFieldValue("title", data.title);
-    setFieldValue("category", data.category);
-    setFieldValue("mood", String(data.mood));
-    setFieldValue("tags", data.tags.join(", "));
-    setFieldValue("conceptTags", data.conceptTags.join(", "));
-    setFieldValue("summary", data.summary);
-    setFieldValue("body", data.body);
-    setFieldValue("insightReflection", data.insightReflection);
-
-    if (data.linkedBookIdeaId !== null) {
-      setFieldValue("bookIdeaId", String(data.linkedBookIdeaId));
-    }
-
-    // Scroll the form into view so the user can review
-    form.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   const errorConfig = error ? ERROR_CONFIG[error.errorType] : null;
@@ -212,12 +163,19 @@ export function SmartCapture() {
           </p>
         </div>
         {filled ? (
-          <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-medium text-emerald-800 sm:mt-0">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Form filled — review below
-          </span>
+          <div className="mt-2 flex flex-col items-end gap-1 sm:mt-0">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-medium text-emerald-800">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Form filled — review below
+            </span>
+            {modelUsed ? (
+              <span className="text-[10px] text-stone-400">
+                via {modelUsed}
+              </span>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -228,6 +186,14 @@ export function SmartCapture() {
         onChange={(e) => {
           setRawText(e.target.value);
           setFilled(false);
+          if (error) {
+            setError(null);
+            setRetryCountdown(0);
+            if (retryTimerRef.current) {
+              clearInterval(retryTimerRef.current);
+              retryTimerRef.current = null;
+            }
+          }
         }}
         placeholder="Today I realized that I've been putting off the hard conversations at work. The anxiety peaks right before meetings but once I'm in them it's usually fine. I think this connects to what I read in Atomic Habits about starting small — just showing up is the hardest part…"
       />

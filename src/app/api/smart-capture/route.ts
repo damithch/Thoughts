@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { getBookIdeasByUser } from "@/lib/db/insights";
 import { getUserSettings } from "@/lib/db/settings";
-import { generateFromPrompt, GeminiApiError } from "@/lib/gemini";
+import { generateWithFallback, GeminiApiError } from "@/lib/gemini";
 
 export async function POST(request: Request) {
   const currentUser = await getCurrentUser();
@@ -72,9 +72,10 @@ IMPORTANT RULES:
 - Output ONLY valid JSON, no markdown fences, no explanation text.
 - Reuse existing tags and categories when they fit. Only create new ones if none match.
 - mood is an integer from 1 (lowest) to 10 (highest). Infer it from the emotional tone.
-- summary should be 1-2 sentences that capture the core of the entry.
-- body is the full journal text, cleaned up slightly for readability but preserving the user's voice.
-- tags are general grouping labels (max 5). conceptTags are idea-level/philosophical labels (max 5).
+- summary should be 1-2 SHORT sentences that capture the core of the entry. Keep it brief and scannable.
+- body is the FULL journal text, cleaned up slightly for readability but preserving the user's voice. If the raw text is long, the summary stays short and ALL the detail goes into body. Never truncate body.
+- tags are general grouping labels (max 5).
+- conceptTags: ALWAYS return an empty array []. The user fills these manually.
 - linkedBookIdeaId: set to the numeric ID of a matching book idea if the entry clearly relates to one, otherwise null.
 - insightReflection: if a book idea is linked, write a short note on how it appeared in the entry. Otherwise empty string.
 
@@ -89,18 +90,18 @@ OUTPUT JSON SCHEMA:
   "category": "string (single category label)",
   "mood": "integer 1-10",
   "tags": ["string array"],
-  "conceptTags": ["string array"],
-  "summary": "string (1-2 sentence summary)",
-  "body": "string (cleaned-up full text)",
+  "conceptTags": [],
+  "summary": "string (1-2 sentence summary, keep SHORT)",
+  "body": "string (full cleaned-up text, never truncate)",
   "linkedBookIdeaId": "integer or null",
   "insightReflection": "string or empty"
 }`;
 
     const userPrompt = `RAW JOURNAL TEXT:\n${rawText}`;
 
-    const result = await generateFromPrompt([systemPrompt, userPrompt], settings.smart_capture_max_tokens, settings.smart_capture_temperature, settings.llm_model);
+    const { text: result, modelUsed } = await generateWithFallback([systemPrompt, userPrompt], settings.smart_capture_max_tokens, settings.smart_capture_temperature, settings.llm_model);
 
-    // Parse the LLM response — strip markdown fences if present
+    // Parse the LLM response — strip markdown fences if present, try regex extraction as fallback
     let cleaned = result.trim();
     if (cleaned.startsWith("```")) {
       cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
@@ -111,11 +112,23 @@ OUTPUT JSON SCHEMA:
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      console.error("Smart capture: failed to parse LLM response as JSON:", cleaned);
-      return NextResponse.json(
-        { error: "The AI returned an invalid response. Please try again.", errorType: "parse_error" as const, rawResponse: cleaned },
-        { status: 502 },
-      );
+      // Fallback: try to extract JSON object from anywhere in the response
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+          // Both attempts failed
+        }
+      }
+
+      if (!parsed) {
+        console.error("Smart capture: failed to parse LLM response as JSON:", cleaned);
+        return NextResponse.json(
+          { error: "The AI returned an invalid response. Please try again.", errorType: "parse_error" as const, rawResponse: cleaned },
+          { status: 502 },
+        );
+      }
     }
 
     // Validate and sanitize the parsed fields
@@ -143,7 +156,7 @@ OUTPUT JSON SCHEMA:
       insightReflection: typeof parsed.insightReflection === "string" ? parsed.insightReflection.trim() : "",
     };
 
-    return NextResponse.json(output);
+    return NextResponse.json({ ...output, modelUsed });
   } catch (error) {
     console.error("Smart capture failed", error);
 

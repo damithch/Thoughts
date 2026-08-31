@@ -126,7 +126,11 @@ function getItemDate(item: RagResultItem): string | undefined {
   );
 }
 
-export function LiveRagContext() {
+type LiveRagContextProps = {
+  formRef?: React.RefObject<HTMLFormElement | null>;
+};
+
+export function LiveRagContext({ formRef }: LiveRagContextProps) {
   const [results, setResults] = useState<RagResultItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<RagResultItem | null>(null);
@@ -134,12 +138,31 @@ export function LiveRagContext() {
   const lastQueriedTextRef = useRef<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const resultsLengthRef = useRef<number>(0);
+
+  // Keep resultsLengthRef in sync with results state
+  useEffect(() => {
+    resultsLengthRef.current = results.length;
+  }, [results]);
 
   useEffect(() => {
     function readFormDraft(): string {
-      const titleInput = document.querySelector<HTMLInputElement>('form input[name="title"]');
-      const bodyInput = document.querySelector<HTMLTextAreaElement>('form textarea[name="body"]');
-      const summaryInput = document.querySelector<HTMLTextAreaElement>('form textarea[name="summary"]');
+      // Read from the form ref if available, otherwise fall back to document query
+      const form = formRef?.current;
+
+      let titleInput: HTMLInputElement | null = null;
+      let bodyInput: HTMLTextAreaElement | null = null;
+      let summaryInput: HTMLTextAreaElement | null = null;
+
+      if (form) {
+        titleInput = form.querySelector<HTMLInputElement>('input[name="title"]');
+        bodyInput = form.querySelector<HTMLTextAreaElement>('textarea[name="body"]');
+        summaryInput = form.querySelector<HTMLTextAreaElement>('textarea[name="summary"]');
+      } else {
+        titleInput = document.querySelector<HTMLInputElement>('form input[name="title"]');
+        bodyInput = document.querySelector<HTMLTextAreaElement>('form textarea[name="body"]');
+        summaryInput = document.querySelector<HTMLTextAreaElement>('form textarea[name="summary"]');
+      }
 
       const title = titleInput?.value.trim() ?? "";
       const summary = summaryInput?.value.trim() ?? "";
@@ -153,7 +176,7 @@ export function LiveRagContext() {
 
       // Skip query if draft under ~20 characters
       if (currentDraft.length < 20) {
-        if (results.length > 0) setResults([]);
+        if (resultsLengthRef.current > 0) setResults([]);
         return;
       }
 
@@ -217,17 +240,18 @@ export function LiveRagContext() {
       }, 600);
     }
 
-    // Attach listeners to document to capture input/change bubbling from thought form
-    document.addEventListener("input", handleFormInputChange);
-    document.addEventListener("change", handleFormInputChange);
+    // Scope event listeners to the form element if available, otherwise fall back to document
+    const target = formRef?.current ?? document;
+    target.addEventListener("input", handleFormInputChange);
+    target.addEventListener("change", handleFormInputChange);
 
     return () => {
-      document.removeEventListener("input", handleFormInputChange);
-      document.removeEventListener("change", handleFormInputChange);
+      target.removeEventListener("input", handleFormInputChange);
+      target.removeEventListener("change", handleFormInputChange);
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, []);
+  }, [formRef]);
 
   // Hide panel if no results and not loading
   if (!loading && results.length === 0) {

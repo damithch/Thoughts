@@ -4,8 +4,23 @@ import { chunkText } from "@/lib/chunk";
 const GEMINI_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
 // Use current Gemini naming by default; allow overrides via env.
 const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
-const GEMINI_LLM_MODEL = process.env.GEMINI_LLM_MODEL ?? "gemini-flash-latest";
-const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 1536);
+const GEMINI_LLM_MODEL = process.env.GEMINI_LLM_MODEL ?? "gemini-3.6-flash";
+const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 768);
+
+// Resilient multi-model fallback array. When the primary model is unavailable
+// (rate-limited, overloaded, deprecated, 5xx), the system walks through this
+// list until one responds successfully. Uses verified active 2026 models.
+const GEMINI_FALLBACK_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemma-4-26b-a4b-it',
+  'gemma-4-31b-it',
+  'gemini-pro-latest',
+  'gemini-2.0-flash',
+  'gemini-flash-latest',
+];
 
 // We only support API-key auth in this environment to avoid requiring
 // google-auth-library / ADC. Use `GEMINI_API_KEY` or `GOOGLE_API_KEY`.
@@ -237,6 +252,66 @@ export async function generateFromPrompt(promptOrParts: string | string[], maxOu
   }
 
   return String(JSON.stringify(json));
+}
+
+/**
+ * Generate text with automatic multi-model fallback.
+ * Tries the primary model first, then walks the GEMINI_FALLBACK_MODELS list
+ * on retriable failures (rate_limit, overloaded, 5xx server errors).
+ * Non-retriable errors (auth_error, token_exceeded) are thrown immediately.
+ */
+export async function generateWithFallback(
+  promptOrParts: string | string[],
+  maxOutputTokens = 2048,
+  temperature = 0.0,
+  primaryModel?: string,
+): Promise<{ text: string; modelUsed: string }> {
+  const primary = primaryModel || GEMINI_LLM_MODEL;
+
+  // Build the full ordered model list: primary first, then fallbacks (deduped)
+  const modelChain = [primary, ...GEMINI_FALLBACK_MODELS.filter((m) => m !== primary)];
+
+  let lastError: GeminiApiError | Error | null = null;
+
+  for (const model of modelChain) {
+    try {
+      const result = await generateFromPrompt(promptOrParts, maxOutputTokens, temperature, model);
+      return { text: result, modelUsed: model };
+    } catch (err) {
+      lastError = err as Error;
+
+      // Only retry on retriable model-availability errors
+      if (err instanceof GeminiApiError) {
+        const rawLower = err.rawBody.toLowerCase();
+        const isModelUnavailable =
+          err.statusCode === 404 ||
+          rawLower.includes("no longer available") ||
+          rawLower.includes("not found") ||
+          rawLower.includes("is not available") ||
+          rawLower.includes("deprecated");
+        const retriable =
+          err.errorType === "rate_limit" ||
+          err.errorType === "overloaded" ||
+          err.statusCode >= 500 ||
+          isModelUnavailable;
+        if (!retriable) {
+          // Auth errors, token-exceeded, etc. won't be fixed by switching models
+          throw err;
+        }
+        console.warn(
+          `[Fallback] Model "${model}" failed (${err.errorType}, HTTP ${err.statusCode}${isModelUnavailable ? ", model unavailable" : ""}). Trying next model...`,
+        );
+        continue;
+      }
+
+      // Unknown errors — don't retry across models
+      throw err;
+    }
+  }
+
+  // All models exhausted
+  console.error(`[Fallback] All ${modelChain.length} models failed. Last error:`, lastError);
+  throw lastError ?? new Error("All fallback models failed.");
 }
 
 export async function ingestMaterializedDocument(userId: number, documentKey: string, sourceEntityId: string, text: string, metadata: Record<string, unknown> = {}) {

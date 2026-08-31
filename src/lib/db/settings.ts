@@ -38,7 +38,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   live_context_k: 3,
 
   // Model Selection
-  llm_model: "gemini-flash-latest",
+  llm_model: "gemini-3.6-flash",
 };
 
 export async function getUserSettings(userId: number): Promise<UserSettings> {
