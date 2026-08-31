@@ -101,34 +101,60 @@ OUTPUT JSON SCHEMA:
 
     const { text: result, modelUsed } = await generateWithFallback([systemPrompt, userPrompt], settings.smart_capture_max_tokens, settings.smart_capture_temperature, settings.llm_model);
 
-    // Parse the LLM response — strip markdown fences if present, try regex extraction as fallback
-    let cleaned = result.trim();
-    if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+    // ---- Robust JSON extraction ----
+    // Models may wrap JSON in markdown fences, explanation text, or other artifacts.
+    // We try multiple strategies to extract valid JSON.
+    let parsed: any;
+    const rawResult = result.trim();
+
+    function tryParse(str: string): any {
+      try { return JSON.parse(str); } catch { return null; }
     }
 
-    let parsed: any;
+    // Strategy 1: Direct parse
+    parsed = tryParse(rawResult);
 
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      // Fallback: try to extract JSON object from anywhere in the response
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    // Strategy 2: Strip markdown code fences (```json ... ``` or ``` ... ```)
+    if (!parsed) {
+      const fenceMatch = rawResult.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      if (fenceMatch) {
+        parsed = tryParse(fenceMatch[1].trim());
+      }
+    }
+
+    // Strategy 3: Find the first { and last } for balanced extraction
+    if (!parsed) {
+      const firstBrace = rawResult.indexOf("{");
+      const lastBrace = rawResult.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        const candidate = rawResult.slice(firstBrace, lastBrace + 1);
+        parsed = tryParse(candidate);
+      }
+    }
+
+    // Strategy 4: Greedy regex extraction (handles nested objects)
+    if (!parsed) {
+      const jsonMatch = rawResult.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        try {
-          parsed = JSON.parse(jsonMatch[0]);
-        } catch {
-          // Both attempts failed
-        }
+        parsed = tryParse(jsonMatch[0]);
       }
+    }
 
-      if (!parsed) {
-        console.error("Smart capture: failed to parse LLM response as JSON:", cleaned);
-        return NextResponse.json(
-          { error: "The AI returned an invalid response. Please try again.", errorType: "parse_error" as const, rawResponse: cleaned },
-          { status: 502 },
-        );
-      }
+    // Strategy 5: Try stripping common prose prefixes like "Here is the JSON:" or "Sure,"
+    if (!parsed) {
+      const stripped = rawResult
+        .replace(/^[\s\S]*?(?=\{)/m, "")  // strip everything before first {
+        .replace(/\}[\s\S]*$/m, "}")        // strip everything after last }
+        .trim();
+      parsed = tryParse(stripped);
+    }
+
+    if (!parsed) {
+      console.error("Smart capture: all 5 JSON parse strategies failed. Raw response:", rawResult);
+      return NextResponse.json(
+        { error: "The AI returned an invalid response. Please try again.", errorType: "parse_error" as const, rawResponse: rawResult.slice(0, 500) },
+        { status: 502 },
+      );
     }
 
     // Validate and sanitize the parsed fields
