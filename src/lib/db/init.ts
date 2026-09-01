@@ -486,6 +486,21 @@ export async function ensureInitialized() {
         ON worry_experiment_days (module_id, day_number)
       `);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS worry_postponed_items (
+          id BIGSERIAL PRIMARY KEY,
+          module_id BIGINT NOT NULL REFERENCES worry_postponement_modules(id) ON DELETE CASCADE,
+          day_number INTEGER NOT NULL CHECK (day_number >= 1 AND day_number <= 7),
+          content TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_worry_postponed_items_module_day
+        ON worry_postponed_items (module_id, day_number)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );

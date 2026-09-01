@@ -401,6 +401,14 @@ export type WorryExperimentDay = {
   updated_at: Date;
 };
 
+export type WorryPostponedItem = {
+  id: number;
+  module_id: number;
+  day_number: number;
+  content: string;
+  created_at: Date;
+};
+
 export type NewWorryModule = {
   userId: number;
   beliefText: string;

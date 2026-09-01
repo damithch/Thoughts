@@ -25,6 +25,14 @@ type ExperimentDay = {
   updated_at: string;
 };
 
+type PostponedItem = {
+  id: number;
+  module_id: number;
+  day_number: number;
+  content: string;
+  created_at: string;
+};
+
 type ModuleData = {
   id: number;
   user_id: number;
@@ -513,6 +521,171 @@ function ThinkingTimeSettings({
   );
 }
 
+// ── PostponedItemsList ──────────────────────────────────────
+
+function PostponedItemsList({
+  moduleId,
+  dayNumber,
+}: {
+  moduleId: number;
+  dayNumber: number;
+}) {
+  const [items, setItems] = useState<PostponedItem[]>([]);
+  const [newText, setNewText] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const res = await fetch(
+          `/api/worry-postponement/postponed-item?moduleId=${moduleId}&dayNumber=${dayNumber}`,
+        );
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setItems(data.items ?? []);
+        }
+      } catch {
+        // silently ignore fetch errors
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [moduleId, dayNumber]);
+
+  const handleAdd = async () => {
+    const content = newText.trim();
+    if (!content || isAdding) return;
+    setIsAdding(true);
+
+    // Optimistic add with temp id
+    const tempId = -Date.now();
+    const optimistic: PostponedItem = {
+      id: tempId,
+      module_id: moduleId,
+      day_number: dayNumber,
+      content,
+      created_at: new Date().toISOString(),
+    };
+    setItems((prev) => [...prev, optimistic]);
+    setNewText("");
+
+    try {
+      const res = await fetch("/api/worry-postponement/postponed-item", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ moduleId, dayNumber, content }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setItems((prev) =>
+          prev.map((item) => (item.id === tempId ? data.item : item)),
+        );
+      } else {
+        // Remove optimistic item on failure
+        setItems((prev) => prev.filter((item) => item.id !== tempId));
+      }
+    } catch {
+      setItems((prev) => prev.filter((item) => item.id !== tempId));
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleDelete = async (itemId: number) => {
+    // Optimistic remove
+    const removed = items.find((i) => i.id === itemId);
+    setItems((prev) => prev.filter((i) => i.id !== itemId));
+
+    try {
+      const res = await fetch(
+        `/api/worry-postponement/postponed-item?itemId=${itemId}&moduleId=${moduleId}`,
+        { method: "DELETE" },
+      );
+
+      if (!res.ok && removed) {
+        // Restore on failure
+        setItems((prev) => [...prev, removed]);
+      }
+    } catch {
+      if (removed) {
+        setItems((prev) => [...prev, removed]);
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div className="mb-4 rounded-lg border border-amber-300/50 bg-amber-50/40 p-3">
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-800/80">
+        Postponed worries today
+      </h4>
+
+      {items.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {items.map((item) => (
+            <span
+              key={item.id}
+              className="group inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white/80 px-2.5 py-1 text-xs text-stone-700 transition hover:border-amber-400"
+            >
+              {item.content}
+              <button
+                onClick={() => handleDelete(item.id)}
+                className="ml-0.5 rounded-full p-0.5 text-stone-400 transition hover:bg-rose-100 hover:text-rose-600"
+                aria-label="Remove item"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-2 flex gap-2">
+        <input
+          type="text"
+          value={newText}
+          onChange={(e) => setNewText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Jot down a worry…"
+          className="w-full rounded-lg border border-amber-300/60 bg-white/85 px-3 py-1.5 text-sm text-stone-900 outline-none transition focus:border-amber-500"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!newText.trim() || isAdding}
+          className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-amber-700 disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── PostponementLog ─────────────────────────────────────────
 
 type DayFormState = {
@@ -707,6 +880,10 @@ function PostponementLog({
         <h3 className="text-sm font-semibold text-emerald-900">
           Day {selectedDay}
         </h3>
+
+        <div className="mt-3">
+          <PostponedItemsList moduleId={module.id} dayNumber={selectedDay} />
+        </div>
 
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">

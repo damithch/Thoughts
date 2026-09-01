@@ -4,6 +4,7 @@ import type {
   WorryPostponementModule,
   WorryEvidence,
   WorryExperimentDay,
+  WorryPostponedItem,
   NewWorryModule,
   UpdateWorryModule,
   NewWorryEvidence,
@@ -256,4 +257,54 @@ export async function upsertWorryExperimentDay(
   );
 
   return rows[0];
+}
+
+// ── Postponed Items ─────────────────────────────────────────
+
+export async function createPostponedItem(
+  moduleId: number,
+  dayNumber: number,
+  content: string,
+): Promise<WorryPostponedItem> {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<WorryPostponedItem>(
+    `INSERT INTO worry_postponed_items (module_id, day_number, content)
+     VALUES ($1, $2, $3)
+     RETURNING id, module_id, day_number, content, created_at`,
+    [moduleId, dayNumber, content],
+  );
+
+  return rows[0];
+}
+
+export async function getPostponedItemsForDay(
+  moduleId: number,
+  dayNumber: number,
+): Promise<WorryPostponedItem[]> {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<WorryPostponedItem>(
+    `SELECT id, module_id, day_number, content, created_at
+     FROM worry_postponed_items
+     WHERE module_id = $1 AND day_number = $2
+     ORDER BY created_at`,
+    [moduleId, dayNumber],
+  );
+
+  return rows;
+}
+
+export async function deletePostponedItem(
+  id: number,
+  moduleId: number,
+): Promise<boolean> {
+  await ensureInitialized();
+
+  const { rowCount } = await pool.query(
+    `DELETE FROM worry_postponed_items WHERE id = $1 AND module_id = $2`,
+    [id, moduleId],
+  );
+
+  return rowCount === 1;
 }
