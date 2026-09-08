@@ -468,37 +468,144 @@ export async function ensureInitialized() {
         CREATE TABLE IF NOT EXISTS worry_experiment_days (
           id BIGSERIAL PRIMARY KEY,
           module_id BIGINT NOT NULL REFERENCES worry_postponement_modules(id) ON DELETE CASCADE,
-          day_number INTEGER NOT NULL,
           entry_date DATE NOT NULL,
           what_happened TEXT NOT NULL DEFAULT '',
           thinking_time_notes TEXT NOT NULL DEFAULT '',
           controllability INTEGER NOT NULL DEFAULT 5,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          UNIQUE (module_id, day_number),
-          CHECK (day_number >= 1 AND day_number <= 7),
+          UNIQUE (module_id, entry_date),
           CHECK (controllability >= 0 AND controllability <= 10)
         )
       `);
 
+      // ── Migration: worry_experiment_days (day_number → entry_date) ──
+      // Backfill entry_date from module created_at + day offset for legacy rows,
+      // drop the day_number column and old constraint/index.
+      try {
+        const { rows: [{ col_exists }] } = await pool.query<{ col_exists: boolean }>(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'worry_experiment_days' AND column_name = 'day_number'
+          ) AS col_exists
+        `);
+
+        if (col_exists) {
+          // Backfill entry_date where it is null (legacy rows stored day_number but may lack real dates)
+          await pool.query(`
+            UPDATE worry_experiment_days wed
+            SET entry_date = (wpm.created_at::date + (wed.day_number - 1) * INTERVAL '1 day')::date
+            FROM worry_postponement_modules wpm
+            WHERE wed.module_id = wpm.id
+              AND wed.entry_date IS NULL
+          `);
+
+          // Drop old unique constraint on (module_id, day_number) – name may vary
+          await pool.query(`
+            ALTER TABLE worry_experiment_days
+            DROP CONSTRAINT IF EXISTS worry_experiment_days_module_id_day_number_key
+          `);
+
+          // Drop the old CHECK constraint on day_number
+          await pool.query(`
+            ALTER TABLE worry_experiment_days
+            DROP CONSTRAINT IF EXISTS worry_experiment_days_day_number_check
+          `);
+
+          // Drop legacy index
+          await pool.query(`
+            DROP INDEX IF EXISTS worry_experiment_days_module_idx
+          `);
+
+          // Add new unique constraint on (module_id, entry_date) if not present
+          await pool.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS worry_experiment_days_module_date_uniq
+            ON worry_experiment_days (module_id, entry_date)
+          `);
+
+          // Drop the day_number column
+          await pool.query(`
+            ALTER TABLE worry_experiment_days DROP COLUMN IF EXISTS day_number
+          `);
+        }
+      } catch (migrationErr) {
+        console.warn("worry_experiment_days migration (day_number removal) skipped or partially applied:", migrationErr);
+      }
+
       await pool.query(`
-        CREATE INDEX IF NOT EXISTS worry_experiment_days_module_idx
-        ON worry_experiment_days (module_id, day_number)
+        CREATE INDEX IF NOT EXISTS worry_experiment_days_module_date_idx
+        ON worry_experiment_days (module_id, entry_date)
       `);
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS worry_postponed_items (
           id BIGSERIAL PRIMARY KEY,
           module_id BIGINT NOT NULL REFERENCES worry_postponement_modules(id) ON DELETE CASCADE,
-          day_number INTEGER NOT NULL CHECK (day_number >= 1 AND day_number <= 7),
+          entry_date DATE NOT NULL DEFAULT CURRENT_DATE,
           content TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
 
+      // ── Migration: worry_postponed_items (day_number → entry_date) ──
+      try {
+        const { rows: [{ col_exists: piColExists }] } = await pool.query<{ col_exists: boolean }>(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'worry_postponed_items' AND column_name = 'day_number'
+          ) AS col_exists
+        `);
+
+        if (piColExists) {
+          // Add entry_date column if missing
+          await pool.query(`
+            ALTER TABLE worry_postponed_items
+            ADD COLUMN IF NOT EXISTS entry_date DATE
+          `);
+
+          // Backfill entry_date from module created_at + day offset
+          await pool.query(`
+            UPDATE worry_postponed_items wpi
+            SET entry_date = (wpm.created_at::date + (wpi.day_number - 1) * INTERVAL '1 day')::date
+            FROM worry_postponement_modules wpm
+            WHERE wpi.module_id = wpm.id
+              AND wpi.entry_date IS NULL
+          `);
+
+          // Default remaining nulls to today
+          await pool.query(`
+            UPDATE worry_postponed_items SET entry_date = CURRENT_DATE WHERE entry_date IS NULL
+          `);
+
+          // Make entry_date NOT NULL
+          await pool.query(`
+            ALTER TABLE worry_postponed_items ALTER COLUMN entry_date SET NOT NULL
+          `);
+          await pool.query(`
+            ALTER TABLE worry_postponed_items ALTER COLUMN entry_date SET DEFAULT CURRENT_DATE
+          `);
+
+          // Drop old check constraint and index
+          await pool.query(`
+            ALTER TABLE worry_postponed_items
+            DROP CONSTRAINT IF EXISTS worry_postponed_items_day_number_check
+          `);
+          await pool.query(`
+            DROP INDEX IF EXISTS idx_worry_postponed_items_module_day
+          `);
+
+          // Drop day_number column
+          await pool.query(`
+            ALTER TABLE worry_postponed_items DROP COLUMN IF EXISTS day_number
+          `);
+        }
+      } catch (migrationErr) {
+        console.warn("worry_postponed_items migration (day_number removal) skipped or partially applied:", migrationErr);
+      }
+
       await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_worry_postponed_items_module_day
-        ON worry_postponed_items (module_id, day_number)
+        CREATE INDEX IF NOT EXISTS idx_worry_postponed_items_module_date
+        ON worry_postponed_items (module_id, entry_date, created_at)
       `);
 
       const { rows } = await pool.query<{ count: string }>(

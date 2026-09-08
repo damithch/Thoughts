@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // ── Types mirroring the API response ────────────────────────
 
@@ -16,7 +16,6 @@ type EvidenceItem = {
 type ExperimentDay = {
   id: number;
   module_id: number;
-  day_number: number;
   entry_date: string;
   what_happened: string;
   thinking_time_notes: string;
@@ -28,7 +27,7 @@ type ExperimentDay = {
 type PostponedItem = {
   id: number;
   module_id: number;
-  day_number: number;
+  entry_date: string;
   content: string;
   created_at: string;
 };
@@ -51,6 +50,51 @@ type ModuleData = {
   evidence: EvidenceItem[];
   experiment_days: ExperimentDay[];
 };
+
+// ── Date helpers ────────────────────────────────────────────
+
+function toDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return toDateStr(d);
+}
+
+function getWeekDates(centerDate: string): string[] {
+  const d = new Date(centerDate + "T00:00:00");
+  const dayOfWeek = d.getDay(); // 0=Sun
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((dayOfWeek + 6) % 7)); // shift to Monday
+  const dates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const dd = new Date(monday);
+    dd.setDate(monday.getDate() + i);
+    dates.push(toDateStr(dd));
+  }
+  return dates;
+}
+
+function formatShortDay(dateStr: string): { day: string; date: number; isToday: boolean } {
+  const d = new Date(dateStr + "T00:00:00");
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const today = toDateStr(new Date());
+  return {
+    day: days[d.getDay()],
+    date: d.getDate(),
+    isToday: dateStr === today,
+  };
+}
+
+function formatTime(isoString: string): string {
+  const d = new Date(isoString);
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+}
 
 // ── Card wrapper ────────────────────────────────────────────
 
@@ -521,14 +565,172 @@ function ThinkingTimeSettings({
   );
 }
 
+// ── ThinkingTimeCountdown ───────────────────────────────────
+
+function ThinkingTimeCountdown({ thinkingTimeStart }: { thinkingTimeStart: string }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!thinkingTimeStart || !/^\d{2}:\d{2}$/.test(thinkingTimeStart)) {
+    return null;
+  }
+
+  const [hours, minutes] = thinkingTimeStart.split(":").map(Number);
+  const target = new Date(now);
+  target.setHours(hours, minutes, 0, 0);
+
+  const diffMs = target.getTime() - now.getTime();
+
+  if (diffMs <= 0) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-50/60 px-4 py-2.5">
+        <span className="text-lg">✓</span>
+        <span className="text-sm font-medium text-emerald-800">
+          Thinking Time has passed for today
+        </span>
+      </div>
+    );
+  }
+
+  const diffMinTotal = Math.ceil(diffMs / 60_000);
+  const h = Math.floor(diffMinTotal / 60);
+  const m = diffMinTotal % 60;
+
+  const timeLabel = thinkingTimeStart
+    ? new Date(`2000-01-01T${thinkingTimeStart}`).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : "";
+
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-amber-300/50 bg-amber-50/40 px-4 py-2.5">
+      <span className="text-lg">⏱</span>
+      <span className="text-sm font-medium text-amber-900">
+        Thinking Time in {h > 0 ? `${h}h ` : ""}{m}m
+        {timeLabel ? ` (at ${timeLabel})` : ""}
+      </span>
+    </div>
+  );
+}
+
+// ── CalendarStrip ───────────────────────────────────────────
+
+function CalendarStrip({
+  selectedDate,
+  onSelectDate,
+  filledDates,
+  worryCounts,
+}: {
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  filledDates: Set<string>;
+  worryCounts: Map<string, number>;
+}) {
+  const [weekCenter, setWeekCenter] = useState(selectedDate);
+  const weekDates = useMemo(() => getWeekDates(weekCenter), [weekCenter]);
+  const today = toDateStr(new Date());
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setWeekCenter(addDays(weekCenter, -7))}
+          className="rounded-lg border border-emerald-950/10 bg-white/70 px-2.5 py-1.5 text-sm text-stone-600 transition hover:bg-white"
+          aria-label="Previous week"
+        >
+          ← Prev
+        </button>
+
+        <button
+          onClick={() => {
+            setWeekCenter(today);
+            onSelectDate(today);
+          }}
+          className="rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-200"
+        >
+          Today
+        </button>
+
+        <button
+          onClick={() => setWeekCenter(addDays(weekCenter, 7))}
+          className="rounded-lg border border-emerald-950/10 bg-white/70 px-2.5 py-1.5 text-sm text-stone-600 transition hover:bg-white"
+          aria-label="Next week"
+        >
+          Next →
+        </button>
+      </div>
+
+      {/* Week strip */}
+      <div className="grid grid-cols-7 gap-1.5">
+        {weekDates.map((dateStr) => {
+          const info = formatShortDay(dateStr);
+          const isFilled = filledDates.has(dateStr);
+          const worryCount = worryCounts.get(dateStr) ?? 0;
+          const isSelected = dateStr === selectedDate;
+
+          return (
+            <button
+              key={dateStr}
+              onClick={() => onSelectDate(dateStr)}
+              className={`relative flex flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-center transition ${
+                isSelected
+                  ? "bg-emerald-950 text-emerald-50 shadow-lg"
+                  : info.isToday
+                    ? "border-2 border-emerald-400 bg-emerald-50 text-emerald-900"
+                    : isFilled
+                      ? "border border-emerald-300 bg-emerald-50/50 text-emerald-800"
+                      : "border border-emerald-950/10 bg-white/70 text-stone-600 hover:bg-white"
+              }`}
+            >
+              <span className="text-[10px] font-medium uppercase tracking-wide opacity-70">
+                {info.day}
+              </span>
+              <span className="text-lg font-semibold leading-tight">{info.date}</span>
+
+              {/* Worry count badge */}
+              {worryCount > 0 && (
+                <span
+                  className={`mt-0.5 rounded-full px-1.5 py-0 text-[10px] font-bold ${
+                    isSelected
+                      ? "bg-emerald-700 text-emerald-100"
+                      : "bg-amber-200 text-amber-800"
+                  }`}
+                >
+                  {worryCount}
+                </span>
+              )}
+
+              {/* Filled checkmark */}
+              {isFilled && !isSelected && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── PostponedItemsList ──────────────────────────────────────
 
 function PostponedItemsList({
   moduleId,
-  dayNumber,
+  entryDate,
 }: {
   moduleId: number;
-  dayNumber: number;
+  entryDate: string;
 }) {
   const [items, setItems] = useState<PostponedItem[]>([]);
   const [newText, setNewText] = useState("");
@@ -540,7 +742,7 @@ function PostponedItemsList({
     async function load() {
       try {
         const res = await fetch(
-          `/api/worry-postponement/postponed-item?moduleId=${moduleId}&dayNumber=${dayNumber}`,
+          `/api/worry-postponement/postponed-item?moduleId=${moduleId}&entryDate=${entryDate}`,
         );
         if (res.ok && !cancelled) {
           const data = await res.json();
@@ -556,7 +758,7 @@ function PostponedItemsList({
     return () => {
       cancelled = true;
     };
-  }, [moduleId, dayNumber]);
+  }, [moduleId, entryDate]);
 
   const handleAdd = async () => {
     const content = newText.trim();
@@ -568,7 +770,7 @@ function PostponedItemsList({
     const optimistic: PostponedItem = {
       id: tempId,
       module_id: moduleId,
-      day_number: dayNumber,
+      entry_date: entryDate,
       content,
       created_at: new Date().toISOString(),
     };
@@ -579,7 +781,7 @@ function PostponedItemsList({
       const res = await fetch("/api/worry-postponement/postponed-item", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ moduleId, dayNumber, content }),
+        body: JSON.stringify({ moduleId, entryDate, content }),
       });
 
       if (res.ok) {
@@ -630,17 +832,21 @@ function PostponedItemsList({
   return (
     <div className="mb-4 rounded-lg border border-amber-300/50 bg-amber-50/40 p-3">
       <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-800/80">
-        Postponed worries today
+        Postponed worries
       </h4>
 
       {items.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-col gap-1.5">
           {items.map((item) => (
             <span
               key={item.id}
-              className="group inline-flex items-center gap-1 rounded-full border border-amber-200 bg-white/80 px-2.5 py-1 text-xs text-stone-700 transition hover:border-amber-400"
+              className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-white/80 px-3 py-1.5 text-xs text-stone-700 transition hover:border-amber-400"
             >
-              {item.content}
+              <span className="shrink-0 font-semibold text-amber-600">
+                {formatTime(item.created_at)}
+              </span>
+              <span className="text-amber-300">•</span>
+              <span className="flex-1">{item.content}</span>
               <button
                 onClick={() => handleDelete(item.id)}
                 className="ml-0.5 rounded-full p-0.5 text-stone-400 transition hover:bg-rose-100 hover:text-rose-600"
@@ -697,7 +903,7 @@ type DayFormState = {
 
 function emptyDayForm(dateStr?: string): DayFormState {
   return {
-    entryDate: dateStr || new Date().toISOString().slice(0, 10),
+    entryDate: dateStr || toDateStr(new Date()),
     whatHappened: "",
     thinkingTimeNotes: "",
     controllability: 5,
@@ -706,18 +912,17 @@ function emptyDayForm(dateStr?: string): DayFormState {
 
 function PostponementLog({
   module,
-  onPatch,
   onRefresh,
 }: {
   module: ModuleData;
-  onPatch: (fields: Record<string, unknown>) => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
-  const [selectedDay, setSelectedDay] = useState(1);
+  const todayStr = toDateStr(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const [predictionText, setPredictionText] = useState(module.prediction_text);
   const [confidence, setConfidence] = useState(module.prediction_confidence ?? 5);
   const [dayForm, setDayForm] = useState<DayFormState>(() => {
-    const existing = module.experiment_days.find((d) => d.day_number === 1);
+    const existing = module.experiment_days.find((d) => d.entry_date === todayStr);
     return existing
       ? {
           entryDate: existing.entry_date,
@@ -725,40 +930,91 @@ function PostponementLog({
           thinkingTimeNotes: existing.thinking_time_notes,
           controllability: existing.controllability,
         }
-      : emptyDayForm();
+      : emptyDayForm(todayStr);
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
-  const filledDays = new Set(module.experiment_days.map((d) => d.day_number));
+  // Build lookup structures for calendar
+  const filledDates = useMemo(
+    () => new Set(module.experiment_days.map((d) => d.entry_date)),
+    [module.experiment_days],
+  );
 
-  const selectDay = (day: number) => {
-    setSelectedDay(day);
-    setSaveMessage("");
-    const existing = module.experiment_days.find((d) => d.day_number === day);
-    if (existing) {
-      setDayForm({
-        entryDate: existing.entry_date,
-        whatHappened: existing.what_happened,
-        thinkingTimeNotes: existing.thinking_time_notes,
-        controllability: existing.controllability,
-      });
-    } else {
-      setDayForm(emptyDayForm());
+  // Worry counts per date — we'll count from postponed items loaded per-date
+  // For efficiency, we derive this from experiment_days loaded with the module
+  const [worryCounts, setWorryCounts] = useState<Map<string, number>>(new Map());
+
+  // Load worry counts for visible week
+  useEffect(() => {
+    const weekDates = getWeekDates(selectedDate);
+    const startDate = weekDates[0];
+    const endDate = weekDates[6];
+
+    async function loadCounts() {
+      try {
+        const res = await fetch(
+          `/api/worry-postponement/postponed-item?moduleId=${module.id}&startDate=${startDate}&endDate=${endDate}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const map = new Map<string, number>();
+          if (data.counts) {
+            for (const item of data.counts) {
+              map.set(item.entry_date, item.count);
+            }
+          }
+          setWorryCounts(map);
+        }
+      } catch {
+        // ignore
+      }
     }
-  };
+
+    loadCounts();
+  }, [selectedDate, module.id]);
+
+  const selectDate = useCallback(
+    (date: string) => {
+      setSelectedDate(date);
+      setSaveMessage("");
+      const existing = module.experiment_days.find((d) => d.entry_date === date);
+      if (existing) {
+        setDayForm({
+          entryDate: existing.entry_date,
+          whatHappened: existing.what_happened,
+          thinkingTimeNotes: existing.thinking_time_notes,
+          controllability: existing.controllability,
+        });
+      } else {
+        setDayForm(emptyDayForm(date));
+      }
+    },
+    [module.experiment_days],
+  );
+
+  const handlePatch = useCallback(
+    async (fields: Record<string, unknown>) => {
+      await fetch("/api/worry-postponement/module", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: module.id, ...fields }),
+      });
+    },
+    [module.id],
+  );
 
   const savePrediction = useCallback(() => {
     if (
       predictionText.trim() !== module.prediction_text ||
       confidence !== module.prediction_confidence
     ) {
-      onPatch({
+      handlePatch({
         predictionText: predictionText.trim(),
         predictionConfidence: confidence,
       });
     }
-  }, [predictionText, confidence, module.prediction_text, module.prediction_confidence, onPatch]);
+  }, [predictionText, confidence, module.prediction_text, module.prediction_confidence, handlePatch]);
 
   const saveDay = async () => {
     if (!dayForm.entryDate) return;
@@ -771,8 +1027,7 @@ function PostponementLog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           moduleId: module.id,
-          dayNumber: selectedDay,
-          entryDate: dayForm.entryDate,
+          entryDate: selectedDate,
           whatHappened: dayForm.whatHappened,
           thinkingTimeNotes: dayForm.thinkingTimeNotes,
           controllability: dayForm.controllability,
@@ -793,12 +1048,27 @@ function PostponementLog({
     }
   };
 
+  // Format selected date for display
+  const selectedDateObj = new Date(selectedDate + "T00:00:00");
+  const dateLabel = selectedDateObj.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
   return (
     <Card>
-      <SectionTitle>7-Day Postponement Log</SectionTitle>
+      <SectionTitle>Postponement Log</SectionTitle>
       <SectionDescription>
         First, write your prediction. Then log what actually happens each day.
       </SectionDescription>
+
+      {/* Thinking Time Countdown */}
+      {module.thinking_time_start && (
+        <div className="mt-4">
+          <ThinkingTimeCountdown thinkingTimeStart={module.thinking_time_start} />
+        </div>
+      )}
 
       {/* Prediction */}
       <div className="mt-5 rounded-xl border border-stone-200/80 bg-stone-50/60 p-4">
@@ -845,65 +1115,27 @@ function PostponementLog({
         />
       </div>
 
-      {/* Day selector */}
-      <div className="mt-5 flex flex-wrap gap-2">
-        {[1, 2, 3, 4, 5, 6, 7].map((day) => {
-          const filled = filledDays.has(day);
-          const active = selectedDay === day;
-          return (
-            <button
-              key={day}
-              onClick={() => selectDay(day)}
-              className={`relative flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold transition ${
-                active
-                  ? "bg-emerald-950 text-emerald-50 shadow-lg"
-                  : filled
-                    ? "border-2 border-emerald-500 bg-emerald-50 text-emerald-900"
-                    : "border border-emerald-950/10 bg-white/70 text-stone-600 hover:bg-white"
-              }`}
-            >
-              {day}
-              {filled && !active && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* Calendar Strip */}
+      <div className="mt-5">
+        <CalendarStrip
+          selectedDate={selectedDate}
+          onSelectDate={selectDate}
+          filledDates={filledDates}
+          worryCounts={worryCounts}
+        />
       </div>
 
       {/* Day form */}
       <div className="mt-5 rounded-xl border border-emerald-950/8 bg-emerald-50/30 p-4">
         <h3 className="text-sm font-semibold text-emerald-900">
-          Day {selectedDay}
+          {dateLabel}
         </h3>
 
         <div className="mt-3">
-          <PostponedItemsList moduleId={module.id} dayNumber={selectedDay} />
+          <PostponedItemsList moduleId={module.id} entryDate={selectedDate} />
         </div>
 
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label
-              htmlFor="wp-day-date"
-              className="block text-xs font-medium uppercase tracking-wider text-emerald-800/70"
-            >
-              Date
-            </label>
-            <input
-              id="wp-day-date"
-              type="date"
-              value={dayForm.entryDate}
-              onChange={(e) =>
-                setDayForm((prev) => ({ ...prev, entryDate: e.target.value }))
-              }
-              className="mt-1 w-full rounded-lg border border-emerald-950/10 bg-white/85 px-3 py-2 text-sm text-stone-900 outline-none transition focus:border-emerald-700 sm:w-auto"
-            />
-          </div>
-
           <div>
             <label
               htmlFor="wp-day-happened"
@@ -985,7 +1217,7 @@ function PostponementLog({
             disabled={isSaving}
             className="rounded-full bg-emerald-950 px-5 py-2.5 text-sm font-medium text-emerald-50 transition hover:bg-emerald-800 disabled:opacity-50"
           >
-            {isSaving ? "Saving…" : filledDays.has(selectedDay) ? "Update Day" : "Save Day"}
+            {isSaving ? "Saving…" : filledDates.has(selectedDate) ? "Update Day" : "Save Day"}
           </button>
           {saveMessage && (
             <span className="text-sm text-stone-600">{saveMessage}</span>
@@ -1010,7 +1242,8 @@ function ReflectionForm({
   const [reflectionText, setReflectionText] = useState(module.reflection_text);
   const [message, setMessage] = useState("");
   const filledCount = module.experiment_days.length;
-  const allDaysLogged = filledCount === 7;
+  const minDaysForCompletion = 7;
+  const canComplete = filledCount >= minDaysForCompletion;
   const isCompleted = module.status === "completed";
 
   const saveReflection = useCallback(() => {
@@ -1033,11 +1266,14 @@ function ReflectionForm({
     setMessage("Module abandoned.");
   };
 
+  // Dynamic progress — proportional bar based on filledCount vs. minimum
+  const progressPct = Math.min(100, (filledCount / minDaysForCompletion) * 100);
+
   return (
     <Card>
       <SectionTitle>Reflection</SectionTitle>
       <SectionDescription>
-        Compare your prediction with what actually happened across the 7 days.
+        Compare your prediction with what actually happened across your logged days.
       </SectionDescription>
 
       <div className="mt-5">
@@ -1054,26 +1290,21 @@ function ReflectionForm({
 
       {/* Progress indicator */}
       <div className="mt-4 flex items-center gap-3">
-        <div className="flex gap-1">
-          {[1, 2, 3, 4, 5, 6, 7].map((day) => (
-            <div
-              key={day}
-              className={`h-2 w-5 rounded-full transition ${
-                module.experiment_days.some((d) => d.day_number === day)
-                  ? "bg-emerald-500"
-                  : "bg-stone-200"
-              }`}
-            />
-          ))}
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-stone-200">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
-        <span className="text-sm text-stone-500">
-          {filledCount} of 7 days logged
+        <span className="shrink-0 text-sm text-stone-500">
+          {filledCount} day{filledCount !== 1 ? "s" : ""} logged
+          {!canComplete ? ` — ${minDaysForCompletion - filledCount} more to unlock completion` : ""}
         </span>
       </div>
 
       {/* Actions */}
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        {allDaysLogged && !isCompleted && (
+        {canComplete && !isCompleted && (
           <button
             onClick={completeModule}
             className="rounded-full bg-emerald-950 px-6 py-3 text-sm font-medium text-emerald-50 transition hover:bg-emerald-800"
@@ -1082,9 +1313,9 @@ function ReflectionForm({
           </button>
         )}
 
-        {!allDaysLogged && !isCompleted && (
+        {!canComplete && !isCompleted && (
           <p className="text-sm text-stone-500">
-            Log all 7 days to unlock completion.
+            Log at least {minDaysForCompletion} days to unlock completion.
           </p>
         )}
 
@@ -1149,7 +1380,7 @@ function StartModuleForm({
           Begin a new module
         </h2>
         <p className="mt-3 text-sm leading-6 text-stone-600">
-          Write the worry or belief you want to test over the next 7 days, then
+          Write the worry or belief you want to test through daily practice, then
           rate how strongly you believe it right now.
         </p>
       </div>
@@ -1372,7 +1603,7 @@ export function WorryModuleClient() {
       <BeliefTracker module={module} onPatch={handlePatch} />
       <EvidenceTable module={module} onRefresh={handleRefresh} />
       <ThinkingTimeSettings module={module} onPatch={handlePatch} />
-      <PostponementLog module={module} onPatch={handlePatch} onRefresh={handleRefresh} />
+      <PostponementLog module={module} onRefresh={handleRefresh} />
       <ReflectionForm module={module} onPatch={handlePatch} onRefresh={handleRefresh} />
     </div>
   );

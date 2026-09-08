@@ -30,13 +30,13 @@ async function attachChildren(
       [mod.id],
     ),
     pool.query<WorryExperimentDay>(
-      `SELECT id, module_id, day_number,
+      `SELECT id, module_id,
               TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
               what_happened, thinking_time_notes, controllability,
               created_at, updated_at
        FROM worry_experiment_days
        WHERE module_id = $1
-       ORDER BY day_number`,
+       ORDER BY entry_date`,
       [mod.id],
     ),
   ]);
@@ -233,22 +233,20 @@ export async function upsertWorryExperimentDay(
 
   const { rows } = await pool.query<WorryExperimentDay>(
     `INSERT INTO worry_experiment_days
-       (module_id, day_number, entry_date, what_happened, thinking_time_notes, controllability)
-     VALUES ($1, $2, $3::date, $4, $5, $6)
-     ON CONFLICT (module_id, day_number)
+       (module_id, entry_date, what_happened, thinking_time_notes, controllability)
+     VALUES ($1, $2::date, $3, $4, $5)
+     ON CONFLICT (module_id, entry_date)
      DO UPDATE SET
-       entry_date = EXCLUDED.entry_date,
        what_happened = EXCLUDED.what_happened,
        thinking_time_notes = EXCLUDED.thinking_time_notes,
        controllability = EXCLUDED.controllability,
        updated_at = NOW()
-     RETURNING id, module_id, day_number,
+     RETURNING id, module_id,
                TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
                what_happened, thinking_time_notes, controllability,
                created_at, updated_at`,
     [
       input.moduleId,
-      input.dayNumber,
       input.entryDate,
       input.whatHappened,
       input.thinkingTimeNotes,
@@ -259,20 +257,43 @@ export async function upsertWorryExperimentDay(
   return rows[0];
 }
 
+export async function getExperimentDaysInRange(
+  moduleId: number,
+  startDate: string,
+  endDate: string,
+): Promise<WorryExperimentDay[]> {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<WorryExperimentDay>(
+    `SELECT id, module_id,
+            TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+            what_happened, thinking_time_notes, controllability,
+            created_at, updated_at
+     FROM worry_experiment_days
+     WHERE module_id = $1
+       AND entry_date >= $2::date
+       AND entry_date <= $3::date
+     ORDER BY entry_date`,
+    [moduleId, startDate, endDate],
+  );
+
+  return rows;
+}
+
 // ── Postponed Items ─────────────────────────────────────────
 
 export async function createPostponedItem(
   moduleId: number,
-  dayNumber: number,
+  entryDate: string,
   content: string,
 ): Promise<WorryPostponedItem> {
   await ensureInitialized();
 
   const { rows } = await pool.query<WorryPostponedItem>(
-    `INSERT INTO worry_postponed_items (module_id, day_number, content)
-     VALUES ($1, $2, $3)
-     RETURNING id, module_id, day_number, content, created_at`,
-    [moduleId, dayNumber, content],
+    `INSERT INTO worry_postponed_items (module_id, entry_date, content)
+     VALUES ($1, $2::date, $3)
+     RETURNING id, module_id, TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date, content, created_at`,
+    [moduleId, entryDate, content],
   );
 
   return rows[0];
@@ -280,16 +301,37 @@ export async function createPostponedItem(
 
 export async function getPostponedItemsForDay(
   moduleId: number,
-  dayNumber: number,
+  entryDate: string,
 ): Promise<WorryPostponedItem[]> {
   await ensureInitialized();
 
   const { rows } = await pool.query<WorryPostponedItem>(
-    `SELECT id, module_id, day_number, content, created_at
+    `SELECT id, module_id, TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date, content, created_at
      FROM worry_postponed_items
-     WHERE module_id = $1 AND day_number = $2
+     WHERE module_id = $1 AND entry_date = $2::date
      ORDER BY created_at`,
-    [moduleId, dayNumber],
+    [moduleId, entryDate],
+  );
+
+  return rows;
+}
+
+export async function getPostponedItemCountsByDate(
+  moduleId: number,
+  startDate: string,
+  endDate: string,
+): Promise<{ entry_date: string; count: number }[]> {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<{ entry_date: string; count: number }>(
+    `SELECT TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date, COUNT(*)::int AS count
+     FROM worry_postponed_items
+     WHERE module_id = $1
+       AND entry_date >= $2::date
+       AND entry_date <= $3::date
+     GROUP BY entry_date
+     ORDER BY entry_date`,
+    [moduleId, startDate, endDate],
   );
 
   return rows;

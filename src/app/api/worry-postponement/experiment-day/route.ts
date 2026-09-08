@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth";
 import {
   upsertWorryExperimentDay,
   getWorryModuleById,
+  getExperimentDaysInRange,
 } from "@/lib/db";
 
 function normalizeDate(value: unknown) {
@@ -27,7 +28,6 @@ export async function PUT(request: Request) {
   }
 
   const moduleId = Number(payload.moduleId);
-  const dayNumber = Number(payload.dayNumber);
   const entryDate = normalizeDate(payload.entryDate);
   const whatHappened =
     typeof payload.whatHappened === "string" ? payload.whatHappened.trim() : "";
@@ -40,13 +40,6 @@ export async function PUT(request: Request) {
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
     return NextResponse.json(
       { error: "A valid moduleId is required." },
-      { status: 400 },
-    );
-  }
-
-  if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 7) {
-    return NextResponse.json(
-      { error: "Day number must be between 1 and 7." },
       { status: 400 },
     );
   }
@@ -79,7 +72,6 @@ export async function PUT(request: Request) {
 
     const day = await upsertWorryExperimentDay({
       moduleId,
-      dayNumber,
       entryDate,
       whatHappened,
       thinkingTimeNotes,
@@ -91,6 +83,51 @@ export async function PUT(request: Request) {
     console.error("Failed to upsert worry experiment day.", error);
     return NextResponse.json(
       { error: "Unable to save experiment day right now." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const moduleId = Number(searchParams.get("moduleId"));
+  const startDate = normalizeDate(searchParams.get("startDate"));
+  const endDate = normalizeDate(searchParams.get("endDate"));
+
+  if (!Number.isInteger(moduleId) || moduleId <= 0) {
+    return NextResponse.json(
+      { error: "A valid moduleId is required." },
+      { status: 400 },
+    );
+  }
+
+  if (!startDate || !endDate) {
+    return NextResponse.json(
+      { error: "startDate and endDate are required in YYYY-MM-DD format." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const ownerCheck = await getWorryModuleById(moduleId, currentUser.id);
+
+    if (!ownerCheck) {
+      return NextResponse.json({ error: "Module not found." }, { status: 404 });
+    }
+
+    const days = await getExperimentDaysInRange(moduleId, startDate, endDate);
+
+    return NextResponse.json({ days });
+  } catch (error) {
+    console.error("Failed to load experiment days.", error);
+    return NextResponse.json(
+      { error: "Unable to load experiment days right now." },
       { status: 500 },
     );
   }

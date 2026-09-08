@@ -6,7 +6,13 @@ import {
   getPostponedItemsForDay,
   deletePostponedItem,
   getWorryModuleById,
+  getPostponedItemCountsByDate,
 } from "@/lib/db";
+
+function normalizeDate(value: unknown) {
+  const date = typeof value === "string" ? value.trim() : "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+}
 
 export async function POST(request: Request) {
   const currentUser = await getCurrentUser();
@@ -24,20 +30,15 @@ export async function POST(request: Request) {
   }
 
   const moduleId = Number(payload.moduleId);
-  const dayNumber = Number(payload.dayNumber);
+  const entryDate =
+    normalizeDate(payload.entryDate) ||
+    new Date().toISOString().slice(0, 10);
   const content =
     typeof payload.content === "string" ? payload.content.trim() : "";
 
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
     return NextResponse.json(
       { error: "A valid moduleId is required." },
-      { status: 400 },
-    );
-  }
-
-  if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 7) {
-    return NextResponse.json(
-      { error: "Day number must be between 1 and 7." },
       { status: 400 },
     );
   }
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Module not found." }, { status: 404 });
     }
 
-    const item = await createPostponedItem(moduleId, dayNumber, content);
+    const item = await createPostponedItem(moduleId, entryDate, content);
 
     return NextResponse.json({ item }, { status: 201 });
   } catch (error) {
@@ -78,18 +79,10 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const moduleId = Number(searchParams.get("moduleId"));
-  const dayNumber = Number(searchParams.get("dayNumber"));
 
   if (!Number.isInteger(moduleId) || moduleId <= 0) {
     return NextResponse.json(
       { error: "A valid moduleId is required." },
-      { status: 400 },
-    );
-  }
-
-  if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 7) {
-    return NextResponse.json(
-      { error: "Day number must be between 1 and 7." },
       { status: 400 },
     );
   }
@@ -102,9 +95,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Module not found." }, { status: 404 });
     }
 
-    const items = await getPostponedItemsForDay(moduleId, dayNumber);
+    // Single date query
+    const entryDate = normalizeDate(searchParams.get("entryDate"));
+    if (entryDate) {
+      const items = await getPostponedItemsForDay(moduleId, entryDate);
+      return NextResponse.json({ items });
+    }
 
-    return NextResponse.json({ items });
+    // Date range query — returns counts per date for calendar badges
+    const startDate = normalizeDate(searchParams.get("startDate"));
+    const endDate = normalizeDate(searchParams.get("endDate"));
+    if (startDate && endDate) {
+      const counts = await getPostponedItemCountsByDate(
+        moduleId,
+        startDate,
+        endDate,
+      );
+      return NextResponse.json({ counts });
+    }
+
+    return NextResponse.json(
+      {
+        error:
+          "Provide entryDate (YYYY-MM-DD) or startDate + endDate range.",
+      },
+      { status: 400 },
+    );
   } catch (error) {
     console.error("Failed to load postponed items.", error);
     return NextResponse.json(

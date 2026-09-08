@@ -392,7 +392,6 @@ export type WorryEvidence = {
 export type WorryExperimentDay = {
   id: number;
   module_id: number;
-  day_number: number;
   entry_date: string;
   what_happened: string;
   thinking_time_notes: string;
@@ -404,7 +403,7 @@ export type WorryExperimentDay = {
 export type WorryPostponedItem = {
   id: number;
   module_id: number;
-  day_number: number;
+  entry_date: string;
   content: string;
   created_at: Date;
 };
@@ -444,7 +443,6 @@ export type UpdateWorryEvidence = {
 
 export type UpsertWorryExperimentDay = {
   moduleId: number;
-  dayNumber: number;
   entryDate: string;
   whatHappened: string;
   thinkingTimeNotes: string;
