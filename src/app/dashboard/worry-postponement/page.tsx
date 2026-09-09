@@ -27,9 +27,9 @@ export default async function WorryPostponementPage() {
                 Module
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-stone-700">
-                A structured 7-day exercise: define a worry, collect evidence for
-                and against, schedule a daily thinking-time window, log what
-                actually happens, and compare your prediction with reality.
+                Define a worry, collect evidence for and against, schedule a
+                daily thinking-time window, log what actually happens, and
+                compare your prediction with reality.
               </p>
             </div>
 

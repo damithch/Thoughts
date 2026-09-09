@@ -480,9 +480,8 @@ export async function ensureInitialized() {
       `);
 
       // ── Migration: worry_experiment_days (day_number → entry_date) ──
-      // Backfill entry_date from module created_at + day offset for legacy rows,
-      // drop the day_number column and old constraint/index.
-      try {
+      // Each step is independent so partial failures don't block later steps.
+      {
         const { rows: [{ col_exists }] } = await pool.query<{ col_exists: boolean }>(`
           SELECT EXISTS (
             SELECT 1 FROM information_schema.columns
@@ -491,45 +490,61 @@ export async function ensureInitialized() {
         `);
 
         if (col_exists) {
-          // Backfill entry_date where it is null (legacy rows stored day_number but may lack real dates)
-          await pool.query(`
-            UPDATE worry_experiment_days wed
-            SET entry_date = (wpm.created_at::date + (wed.day_number - 1) * INTERVAL '1 day')::date
-            FROM worry_postponement_modules wpm
-            WHERE wed.module_id = wpm.id
-              AND wed.entry_date IS NULL
-          `);
+          // Step 0: Make day_number nullable immediately so new INSERTs work
+          // even if later migration steps fail
+          try {
+            await pool.query(`
+              ALTER TABLE worry_experiment_days ALTER COLUMN day_number DROP NOT NULL
+            `);
+          } catch { /* already nullable or column gone */ }
 
-          // Drop old unique constraint on (module_id, day_number) – name may vary
-          await pool.query(`
-            ALTER TABLE worry_experiment_days
-            DROP CONSTRAINT IF EXISTS worry_experiment_days_module_id_day_number_key
-          `);
+          // Step 1: Backfill entry_date from module created_at + day offset
+          try {
+            await pool.query(`
+              UPDATE worry_experiment_days wed
+              SET entry_date = (wpm.created_at::date + (wed.day_number - 1) * INTERVAL '1 day')::date
+              FROM worry_postponement_modules wpm
+              WHERE wed.module_id = wpm.id
+                AND wed.entry_date IS NULL
+            `);
+          } catch (e) { console.warn("Migration step 1 (backfill entry_date) skipped:", e); }
 
-          // Drop the old CHECK constraint on day_number
-          await pool.query(`
-            ALTER TABLE worry_experiment_days
-            DROP CONSTRAINT IF EXISTS worry_experiment_days_day_number_check
-          `);
+          // Step 2: Drop old unique constraint on (module_id, day_number)
+          try {
+            await pool.query(`
+              ALTER TABLE worry_experiment_days
+              DROP CONSTRAINT IF EXISTS worry_experiment_days_module_id_day_number_key
+            `);
+          } catch (e) { console.warn("Migration step 2 (drop old unique) skipped:", e); }
 
-          // Drop legacy index
-          await pool.query(`
-            DROP INDEX IF EXISTS worry_experiment_days_module_idx
-          `);
+          // Step 3: Drop old CHECK constraint on day_number
+          try {
+            await pool.query(`
+              ALTER TABLE worry_experiment_days
+              DROP CONSTRAINT IF EXISTS worry_experiment_days_day_number_check
+            `);
+          } catch (e) { console.warn("Migration step 3 (drop check) skipped:", e); }
 
-          // Add new unique constraint on (module_id, entry_date) if not present
-          await pool.query(`
-            CREATE UNIQUE INDEX IF NOT EXISTS worry_experiment_days_module_date_uniq
-            ON worry_experiment_days (module_id, entry_date)
-          `);
+          // Step 4: Drop legacy index
+          try {
+            await pool.query(`DROP INDEX IF EXISTS worry_experiment_days_module_idx`);
+          } catch (e) { console.warn("Migration step 4 (drop index) skipped:", e); }
 
-          // Drop the day_number column
-          await pool.query(`
-            ALTER TABLE worry_experiment_days DROP COLUMN IF EXISTS day_number
-          `);
+          // Step 5: Ensure unique constraint on (module_id, entry_date)
+          try {
+            await pool.query(`
+              CREATE UNIQUE INDEX IF NOT EXISTS worry_experiment_days_module_date_uniq
+              ON worry_experiment_days (module_id, entry_date)
+            `);
+          } catch (e) { console.warn("Migration step 5 (create unique index) skipped:", e); }
+
+          // Step 6: Drop day_number column entirely
+          try {
+            await pool.query(`
+              ALTER TABLE worry_experiment_days DROP COLUMN IF EXISTS day_number
+            `);
+          } catch (e) { console.warn("Migration step 6 (drop day_number) skipped:", e); }
         }
-      } catch (migrationErr) {
-        console.warn("worry_experiment_days migration (day_number removal) skipped or partially applied:", migrationErr);
       }
 
       await pool.query(`
@@ -548,7 +563,8 @@ export async function ensureInitialized() {
       `);
 
       // ── Migration: worry_postponed_items (day_number → entry_date) ──
-      try {
+      // Each step is independent so partial failures don't block later steps.
+      {
         const { rows: [{ col_exists: piColExists }] } = await pool.query<{ col_exists: boolean }>(`
           SELECT EXISTS (
             SELECT 1 FROM information_schema.columns
@@ -557,50 +573,67 @@ export async function ensureInitialized() {
         `);
 
         if (piColExists) {
-          // Add entry_date column if missing
-          await pool.query(`
-            ALTER TABLE worry_postponed_items
-            ADD COLUMN IF NOT EXISTS entry_date DATE
-          `);
+          // Step 0: Make day_number nullable so new INSERTs without it don't fail
+          try {
+            await pool.query(`
+              ALTER TABLE worry_postponed_items ALTER COLUMN day_number DROP NOT NULL
+            `);
+          } catch { /* already nullable or column gone */ }
 
-          // Backfill entry_date from module created_at + day offset
-          await pool.query(`
-            UPDATE worry_postponed_items wpi
-            SET entry_date = (wpm.created_at::date + (wpi.day_number - 1) * INTERVAL '1 day')::date
-            FROM worry_postponement_modules wpm
-            WHERE wpi.module_id = wpm.id
-              AND wpi.entry_date IS NULL
-          `);
+          // Step 1: Add entry_date column if missing
+          try {
+            await pool.query(`
+              ALTER TABLE worry_postponed_items
+              ADD COLUMN IF NOT EXISTS entry_date DATE
+            `);
+          } catch (e) { console.warn("PI migration step 1 (add entry_date) skipped:", e); }
 
-          // Default remaining nulls to today
-          await pool.query(`
-            UPDATE worry_postponed_items SET entry_date = CURRENT_DATE WHERE entry_date IS NULL
-          `);
+          // Step 2: Backfill entry_date from module created_at + day offset
+          try {
+            await pool.query(`
+              UPDATE worry_postponed_items wpi
+              SET entry_date = (wpm.created_at::date + (wpi.day_number - 1) * INTERVAL '1 day')::date
+              FROM worry_postponement_modules wpm
+              WHERE wpi.module_id = wpm.id
+                AND wpi.entry_date IS NULL
+            `);
+          } catch (e) { console.warn("PI migration step 2 (backfill) skipped:", e); }
 
-          // Make entry_date NOT NULL
-          await pool.query(`
-            ALTER TABLE worry_postponed_items ALTER COLUMN entry_date SET NOT NULL
-          `);
-          await pool.query(`
-            ALTER TABLE worry_postponed_items ALTER COLUMN entry_date SET DEFAULT CURRENT_DATE
-          `);
+          // Step 3: Default remaining nulls to today
+          try {
+            await pool.query(`
+              UPDATE worry_postponed_items SET entry_date = CURRENT_DATE WHERE entry_date IS NULL
+            `);
+          } catch (e) { console.warn("PI migration step 3 (default nulls) skipped:", e); }
 
-          // Drop old check constraint and index
-          await pool.query(`
-            ALTER TABLE worry_postponed_items
-            DROP CONSTRAINT IF EXISTS worry_postponed_items_day_number_check
-          `);
-          await pool.query(`
-            DROP INDEX IF EXISTS idx_worry_postponed_items_module_day
-          `);
+          // Step 4: Make entry_date NOT NULL with default
+          try {
+            await pool.query(`
+              ALTER TABLE worry_postponed_items ALTER COLUMN entry_date SET NOT NULL
+            `);
+            await pool.query(`
+              ALTER TABLE worry_postponed_items ALTER COLUMN entry_date SET DEFAULT CURRENT_DATE
+            `);
+          } catch (e) { console.warn("PI migration step 4 (set NOT NULL) skipped:", e); }
 
-          // Drop day_number column
-          await pool.query(`
-            ALTER TABLE worry_postponed_items DROP COLUMN IF EXISTS day_number
-          `);
+          // Step 5: Drop old check constraint and index
+          try {
+            await pool.query(`
+              ALTER TABLE worry_postponed_items
+              DROP CONSTRAINT IF EXISTS worry_postponed_items_day_number_check
+            `);
+          } catch (e) { console.warn("PI migration step 5a (drop check) skipped:", e); }
+          try {
+            await pool.query(`DROP INDEX IF EXISTS idx_worry_postponed_items_module_day`);
+          } catch (e) { console.warn("PI migration step 5b (drop index) skipped:", e); }
+
+          // Step 6: Drop day_number column
+          try {
+            await pool.query(`
+              ALTER TABLE worry_postponed_items DROP COLUMN IF EXISTS day_number
+            `);
+          } catch (e) { console.warn("PI migration step 6 (drop day_number) skipped:", e); }
         }
-      } catch (migrationErr) {
-        console.warn("worry_postponed_items migration (day_number removal) skipped or partially applied:", migrationErr);
       }
 
       await pool.query(`

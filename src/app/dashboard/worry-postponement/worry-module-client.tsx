@@ -668,7 +668,7 @@ function CalendarStrip({
       </div>
 
       {/* Week strip */}
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
         {weekDates.map((dateStr) => {
           const info = formatShortDay(dateStr);
           const isFilled = filledDates.has(dateStr);
@@ -692,7 +692,7 @@ function CalendarStrip({
               <span className="text-[10px] font-medium uppercase tracking-wide opacity-70">
                 {info.day}
               </span>
-              <span className="text-lg font-semibold leading-tight">{info.date}</span>
+              <span className="text-base font-semibold leading-tight sm:text-lg">{info.date}</span>
 
               {/* Worry count badge */}
               {worryCount > 0 && (
@@ -840,7 +840,7 @@ function PostponedItemsList({
           {items.map((item) => (
             <span
               key={item.id}
-              className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-white/80 px-3 py-1.5 text-xs text-stone-700 transition hover:border-amber-400"
+              className="group flex items-start gap-1.5 rounded-xl border border-amber-200 bg-white/80 px-2.5 py-1.5 text-xs text-stone-700 transition hover:border-amber-400 sm:items-center sm:rounded-full sm:px-3"
             >
               <span className="shrink-0 font-semibold text-amber-600">
                 {formatTime(item.created_at)}
