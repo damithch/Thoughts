@@ -498,6 +498,14 @@ export async function ensureInitialized() {
             `);
           } catch { /* already nullable or column gone */ }
 
+          // Step 0b: Add entry_date column if it doesn't exist (old schema didn't have it)
+          try {
+            await pool.query(`
+              ALTER TABLE worry_experiment_days
+              ADD COLUMN IF NOT EXISTS entry_date DATE
+            `);
+          } catch (e) { console.warn("Migration step 0b (add entry_date col) skipped:", e); }
+
           // Step 1: Backfill entry_date from module created_at + day offset
           try {
             await pool.query(`
@@ -508,6 +516,23 @@ export async function ensureInitialized() {
                 AND wed.entry_date IS NULL
             `);
           } catch (e) { console.warn("Migration step 1 (backfill entry_date) skipped:", e); }
+
+          // Step 1b: Default any remaining NULLs to today
+          try {
+            await pool.query(`
+              UPDATE worry_experiment_days SET entry_date = CURRENT_DATE WHERE entry_date IS NULL
+            `);
+          } catch (e) { console.warn("Migration step 1b (default nulls) skipped:", e); }
+
+          // Step 1c: Make entry_date NOT NULL with default
+          try {
+            await pool.query(`
+              ALTER TABLE worry_experiment_days ALTER COLUMN entry_date SET NOT NULL
+            `);
+            await pool.query(`
+              ALTER TABLE worry_experiment_days ALTER COLUMN entry_date SET DEFAULT CURRENT_DATE
+            `);
+          } catch (e) { console.warn("Migration step 1c (set NOT NULL) skipped:", e); }
 
           // Step 2: Drop old unique constraint on (module_id, day_number)
           try {
@@ -530,7 +555,7 @@ export async function ensureInitialized() {
             await pool.query(`DROP INDEX IF EXISTS worry_experiment_days_module_idx`);
           } catch (e) { console.warn("Migration step 4 (drop index) skipped:", e); }
 
-          // Step 5: Ensure unique constraint on (module_id, entry_date)
+          // Step 5: Ensure unique constraint on (module_id, entry_date) for ON CONFLICT
           try {
             await pool.query(`
               CREATE UNIQUE INDEX IF NOT EXISTS worry_experiment_days_module_date_uniq
