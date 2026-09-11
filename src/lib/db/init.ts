@@ -555,7 +555,17 @@ export async function ensureInitialized() {
             await pool.query(`DROP INDEX IF EXISTS worry_experiment_days_module_idx`);
           } catch (e) { console.warn("Migration step 4 (drop index) skipped:", e); }
 
-          // Step 5: Ensure unique constraint on (module_id, entry_date) for ON CONFLICT
+          // Step 5a: Deduplicate (module_id, entry_date) — required before unique index
+          try {
+            await pool.query(`
+              DELETE FROM worry_experiment_days
+              WHERE id NOT IN (
+                SELECT MIN(id) FROM worry_experiment_days GROUP BY module_id, entry_date
+              )
+            `);
+          } catch (e) { console.warn("Migration step 5a (dedup) skipped:", e); }
+
+          // Step 5b: Ensure unique constraint on (module_id, entry_date) for ON CONFLICT
           try {
             await pool.query(`
               CREATE UNIQUE INDEX IF NOT EXISTS worry_experiment_days_module_date_uniq
