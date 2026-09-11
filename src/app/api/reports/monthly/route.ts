@@ -8,6 +8,7 @@ import {
   getTaskCompletionStatsForMonth,
   getTasksByUserMonth,
   getThoughtsByUserMonth,
+  getWorryDataByUserAndMonth,
 } from "@/lib/db";
 import { toColomboExportParts } from "@/lib/time";
 
@@ -60,13 +61,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [thoughts, tasks, checkIns, dayNotes, completionStats, conversationLogs] = await Promise.all([
+    const [thoughts, tasks, checkIns, dayNotes, completionStats, conversationLogs, worryData] = await Promise.all([
       getThoughtsByUserMonth(currentUser.id, month),
       getTasksByUserMonth(currentUser.id, month),
       getDailyCheckInsByUserMonth(currentUser.id, month),
       getDayRecordsByUserMonth(currentUser.id, month),
       getTaskCompletionStatsForMonth(currentUser.id, month),
       getConversationSummariesByUserMonth(currentUser.id, month),
+      getWorryDataByUserAndMonth(currentUser.id, month),
     ]);
 
     const thoughtsPayload = thoughts.map((thought: MonthlyThought) => {
@@ -199,6 +201,8 @@ export async function GET(request: Request) {
       ...checkInsPayload.map((checkIn) => checkIn.entry_date),
       ...dayNotesPayload.map((dayNote) => dayNote.entry_date),
       ...conversationLogsPayload.map((summary) => summary.conversation_date),
+      ...worryData.experiment_days.map((d) => d.entry_date),
+      ...worryData.postponed_items.map((i) => i.entry_date),
     ]);
 
     const days = Array.from(dateSet)
@@ -211,6 +215,8 @@ export async function GET(request: Request) {
         const dayConversationLogs = conversationLogsPayload.filter(
           (summary) => summary.conversation_date === date,
         );
+        const dayWorryDay = worryData.experiment_days.find((d) => d.entry_date === date) ?? null;
+        const dayWorryItems = worryData.postponed_items.filter((i) => i.entry_date === date);
         const taskProgress = buildTaskProgress(
           tasks.filter((task) => task.scheduled_date === date),
         );
@@ -221,8 +227,24 @@ export async function GET(request: Request) {
           total_conversation_logs: dayConversationLogs.length,
           total_tasks: dayTasks.length,
           total_check_ins: dayCheckIns.length,
+          total_postponed_worries: dayWorryItems.length,
           task_progress: taskProgress,
           day_note: dayNote,
+          worry_postponement: (dayWorryDay || dayWorryItems.length > 0)
+            ? {
+                experiment_day: dayWorryDay
+                  ? {
+                      what_happened: dayWorryDay.what_happened,
+                      thinking_time_notes: dayWorryDay.thinking_time_notes,
+                      controllability: dayWorryDay.controllability,
+                    }
+                  : null,
+                postponed_items: dayWorryItems.map((item) => ({
+                  content: item.content,
+                  created_at: toColomboExportParts(item.created_at).localIso,
+                })),
+              }
+            : null,
           thoughts: dayThoughts,
           conversation_logs: dayConversationLogs,
           tasks: dayTasks,
@@ -265,6 +287,14 @@ export async function GET(request: Request) {
         tasks: tasksPayload,
         check_ins: checkInsPayload,
         day_notes: dayNotesPayload,
+        worry_postponement: worryData.module
+          ? {
+              belief: worryData.module.belief_text,
+              status: worryData.module.status,
+              total_experiment_days: worryData.experiment_days.length,
+              total_postponed_items: worryData.postponed_items.length,
+            }
+          : null,
         days,
       },
       {

@@ -8,6 +8,7 @@ import {
   getDayRecordByUserAndDate,
   getTasksByUserAndDate,
   getThoughtsByUserAndDate,
+  getWorryDataByUserAndDate,
 } from "@/lib/db";
 import {
   formatColomboDateLabel,
@@ -65,15 +66,17 @@ export default async function DayPage({ searchParams }: DayPageProps) {
   const isToday = date === today;
   const month = date.slice(0, 7);
 
-  const [thoughts, tasks, dayRecord, checkIns, conversations] = await Promise.all([
+  const [thoughts, tasks, dayRecord, checkIns, conversations, worryData] = await Promise.all([
     getThoughtsByUserAndDate(currentUser.id, date),
     getTasksByUserAndDate(currentUser.id, date),
     getDayRecordByUserAndDate(currentUser.id, date),
     getDailyCheckInsByUserAndDate(currentUser.id, date),
     getConversationSummariesByUserAndDate(currentUser.id, date),
+    getWorryDataByUserAndDate(currentUser.id, date),
   ]);
 
-  const totalItems = thoughts.length + tasks.length + checkIns.length + conversations.length;
+  const hasWorryData = worryData.experiment_day !== null || worryData.postponed_items.length > 0;
+  const totalItems = thoughts.length + tasks.length + checkIns.length + conversations.length + (hasWorryData ? 1 : 0);
   const thoughtMoods = thoughts.map((t) => t.mood);
   const checkInMoods = checkIns.map((c) => c.mood);
   const allMoods = [
@@ -431,6 +434,77 @@ export default async function DayPage({ searchParams }: DayPageProps) {
             </div>
           )}
         </section>
+
+        {/* Worry Postponement */}
+        {hasWorryData ? (
+          <section className="rounded-[1.75rem] border border-amber-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(84,72,48,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6">
+            <div className="mb-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-amber-800/70">Worry Postponement</p>
+              {worryData.module ? (
+                <p className="mt-1 text-sm text-stone-600">
+                  Belief: &ldquo;{worryData.module.belief_text}&rdquo;
+                </p>
+              ) : null}
+            </div>
+
+            {/* Postponed worries */}
+            {worryData.postponed_items.length > 0 ? (
+              <div className="mb-4">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">Postponed worries</p>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {worryData.postponed_items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/40 px-3 py-2"
+                    >
+                      <span className="shrink-0 text-xs font-semibold text-amber-600">
+                        {new Date(item.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}
+                      </span>
+                      <span className="text-xs text-amber-300">•</span>
+                      <span className="text-sm leading-6 text-stone-700">{item.content}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Experiment day notes */}
+            {worryData.experiment_day ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {worryData.experiment_day.what_happened ? (
+                  <div className="rounded-xl border border-emerald-950/10 bg-white/78 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">What happened today?</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                      {worryData.experiment_day.what_happened}
+                    </p>
+                  </div>
+                ) : null}
+                {worryData.experiment_day.thinking_time_notes ? (
+                  <div className="rounded-xl border border-emerald-950/10 bg-white/78 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">What happened at thinking time?</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-7 text-stone-700">
+                      {worryData.experiment_day.thinking_time_notes}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="rounded-xl border border-emerald-950/10 bg-white/78 p-4">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">Controllability</p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-stone-200">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${(worryData.experiment_day.controllability / 10) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-semibold text-stone-700">
+                      {worryData.experiment_day.controllability}/10
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {/* Empty state */}
         {totalItems === 0 && !dayRecord ? (

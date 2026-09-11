@@ -350,3 +350,116 @@ export async function deletePostponedItem(
 
   return rowCount === 1;
 }
+
+// ── Date-based queries for reports & day view ───────────────
+
+export async function getWorryDataByUserAndDate(
+  userId: number,
+  date: string,
+): Promise<{
+  experiment_day: WorryExperimentDay | null;
+  postponed_items: WorryPostponedItem[];
+  module: { id: number; belief_text: string; status: string } | null;
+}> {
+  await ensureInitialized();
+
+  // Get the user's active or most recent module
+  const { rows: moduleRows } = await pool.query<{ id: number; belief_text: string; status: string }>(
+    `SELECT id, belief_text, status
+     FROM worry_postponement_modules
+     WHERE user_id = $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId],
+  );
+
+  const mod = moduleRows[0] ?? null;
+  if (!mod) {
+    return { experiment_day: null, postponed_items: [], module: null };
+  }
+
+  const [dayResult, itemsResult] = await Promise.all([
+    pool.query<WorryExperimentDay>(
+      `SELECT id, module_id,
+              TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+              what_happened, thinking_time_notes, controllability,
+              created_at, updated_at
+       FROM worry_experiment_days
+       WHERE module_id = $1 AND entry_date = $2::date`,
+      [mod.id, date],
+    ),
+    pool.query<WorryPostponedItem>(
+      `SELECT id, module_id,
+              TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+              content, created_at
+       FROM worry_postponed_items
+       WHERE module_id = $1 AND entry_date = $2::date
+       ORDER BY created_at`,
+      [mod.id, date],
+    ),
+  ]);
+
+  return {
+    experiment_day: dayResult.rows[0] ?? null,
+    postponed_items: itemsResult.rows,
+    module: mod,
+  };
+}
+
+export async function getWorryDataByUserAndMonth(
+  userId: number,
+  month: string,
+): Promise<{
+  experiment_days: WorryExperimentDay[];
+  postponed_items: WorryPostponedItem[];
+  module: { id: number; belief_text: string; status: string } | null;
+}> {
+  await ensureInitialized();
+
+  const startDate = `${month}-01`;
+  const endDate = `${month}-01`;
+
+  const { rows: moduleRows } = await pool.query<{ id: number; belief_text: string; status: string }>(
+    `SELECT id, belief_text, status
+     FROM worry_postponement_modules
+     WHERE user_id = $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId],
+  );
+
+  const mod = moduleRows[0] ?? null;
+  if (!mod) {
+    return { experiment_days: [], postponed_items: [], module: null };
+  }
+
+  const [daysResult, itemsResult] = await Promise.all([
+    pool.query<WorryExperimentDay>(
+      `SELECT id, module_id,
+              TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+              what_happened, thinking_time_notes, controllability,
+              created_at, updated_at
+       FROM worry_experiment_days
+       WHERE module_id = $1
+         AND entry_date >= $2::date
+         AND entry_date < ($3::date + INTERVAL '1 month')
+       ORDER BY entry_date`,
+      [mod.id, startDate, endDate],
+    ),
+    pool.query<WorryPostponedItem>(
+      `SELECT id, module_id,
+              TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+              content, created_at
+       FROM worry_postponed_items
+       WHERE module_id = $1
+         AND entry_date >= $2::date
+         AND entry_date < ($3::date + INTERVAL '1 month')
+       ORDER BY entry_date, created_at`,
+      [mod.id, startDate, endDate],
+    ),
+  ]);
+
+  return {
+    experiment_days: daysResult.rows,
+    postponed_items: itemsResult.rows,
+    module: mod,
+  };
+}

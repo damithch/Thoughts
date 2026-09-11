@@ -7,6 +7,7 @@ import {
   getDayRecordByUserAndDate,
   getTasksByUserAndDate,
   getThoughtsByUserAndDate,
+  getWorryDataByUserAndDate,
 } from "@/lib/db";
 import { toColomboExportParts } from "@/lib/time";
 
@@ -99,12 +100,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [thoughts, tasks, dayRecord, checkIns, conversationLogs] = await Promise.all([
+    const [thoughts, tasks, dayRecord, checkIns, conversationLogs, worryData] = await Promise.all([
       getThoughtsByUserAndDate(currentUser.id, date),
       getTasksByUserAndDate(currentUser.id, date),
       getDayRecordByUserAndDate(currentUser.id, date),
       getDailyCheckInsByUserAndDate(currentUser.id, date),
       getConversationSummariesByUserAndDate(currentUser.id, date),
+      getWorryDataByUserAndDate(currentUser.id, date),
     ]);
     const taskProgress = buildTaskProgress(tasks);
     const dayThoughtSummary = buildDayThoughtSummary(thoughts, tasks);
@@ -196,6 +198,29 @@ export async function GET(request: Request) {
               created_time: createdAt.time,
             };
           }),
+          worry_postponement: worryData.module
+            ? {
+                belief: worryData.module.belief_text,
+                status: worryData.module.status,
+                experiment_day: worryData.experiment_day
+                  ? {
+                      what_happened: worryData.experiment_day.what_happened,
+                      thinking_time_notes: worryData.experiment_day.thinking_time_notes,
+                      controllability: worryData.experiment_day.controllability,
+                      created_at: toColomboExportParts(worryData.experiment_day.created_at).localIso,
+                    }
+                  : null,
+                postponed_items: worryData.postponed_items.map((item) => {
+                  const createdAt = toColomboExportParts(item.created_at);
+                  return {
+                    content: item.content,
+                    created_at: createdAt.localIso,
+                    created_time: createdAt.time,
+                  };
+                }),
+                total_postponed: worryData.postponed_items.length,
+              }
+            : null,
           tasks: tasks.map((task: DailyTask) => {
             const createdAt = toColomboExportParts(task.created_at);
             const updatedAt = toColomboExportParts(task.updated_at);
