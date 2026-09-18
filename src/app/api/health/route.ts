@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { generateFromPrompt, GeminiApiError } from "@/lib/gemini";
+import { generateWithFallback, GeminiApiError } from "@/lib/gemini";
 import { getUserSettings } from "@/lib/db/settings";
 
 export const dynamic = "force-dynamic";
@@ -32,15 +32,21 @@ export async function GET() {
 
   try {
     // Make a minimal API call to verify the key and model work.
-    const result = await generateFromPrompt("Respond with exactly: OK", 8, 0, model);
+    // Uses generateWithFallback so the health check itself validates
+    // the fallback chain — if the primary model is down, a fallback
+    // model responding is still a healthy state.
+    const { text: result, modelUsed } = await generateWithFallback("Respond with exactly: OK", 8, 0, model);
     const latencyMs = Date.now() - startTime;
 
     return NextResponse.json({
       status: "ok",
       model,
+      modelUsed,
       embeddingModel,
       apiKeyConfigured: true,
-      message: `Model responded successfully.`,
+      message: modelUsed !== model
+        ? `Primary model unavailable. Fallback model "${modelUsed}" responded successfully.`
+        : `Model responded successfully.`,
       response: String(result).trim().slice(0, 50),
       latencyMs,
     });

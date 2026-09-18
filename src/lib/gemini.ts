@@ -7,6 +7,13 @@ const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-emb
 const GEMINI_LLM_MODEL = process.env.GEMINI_LLM_MODEL ?? "gemini-3.6-flash";
 const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 768);
 
+// Embedding model fallback chain. When the primary embedding model is
+// unavailable (rate-limited, 503, deprecated), try these alternatives.
+const GEMINI_EMBEDDING_FALLBACK_MODELS = [
+  'gemini-embedding-001',
+  'text-embedding-004',
+];
+
 // Resilient multi-model fallback array. When the primary model is unavailable
 // (rate-limited, overloaded, deprecated, 5xx), the system walks through this
 // list until one responds successfully. Uses verified active 2026 models.
@@ -145,44 +152,62 @@ export async function embedTexts(texts: string[]) {
   if (!texts || texts.length === 0) return [] as number[][];
   const embeddings: number[][] = [];
 
-  // Use the modern Gemini embed method name and nested body shape. Send one
-  // request per text chunk to avoid array/proto shape issues observed earlier.
-  const path = `${GEMINI_EMBEDDING_MODEL}:embedContent`;
+  // Build the ordered list of embedding models to try: primary first, then fallbacks (deduped).
+  const embeddingModels = [
+    GEMINI_EMBEDDING_MODEL,
+    ...GEMINI_EMBEDDING_FALLBACK_MODELS.filter((m) => m !== GEMINI_EMBEDDING_MODEL),
+  ];
 
   for (const t of texts) {
-    try {
-      const body = {
-        content: {
-          parts: [{ text: t }],
-        },
-      };
+    let embedded = false;
 
-      const json = await callGenerativeApi(path, body);
+    for (const model of embeddingModels) {
+      try {
+        const path = `${model}:embedContent`;
+        const body = {
+          content: {
+            parts: [{ text: t }],
+          },
+        };
 
-      // Normalized response handling (various shapes across versions)
-      // Some API variants return a bare numeric array as the top-level body.
-      if (Array.isArray(json) && typeof json[0] === 'number') {
-        embeddings.push(json as unknown as number[]);
-      } else if (Array.isArray((json as any).embeddings)) {
-        embeddings.push((json as any).embeddings[0]?.embedding ?? (json as any).embeddings[0]?.vector ?? []);
-      } else if (Array.isArray((json as any).data)) {
-        embeddings.push((json as any).data[0]?.embedding ?? (json as any).data[0]?.vector ?? []);
-      } else if ((json as any).embedding && Array.isArray((json as any).embedding)) {
-        embeddings.push((json as any).embedding);
-      } else if ((json as any).embedding && Array.isArray((json as any).embedding?.values)) {
-        // Some responses nest the numeric array under `embedding.values`.
-        embeddings.push((json as any).embedding.values);
-      } else if ((json as any).results && Array.isArray((json as any).results)) {
-        // Some variants return results with embedding inside
-        const resEmb = (json as any).results[0]?.embedding;
-        if (resEmb && Array.isArray(resEmb)) embeddings.push(resEmb);
-        else if (resEmb && Array.isArray(resEmb.values)) embeddings.push(resEmb.values);
-        else embeddings.push([]);
-      } else {
-        embeddings.push([]);
+        const json = await callGenerativeApi(path, body);
+
+        // Normalized response handling (various shapes across versions)
+        let vec: number[] = [];
+        if (Array.isArray(json) && typeof json[0] === 'number') {
+          vec = json as unknown as number[];
+        } else if (Array.isArray((json as any).embeddings)) {
+          vec = (json as any).embeddings[0]?.embedding ?? (json as any).embeddings[0]?.vector ?? [];
+        } else if (Array.isArray((json as any).data)) {
+          vec = (json as any).data[0]?.embedding ?? (json as any).data[0]?.vector ?? [];
+        } else if ((json as any).embedding && Array.isArray((json as any).embedding)) {
+          vec = (json as any).embedding;
+        } else if ((json as any).embedding && Array.isArray((json as any).embedding?.values)) {
+          vec = (json as any).embedding.values;
+        } else if ((json as any).results && Array.isArray((json as any).results)) {
+          const resEmb = (json as any).results[0]?.embedding;
+          if (resEmb && Array.isArray(resEmb)) vec = resEmb;
+          else if (resEmb && Array.isArray(resEmb.values)) vec = resEmb.values;
+        }
+
+        embeddings.push(vec);
+        embedded = true;
+
+        if (model !== GEMINI_EMBEDDING_MODEL) {
+          console.log(`[Embedding Fallback] Primary model "${GEMINI_EMBEDDING_MODEL}" failed, succeeded with "${model}"`);
+        }
+        break; // success — stop trying models for this chunk
+      } catch (e) {
+        const isLast = model === embeddingModels[embeddingModels.length - 1];
+        if (!isLast) {
+          console.warn(`[Embedding Fallback] Model "${model}" failed, trying next...`, e instanceof Error ? e.message : e);
+          continue;
+        }
+        console.error(`[Embedding Fallback] All embedding models failed for chunk. Last error:`, e);
       }
-    } catch (e) {
-      console.error("Embedding request failed for a chunk:", e);
+    }
+
+    if (!embedded) {
       embeddings.push([]);
     }
   }

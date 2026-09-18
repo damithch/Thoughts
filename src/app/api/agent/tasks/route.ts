@@ -15,7 +15,7 @@ import {
 } from "@/lib/db";
 import type { TaskItem, TaskPriority, TaskStatus } from "@/lib/db";
 import { getUserSettings } from "@/lib/db/settings";
-import { generateFromPrompt } from "@/lib/gemini";
+import { generateWithFallback } from "@/lib/gemini";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -173,7 +173,7 @@ Respond strictly with a JSON object of the following format without markdown wra
     let parsed: { actions?: any[]; summary?: string } | null = null;
 
     try {
-      const llmOutput = await generateFromPrompt(systemPrompt, settings.agent_max_tokens, settings.agent_temperature, settings.llm_model);
+      const { text: llmOutput } = await generateWithFallback(systemPrompt, settings.agent_max_tokens, settings.agent_temperature, settings.llm_model);
       const jsonMatch = llmOutput.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         parsed = JSON.parse(jsonMatch[0]);

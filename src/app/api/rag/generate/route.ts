@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { getUserSettings } from "@/lib/db/settings";
-import { embedTexts, generateFromPrompt } from "@/lib/gemini";
+import { embedTexts, generateWithFallback, GeminiApiError } from "@/lib/gemini";
 import { resolveTemporalRange } from "@/lib/temporal";
 import crypto from "node:crypto";
 
@@ -165,11 +165,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ answer, provenance: rows });
     }
 
-    const answer = await generateFromPrompt(parts, 2048, 0.0, settings.llm_model);
+    const { text: answer, modelUsed } = await generateWithFallback(parts, 2048, 0.0, settings.llm_model);
+    console.log(`[RAG Generate] Answered using model: ${modelUsed}`);
 
     return NextResponse.json({ answer, provenance: rows });
   } catch (error) {
     console.error("RAG generate failed", error);
+
+    if (error instanceof GeminiApiError) {
+      const statusMap: Record<string, number> = {
+        rate_limit: 429,
+        token_exceeded: 400,
+        auth_error: 401,
+        overloaded: 503,
+        api_error: 502,
+      };
+      return NextResponse.json(
+        { error: error.message, errorType: error.errorType, details: error.message },
+        { status: statusMap[error.errorType] ?? 502 },
+      );
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: "RAG generation failed.", details: message }, { status: 500 });
   }
