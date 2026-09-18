@@ -96,6 +96,48 @@ function formatTime(isoString: string): string {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+function getMonthGridDates(year: number, month: number): { dateStr: string; isCurrentMonth: boolean }[] {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startDow = (firstDay.getDay() + 6) % 7; // 0=Mon
+  const grid: { dateStr: string; isCurrentMonth: boolean }[] = [];
+
+  // Padding days from previous month
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = new Date(year, month, -i);
+    grid.push({ dateStr: toDateStr(d), isCurrentMonth: false });
+  }
+
+  // Current month days
+  for (let day = 1; day <= lastDay.getDate(); day++) {
+    const d = new Date(year, month, day);
+    grid.push({ dateStr: toDateStr(d), isCurrentMonth: true });
+  }
+
+  // Padding days from next month to fill the final row
+  const remaining = grid.length % 7;
+  if (remaining > 0) {
+    const needed = 7 - remaining;
+    for (let i = 1; i <= needed; i++) {
+      const d = new Date(year, month + 1, i);
+      grid.push({ dateStr: toDateStr(d), isCurrentMonth: false });
+    }
+  }
+
+  return grid;
+}
+
+function getMonthRange(year: number, month: number): { start: string; end: string } {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  return { start: toDateStr(first), end: toDateStr(last) };
+}
+
+function formatMonthYear(year: number, month: number): string {
+  const d = new Date(year, month, 1);
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
 // ── Card wrapper ────────────────────────────────────────────
 
 function Card({
@@ -723,6 +765,164 @@ function CalendarStrip({
   );
 }
 
+// ── MonthCalendar ───────────────────────────────────────────
+
+const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function MonthCalendar({
+  selectedDate,
+  onSelectDate,
+  filledDates,
+  worryCounts,
+}: {
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  filledDates: Set<string>;
+  worryCounts: Map<string, number>;
+}) {
+  const selDate = new Date(selectedDate + "T00:00:00");
+  const [viewYear, setViewYear] = useState(selDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(selDate.getMonth());
+  const today = toDateStr(new Date());
+
+  const gridDates = useMemo(
+    () => getMonthGridDates(viewYear, viewMonth),
+    [viewYear, viewMonth],
+  );
+
+  const goToPrevMonth = () => {
+    if (viewMonth === 0) {
+      setViewYear((y) => y - 1);
+      setViewMonth(11);
+    } else {
+      setViewMonth((m) => m - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (viewMonth === 11) {
+      setViewYear((y) => y + 1);
+      setViewMonth(0);
+    } else {
+      setViewMonth((m) => m + 1);
+    }
+  };
+
+  const goToToday = () => {
+    const now = new Date();
+    setViewYear(now.getFullYear());
+    setViewMonth(now.getMonth());
+    onSelectDate(today);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={goToPrevMonth}
+          className="rounded-lg border border-emerald-950/10 bg-white/70 px-2.5 py-1.5 text-sm text-stone-600 transition hover:bg-white"
+          aria-label="Previous month"
+        >
+          ← Prev
+        </button>
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-emerald-950">
+            {formatMonthYear(viewYear, viewMonth)}
+          </span>
+          <button
+            onClick={goToToday}
+            className="rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-200"
+          >
+            Today
+          </button>
+        </div>
+
+        <button
+          onClick={goToNextMonth}
+          className="rounded-lg border border-emerald-950/10 bg-white/70 px-2.5 py-1.5 text-sm text-stone-600 transition hover:bg-white"
+          aria-label="Next month"
+        >
+          Next →
+        </button>
+      </div>
+
+      {/* Day-of-week headers */}
+      <div className="grid grid-cols-7 gap-px">
+        {DAY_HEADERS.map((d) => (
+          <div
+            key={d}
+            className="py-1.5 text-center text-[10px] font-semibold uppercase tracking-wider text-stone-400"
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Month grid */}
+      <div className="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-emerald-950/10 bg-emerald-950/5">
+        {gridDates.map(({ dateStr, isCurrentMonth }) => {
+          const isSelected = dateStr === selectedDate;
+          const isToday = dateStr === today;
+          const isFilled = filledDates.has(dateStr);
+          const worryCount = worryCounts.get(dateStr) ?? 0;
+          const dateNum = new Date(dateStr + "T00:00:00").getDate();
+
+          return (
+            <button
+              key={dateStr}
+              onClick={() => onSelectDate(dateStr)}
+              className={`relative flex min-h-[3rem] flex-col items-center justify-start gap-0.5 px-1 py-1.5 text-center transition sm:min-h-[3.5rem] ${
+                isSelected
+                  ? "bg-emerald-950 text-emerald-50 shadow-inner"
+                  : isToday
+                    ? "bg-emerald-100 text-emerald-900 ring-2 ring-inset ring-emerald-400"
+                    : isCurrentMonth
+                      ? isFilled
+                        ? "bg-emerald-50/80 text-emerald-800 hover:bg-emerald-100"
+                        : "bg-white/80 text-stone-700 hover:bg-white"
+                      : "bg-stone-50/50 text-stone-300"
+              }`}
+            >
+              <span className={`text-xs font-medium leading-tight sm:text-sm ${
+                isSelected ? "font-bold" : ""
+              }`}>
+                {dateNum}
+              </span>
+
+              {/* Indicators row */}
+              <div className="flex items-center gap-0.5">
+                {/* Filled dot */}
+                {isFilled && (
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      isSelected ? "bg-emerald-400" : "bg-emerald-500"
+                    }`}
+                  />
+                )}
+
+                {/* Worry count badge */}
+                {worryCount > 0 && (
+                  <span
+                    className={`rounded-full px-1 text-[9px] font-bold leading-tight ${
+                      isSelected
+                        ? "bg-emerald-700 text-emerald-100"
+                        : "bg-amber-200 text-amber-800"
+                    }`}
+                  >
+                    {worryCount}
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── PostponedItemsList ──────────────────────────────────────
 
 function PostponedItemsList({
@@ -919,6 +1119,7 @@ function PostponementLog({
 }) {
   const todayStr = toDateStr(new Date());
   const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [calendarView, setCalendarView] = useState<"week" | "month">("week");
   const [predictionText, setPredictionText] = useState(module.prediction_text);
   const [confidence, setConfidence] = useState(module.prediction_confidence ?? 5);
   const [dayForm, setDayForm] = useState<DayFormState>(() => {
@@ -935,21 +1136,34 @@ function PostponementLog({
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
+  // Track the month being viewed in month calendar (for fetching correct range)
+  const selDateObj = new Date(selectedDate + "T00:00:00");
+  const [monthViewYear, setMonthViewYear] = useState(selDateObj.getFullYear());
+  const [monthViewMonth, setMonthViewMonth] = useState(selDateObj.getMonth());
+
   // Build lookup structures for calendar
   const filledDates = useMemo(
     () => new Set(module.experiment_days.map((d) => d.entry_date)),
     [module.experiment_days],
   );
 
-  // Worry counts per date — we'll count from postponed items loaded per-date
-  // For efficiency, we derive this from experiment_days loaded with the module
+  // Worry counts per date
   const [worryCounts, setWorryCounts] = useState<Map<string, number>>(new Map());
 
-  // Load worry counts for visible week
+  // Load worry counts for visible date range (week or month)
   useEffect(() => {
-    const weekDates = getWeekDates(selectedDate);
-    const startDate = weekDates[0];
-    const endDate = weekDates[6];
+    let startDate: string;
+    let endDate: string;
+
+    if (calendarView === "month") {
+      const range = getMonthRange(monthViewYear, monthViewMonth);
+      startDate = range.start;
+      endDate = range.end;
+    } else {
+      const weekDates = getWeekDates(selectedDate);
+      startDate = weekDates[0];
+      endDate = weekDates[6];
+    }
 
     async function loadCounts() {
       try {
@@ -972,7 +1186,7 @@ function PostponementLog({
     }
 
     loadCounts();
-  }, [selectedDate, module.id]);
+  }, [selectedDate, calendarView, monthViewYear, monthViewMonth, module.id]);
 
   const selectDate = useCallback(
     (date: string) => {
@@ -1115,14 +1329,59 @@ function PostponementLog({
         />
       </div>
 
-      {/* Calendar Strip */}
+      {/* Calendar view toggle + calendar */}
       <div className="mt-5">
-        <CalendarStrip
-          selectedDate={selectedDate}
-          onSelectDate={selectDate}
-          filledDates={filledDates}
-          worryCounts={worryCounts}
-        />
+        {/* View toggle */}
+        <div className="mb-3 flex items-center justify-end">
+          <div className="inline-flex overflow-hidden rounded-lg border border-emerald-950/10 bg-white/60 text-xs font-medium">
+            <button
+              onClick={() => setCalendarView("week")}
+              className={`px-3 py-1.5 transition ${
+                calendarView === "week"
+                  ? "bg-emerald-950 text-emerald-50"
+                  : "text-stone-600 hover:bg-emerald-50"
+              }`}
+            >
+              Week
+            </button>
+            <button
+              onClick={() => {
+                setCalendarView("month");
+                const d = new Date(selectedDate + "T00:00:00");
+                setMonthViewYear(d.getFullYear());
+                setMonthViewMonth(d.getMonth());
+              }}
+              className={`px-3 py-1.5 transition ${
+                calendarView === "month"
+                  ? "bg-emerald-950 text-emerald-50"
+                  : "text-stone-600 hover:bg-emerald-50"
+              }`}
+            >
+              Month
+            </button>
+          </div>
+        </div>
+
+        {calendarView === "week" ? (
+          <CalendarStrip
+            selectedDate={selectedDate}
+            onSelectDate={selectDate}
+            filledDates={filledDates}
+            worryCounts={worryCounts}
+          />
+        ) : (
+          <MonthCalendar
+            selectedDate={selectedDate}
+            onSelectDate={(date) => {
+              selectDate(date);
+              const d = new Date(date + "T00:00:00");
+              setMonthViewYear(d.getFullYear());
+              setMonthViewMonth(d.getMonth());
+            }}
+            filledDates={filledDates}
+            worryCounts={worryCounts}
+          />
+        )}
       </div>
 
       {/* Day form */}
