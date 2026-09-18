@@ -448,3 +448,26 @@ export type UpsertWorryExperimentDay = {
   thinkingTimeNotes: string;
   controllability: number;
 };
+
+export type AnchorNote = {
+  id: number;
+  user_id: number;
+  date: string;
+  content: string;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type NewAnchorNote = {
+  userId: number;
+  date: string;
+  content: string;
+};
+
+export type AnchorStreak = {
+  currentStreak: number;
+  longestStreak: number;
+  totalEntries: number;
+  hasToday: boolean;
+};
+

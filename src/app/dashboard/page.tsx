@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import {
   createThoughtAction,
+  createAnchorNoteAction,
   hideThoughtAction,
   deleteThoughtAction,
   logoutAction,
@@ -12,6 +13,9 @@ import {
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getAnchorNoteByDate,
+  getAnchorStreak,
+  getRecentAnchorNotes,
   getConversationSummariesByUser,
   getBookIdeasByUser,
   getThoughtActivityByUserMonth,
@@ -25,6 +29,7 @@ import {
 } from "@/lib/time";
 import RagSearch from "@/app/components/rag-search";
 import { ThoughtFormSection } from "@/app/components/thought-form-section";
+import { AnchorNoteCard } from "@/app/components/anchor-note-card";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +58,9 @@ const dashboardToastMessages: Record<string, string> = {
   update_failed: "That card could not be updated.",
   updated: "Thought card updated.",
   welcome_back: "Signed in successfully.",
+  anchor_saved: "Daily anchor dropped and locked for today.",
+  anchor_failed: "Failed to save daily anchor.",
+  anchor_empty: "Anchor sentence cannot be empty.",
 };
 
 function formatMonthLabel(month: string) {
@@ -147,13 +155,32 @@ export default async function DashboardPage({
   let monthlyActivity: Awaited<ReturnType<typeof getThoughtActivityByUserMonth>> = [];
   let bookIdeas: Awaited<ReturnType<typeof getBookIdeasByUser>> = [];
   let conversationSummaries: Awaited<ReturnType<typeof getConversationSummariesByUser>> = [];
+  let todayAnchorNote: Awaited<ReturnType<typeof getAnchorNoteByDate>> = null;
+  let anchorStreak: Awaited<ReturnType<typeof getAnchorStreak>> = {
+    currentStreak: 0,
+    longestStreak: 0,
+    totalEntries: 0,
+    hasToday: false,
+  };
+  let recentAnchorNotes: Awaited<ReturnType<typeof getRecentAnchorNotes>> = [];
 
   try {
-    [thoughts, monthlyActivity, bookIdeas, conversationSummaries] = await Promise.all([
+    [
+      thoughts,
+      monthlyActivity,
+      bookIdeas,
+      conversationSummaries,
+      todayAnchorNote,
+      anchorStreak,
+      recentAnchorNotes,
+    ] = await Promise.all([
       getThoughtsByUser(currentUser.id, 24, visibility),
       getThoughtActivityByUserMonth(currentUser.id, activeMonth),
       getBookIdeasByUser(currentUser.id),
       getConversationSummariesByUser(currentUser.id, 8),
+      getAnchorNoteByDate(currentUser.id, today),
+      getAnchorStreak(currentUser.id, today),
+      getRecentAnchorNotes(currentUser.id, 30),
     ]);
   } catch (error) {
     console.error("Failed to load dashboard data.", error);
@@ -470,6 +497,14 @@ export default async function DashboardPage({
 
         <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="grid gap-6">
+            <AnchorNoteCard
+              todayNote={todayAnchorNote}
+              streak={anchorStreak}
+              recentNotes={recentAnchorNotes}
+              createAction={createAnchorNoteAction}
+              databaseAvailable={databaseAvailable}
+            />
+
             <ThoughtFormSection
               editingThought={editingThought}
               bookIdeas={bookIdeas.map((idea) => ({

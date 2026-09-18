@@ -1,4 +1,5 @@
 export * from "@/lib/db/activation";
+export * from "@/lib/db/anchor-notes";
 export * from "@/lib/db/conversations";
 export * from "@/lib/db/insights";
 export * from "@/lib/db/rag";

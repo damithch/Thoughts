@@ -15,6 +15,7 @@ import {
   createRecurringTask,
   createTask,
   createThought,
+  createAnchorNote,
   createUser,
   deleteRecurringTask,
   deleteTask,
@@ -33,7 +34,7 @@ import {
   upsertDayRecord,
   upsertUserSettings,
 } from "@/lib/db";
-import { shiftColomboDate } from "@/lib/time";
+import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 function parseMood(value: FormDataEntryValue | null) {
   const mood = Number(value?.toString() ?? "");
@@ -1049,3 +1050,43 @@ export async function updateUserSettingsAction(formData: FormData) {
   revalidatePath("/dashboard/settings");
   redirect("/dashboard/settings?toast=Settings+saved&type=success");
 }
+
+export async function createAnchorNoteAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const content = formData.get("content")?.toString().trim();
+  const rawDate = formData.get("date")?.toString().trim();
+  const date =
+    rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+      ? rawDate
+      : getCurrentColomboDate();
+
+  if (!content) {
+    redirect("/dashboard?toast=anchor_empty&type=error");
+  }
+
+  // Enforce disciplined single-line reflection
+  const sanitizedContent = content
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 280);
+
+  try {
+    await createAnchorNote({
+      userId: currentUser.id,
+      date,
+      content: sanitizedContent,
+    });
+  } catch (error) {
+    console.error("Failed to create anchor note:", error);
+    redirect("/dashboard?toast=anchor_failed&type=error");
+  }
+
+  revalidatePath("/dashboard");
+  redirect("/dashboard?toast=anchor_saved&type=success");
+}
+

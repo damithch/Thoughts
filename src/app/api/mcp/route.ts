@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 
 import {
+  createAnchorNote,
+  getAnchorNoteByDate,
+  getAnchorStreak,
+  getRecentAnchorNotes,
   getBehaviouralActivationEntriesByUser,
   deleteConversationSummary,
   createTask,
@@ -27,6 +31,7 @@ import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskIt
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import { embedTexts } from "@/lib/gemini";
+import { getCurrentColomboDate } from "@/lib/time";
 
 const MCP_API_KEY_HEADER = "x-api-key";
 const MCP_API_KEY_QUERY_PARAM = "api_key";
@@ -51,6 +56,49 @@ type ToolDefinition = {
 };
 
 const TOOL_DEFINITIONS: ToolDefinition[] = [
+  {
+    name: "get_anchor_notes",
+    description:
+      "Fetch daily anchor notes ('What stayed true about you today?') and active streak for the user.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: {
+          type: "string",
+          description: "Optional date in YYYY-MM-DD format to get a specific day's anchor note.",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        },
+        limit: {
+          type: "integer",
+          description: "Optional maximum number of recent anchor notes to return (default 30).",
+          minimum: 1,
+          maximum: 100,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_anchor_note",
+    description:
+      "Save the user's daily anchor note ('What stayed true about you today?') for a given date (defaults to today in Colombo time). Only one anchor note is allowed per day.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "A single sentence reflection answering 'What stayed true about you today?' (max 280 chars).",
+        },
+        date: {
+          type: "string",
+          description: "Optional date in YYYY-MM-DD format (defaults to current Colombo date).",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        },
+      },
+      required: ["content"],
+      additionalProperties: false,
+    },
+  },
   {
     name: "get_daily_summary",
     description:
@@ -653,6 +701,62 @@ async function createConversationLogViaApi(request: Request, args: JsonObject) {
 }
 
 async function handleToolCall(name: string, args: JsonObject, userId: number, request: Request) {
+  if (name === "get_anchor_notes") {
+    const date = args.date === undefined ? null : normalizeDate(args.date);
+    const limit =
+      typeof args.limit === "number" && Number.isInteger(args.limit) && args.limit > 0
+        ? Math.min(args.limit, 100)
+        : 30;
+
+    const today = getCurrentColomboDate();
+    const streak = await getAnchorStreak(userId, today);
+
+    if (date) {
+      const note = await getAnchorNoteByDate(userId, date);
+      return formatToolResult({
+        date,
+        note,
+        streak,
+      });
+    }
+
+    const notes = await getRecentAnchorNotes(userId, limit);
+    return formatToolResult({
+      count: notes.length,
+      streak,
+      notes,
+    });
+  }
+
+  if (name === "create_anchor_note") {
+    const rawContent = normalizeOptionalString(args.content);
+    if (!rawContent) {
+      throw new Error("create_anchor_note requires a non-empty content string.");
+    }
+
+    const content = rawContent.replace(/[\r\n]+/g, " ").trim().slice(0, 280);
+    const date =
+      args.date === undefined ? getCurrentColomboDate() : normalizeDate(args.date);
+
+    if (!date) {
+      throw new Error("create_anchor_note date must be in YYYY-MM-DD format.");
+    }
+
+    const note = await createAnchorNote({
+      userId,
+      date,
+      content,
+    });
+
+    const streak = await getAnchorStreak(userId, date);
+
+    return formatToolResult({
+      created: true,
+      note,
+      streak,
+    });
+  }
+
   if (name === "get_daily_summary") {
     const date = normalizeDate(args.date);
 

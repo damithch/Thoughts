@@ -95,6 +95,68 @@ test("time: shifts dates forwards and backwards across boundaries", () => {
   assert.equal(shiftColomboDate("2026-01-01", -1), "2025-12-31");
 });
 
+// 4. Anchor streak calculation test
+function calculateStreak(dates, today) {
+  const yesterday = shiftColomboDate(today, -1);
+  const dateSet = new Set(dates);
+  const hasToday = dateSet.has(today);
+
+  let currentStreak = 0;
+  let checkDate = hasToday ? today : dateSet.has(yesterday) ? yesterday : null;
+
+  if (checkDate) {
+    while (dateSet.has(checkDate)) {
+      currentStreak += 1;
+      checkDate = shiftColomboDate(checkDate, -1);
+    }
+  }
+
+  let longestStreak = 0;
+  let runningStreak = 0;
+  let previousDate = null;
+  const sortedDates = [...dates].sort();
+
+  for (const d of sortedDates) {
+    if (!previousDate) {
+      runningStreak = 1;
+    } else {
+      const expectedNext = shiftColomboDate(previousDate, 1);
+      if (d === expectedNext) {
+        runningStreak += 1;
+      } else if (d !== previousDate) {
+        runningStreak = 1;
+      }
+    }
+    if (runningStreak > longestStreak) {
+      longestStreak = runningStreak;
+    }
+    previousDate = d;
+  }
+
+  return { currentStreak, longestStreak, totalEntries: dates.length, hasToday };
+}
+
+test("anchor streak: accurately calculates active streak when today is logged", () => {
+  const result = calculateStreak(["2026-09-18", "2026-09-17", "2026-09-16", "2026-09-14"], "2026-09-18");
+  assert.equal(result.currentStreak, 3);
+  assert.equal(result.longestStreak, 3);
+  assert.equal(result.hasToday, true);
+  assert.equal(result.totalEntries, 4);
+});
+
+test("anchor streak: preserves streak from yesterday when today is pending", () => {
+  const result = calculateStreak(["2026-09-17", "2026-09-16"], "2026-09-18");
+  assert.equal(result.currentStreak, 2);
+  assert.equal(result.hasToday, false);
+});
+
+test("anchor streak: resets to 0 when gap is more than 1 day", () => {
+  const result = calculateStreak(["2026-09-15", "2026-09-14"], "2026-09-18");
+  assert.equal(result.currentStreak, 0);
+  assert.equal(result.longestStreak, 2);
+});
+
+
 console.log(`\nTest Results: ${passed} passed, ${failed} failed.`);
 if (failed > 0) {
   process.exit(1);

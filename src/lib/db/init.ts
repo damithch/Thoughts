@@ -676,6 +676,23 @@ export async function ensureInitialized() {
         ON worry_postponed_items (module_id, entry_date, created_at)
       `);
 
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS anchor_notes (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date DATE NOT NULL,
+          content TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (user_id, date)
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS anchor_notes_user_date_idx
+        ON anchor_notes (user_id, date DESC)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );
