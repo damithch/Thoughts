@@ -42,6 +42,11 @@ export function ThoughtFormSection({
   updateAction,
 }: ThoughtFormSectionProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [requestId] = useState(() =>
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`,
+  );
 
   // Controlled form field state — initialized from editingThought or empty
   const [title, setTitle] = useState(editingThought?.title ?? "");
@@ -96,7 +101,9 @@ export function ThoughtFormSection({
         <div className="grid gap-4 sm:gap-5">
           {editingThought ? (
             <input type="hidden" name="thoughtId" value={editingThought.id} />
-          ) : null}
+          ) : (
+            <input type="hidden" name="requestId" value={requestId} />
+          )}
           <label className="grid gap-2 text-sm text-stone-700">
             <span className="uppercase tracking-[0.18em] text-emerald-800/70">
               Title

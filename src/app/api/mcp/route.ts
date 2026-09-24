@@ -55,6 +55,8 @@ type ToolDefinition = {
   inputSchema: JsonObject;
 };
 
+class McpInvalidParamsError extends Error {}
+
 const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_anchor_notes",
@@ -177,6 +179,11 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         body: { type: "string" },
         linkedBookIdeaId: { type: ["integer", "null"] },
         insightReflection: { type: "string" },
+        requestId: {
+          type: "string",
+          description: "Optional idempotency key. Reusing it safely returns the original thought.",
+          maxLength: 200,
+        },
       },
       required: ["title", "category", "mood", "summary"],
       additionalProperties: false,
@@ -450,10 +457,10 @@ function normalizeStringArray(value: unknown) {
     new Set(
       value
         .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.trim())
+        .map((entry) => entry.trim().toLowerCase())
         .filter(Boolean),
     ),
-  );
+  ).slice(0, 8);
 }
 
 function normalizeMood(value: unknown) {
@@ -871,7 +878,26 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
           : null;
 
     if (!title || !category || !summary || mood === null) {
-      throw new Error("create_thought requires title, category, mood, and summary.");
+      throw new McpInvalidParamsError("create_thought requires title, category, mood, and summary.");
+    }
+
+    if (linkedBookIdeaId) {
+      const linkedIdea = await pool.query(
+        `
+          SELECT bi.id
+          FROM book_ideas bi
+          JOIN books b ON b.id = bi.book_id
+          WHERE bi.id = $1 AND b.user_id = $2
+          LIMIT 1
+        `,
+        [linkedBookIdeaId, userId],
+      );
+
+      if (linkedIdea.rowCount !== 1) {
+        throw new McpInvalidParamsError(
+          "create_thought linkedBookIdeaId must belong to the configured MCP user.",
+        );
+      }
     }
 
     const input: NewThought = {
@@ -885,6 +911,7 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       linkedBookIdeaId,
       insightReflection,
       userId,
+      requestId: normalizeOptionalString(args.requestId),
     };
 
     if (
@@ -896,7 +923,7 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
         body: input.body,
       })
     ) {
-      throw new Error(
+      throw new McpInvalidParamsError(
         "create_thought rejected input that looks like a Claude chat/session summary. Use create_conversation_log for conversation summaries.",
       );
     }
@@ -1268,6 +1295,10 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unexpected MCP server error.";
+
+    if (error instanceof McpInvalidParamsError) {
+      return jsonRpcError(body.id, -32602, message, 400);
+    }
 
     return jsonRpcError(body.id, -32000, message, 500);
   }

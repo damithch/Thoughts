@@ -11,6 +11,7 @@ import {
   getTasksByUserMonth,
 } from "@/lib/db/tasks";
 import { getThoughtsByUser } from "@/lib/db/thoughts";
+import { getUserSettings } from "@/lib/db/settings";
 import { toColomboExportParts } from "@/lib/time";
 import type {
   BehaviouralActivationEntry,
@@ -35,6 +36,86 @@ type RagMaterializedDocument = {
   metadata: Record<string, unknown>;
   sourceUpdatedAt: Date;
 };
+
+const DEFAULT_SYNC_LEASE_MS = 10 * 60 * 1000;
+
+export class RagSyncInProgressError extends Error {
+  code = "RAG_SYNC_IN_PROGRESS" as const;
+
+  constructor() {
+    super("A RAG sync is already running for this user.");
+    this.name = "RagSyncInProgressError";
+  }
+}
+
+function getSyncLeaseDurationMs() {
+  const configuredSeconds = Number(process.env.RAG_SYNC_LEASE_SECONDS);
+  if (Number.isFinite(configuredSeconds) && configuredSeconds >= 30) {
+    return Math.min(configuredSeconds, 60 * 60) * 1000;
+  }
+  return DEFAULT_SYNC_LEASE_MS;
+}
+
+async function acquireRagSyncLease(userId: number) {
+  const leaseId = crypto.randomUUID();
+  const leaseMs = getSyncLeaseDurationMs();
+  const { rowCount } = await pool.query(
+    `
+      INSERT INTO rag_sync_leases (user_id, lease_id, acquired_at, expires_at, updated_at)
+      VALUES ($1, $2, NOW(), NOW() + ($3::double precision * INTERVAL '1 millisecond'), NOW())
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        lease_id = EXCLUDED.lease_id,
+        acquired_at = NOW(),
+        expires_at = EXCLUDED.expires_at,
+        updated_at = NOW()
+      WHERE rag_sync_leases.expires_at <= NOW()
+    `,
+    [userId, leaseId, leaseMs],
+  );
+
+  if (rowCount !== 1) {
+    throw new RagSyncInProgressError();
+  }
+
+  let lost = false;
+  const renew = async () => {
+    const result = await pool.query(
+      `
+        UPDATE rag_sync_leases
+        SET expires_at = NOW() + ($3::double precision * INTERVAL '1 millisecond'),
+            updated_at = NOW()
+        WHERE user_id = $1 AND lease_id = $2
+      `,
+      [userId, leaseId, leaseMs],
+    );
+    if (result.rowCount !== 1) {
+      lost = true;
+    }
+  };
+  const timer = setInterval(() => {
+    void renew().catch((error) => {
+      lost = true;
+      console.error("Failed to renew RAG sync lease.", error);
+    });
+  }, Math.max(1000, Math.floor(leaseMs / 3)));
+  timer.unref?.();
+
+  return {
+    assertActive() {
+      if (lost) {
+        throw new Error("RAG sync lease was lost before sync completed.");
+      }
+    },
+    async release() {
+      clearInterval(timer);
+      await pool.query(
+        `DELETE FROM rag_sync_leases WHERE user_id = $1 AND lease_id = $2`,
+        [userId, leaseId],
+      );
+    },
+  };
+}
 
 function sha256(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
@@ -374,9 +455,10 @@ async function upsertRagDocument(input: RagDocumentUpsertInput) {
         source_updated_at,
         content_hash,
         indexed_at,
-        updated_at
+        updated_at,
+        ingestion_status
       )
-      VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8::jsonb, $9, $10, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8::jsonb, $9, $10, NOW(), NOW(), 'pending')
       ON CONFLICT (user_id, document_key)
       DO UPDATE SET
         document_kind = EXCLUDED.document_kind,
@@ -387,7 +469,26 @@ async function upsertRagDocument(input: RagDocumentUpsertInput) {
         metadata = EXCLUDED.metadata,
         source_updated_at = EXCLUDED.source_updated_at,
         content_hash = EXCLUDED.content_hash,
-        indexed_at = NOW(),
+        ingestion_status = CASE
+          WHEN rag_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+            THEN 'pending'
+          ELSE rag_documents.ingestion_status
+        END,
+        indexed_at = CASE
+          WHEN rag_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+            THEN NULL
+          ELSE rag_documents.indexed_at
+        END,
+        last_ingestion_error = CASE
+          WHEN rag_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+            THEN NULL
+          ELSE rag_documents.last_ingestion_error
+        END,
+        next_retry_at = CASE
+          WHEN rag_documents.content_hash IS DISTINCT FROM EXCLUDED.content_hash
+            THEN NULL
+          ELSE rag_documents.next_retry_at
+        END,
         updated_at = NOW()
     `,
     [
@@ -453,13 +554,24 @@ async function getUserActiveMonths(userId: number) {
   return rows.map((row) => row.month);
 }
 
-export async function syncRagDocumentsForUser(
+async function syncRagDocumentsForUserUnlocked(
   userId: number,
-  options?: { forceReEmbed?: boolean },
+  options?: {
+    forceReEmbed?: boolean;
+    retryFailedOnly?: boolean;
+    maxDocuments?: number;
+  },
+  assertLeaseActive?: () => void,
 ) {
+  assertLeaseActive?.();
   await ensureInitialized();
+  const settings = await getUserSettings(userId);
 
-  const thoughts = await getThoughtsByUser(userId, 1000);
+  const thoughts = await getThoughtsByUser(
+    userId,
+    1000,
+    settings.rag_exclude_hidden_thoughts ? "active" : "all",
+  );
   const bookIdeas = await getBookIdeasByUser(userId);
   const conversations = await getConversationSummariesByUser(userId, 1000);
   const activationEntries = await getBehaviouralActivationEntriesByUser(userId);
@@ -494,22 +606,30 @@ export async function syncRagDocumentsForUser(
       conversations,
       activationEntries,
     }),
-  ];
+  ].filter((document) => settings.rag_enabled_kinds.includes(document.documentKind));
 
-  // Compute content hashes for each materialized document
+  // Include chunk settings so changing the indexing shape re-embeds existing documents.
   const materializedWithHashes = materialized.map((doc) => ({
     ...doc,
-    contentHash: sha256(doc.content),
+    contentHash: sha256(
+      [doc.content, settings.rag_chunk_size, settings.rag_chunk_overlap].join("\0"),
+    ),
   }));
 
   // Fetch existing content hashes to detect unchanged documents
-  const { rows: existingHashRows } = await pool.query<{ document_key: string; content_hash: string | null }>(
-    `SELECT document_key, content_hash FROM rag_documents WHERE user_id = $1`,
+  const { rows: existingHashRows } = await pool.query<{
+    document_key: string;
+    content_hash: string | null;
+    ingestion_status: "pending" | "processing" | "indexed" | "failed";
+    next_retry_at: Date | null;
+  }>(
+    `SELECT document_key, content_hash, ingestion_status, next_retry_at FROM rag_documents WHERE user_id = $1`,
     [userId],
   );
-  const existingHashes = new Map(existingHashRows.map((row) => [row.document_key, row.content_hash]));
+  const existingDocuments = new Map(existingHashRows.map((row) => [row.document_key, row]));
 
   for (const document of materializedWithHashes) {
+    assertLeaseActive?.();
     await upsertRagDocument({
       ...document,
       userId,
@@ -555,42 +675,157 @@ export async function syncRagDocumentsForUser(
   // Automatically chunk and embed only documents whose content has changed
   let embedded = 0;
   let skipped = 0;
+  let ingestedChunks = 0;
+  const failedDocuments: Array<{ documentKey: string; error: string }> = [];
   try {
     const geminiMod = await import("@/lib/gemini");
     if (geminiMod?.ingestMaterializedDocument) {
+      let processed = 0;
       for (const doc of materializedWithHashes) {
-        const storedHash = existingHashes.get(doc.documentKey);
+        assertLeaseActive?.();
+        const existing = existingDocuments.get(doc.documentKey);
+        const storedHash = existing?.content_hash;
+
+        if (options?.retryFailedOnly && existing?.ingestion_status !== "failed") {
+          continue;
+        }
+        if (options?.maxDocuments && processed >= options.maxDocuments) {
+          break;
+        }
 
         // Skip embedding if content hash matches the previously stored hash
-        if (!options?.forceReEmbed && storedHash && storedHash === doc.contentHash) {
+        if (
+          !options?.forceReEmbed &&
+          storedHash &&
+          storedHash === doc.contentHash &&
+          existing?.ingestion_status === "indexed"
+        ) {
+          skipped++;
+          continue;
+        }
+        if (
+          !options?.forceReEmbed &&
+          !options?.retryFailedOnly &&
+          existing?.ingestion_status === "failed" &&
+          existing.next_retry_at &&
+          existing.next_retry_at > new Date()
+        ) {
           skipped++;
           continue;
         }
 
         try {
-          await geminiMod.ingestMaterializedDocument(
+          await pool.query(
+            `UPDATE rag_documents
+             SET ingestion_status = 'processing',
+                 ingestion_attempts = ingestion_attempts + 1,
+                 updated_at = NOW()
+             WHERE user_id = $1 AND document_key = $2`,
+            [userId, doc.documentKey],
+          );
+          const chunkCount = await geminiMod.ingestMaterializedDocument(
             userId,
             doc.documentKey,
             doc.sourceEntityId,
             doc.content,
             doc.metadata,
+            {
+              maxChars: settings.rag_chunk_size,
+              overlap: settings.rag_chunk_overlap,
+            },
           );
           embedded++;
+          ingestedChunks += chunkCount;
+          await pool.query(
+            `UPDATE rag_documents
+             SET ingestion_status = 'indexed',
+                 indexed_at = NOW(),
+                 last_ingestion_at = NOW(),
+                 last_ingestion_error = NULL,
+                 next_retry_at = NULL,
+                 updated_at = NOW()
+             WHERE user_id = $1 AND document_key = $2`,
+            [userId, doc.documentKey],
+          );
+          processed++;
         } catch (err) {
           console.error("Failed auto-ingest for doc:", doc.documentKey, err);
+          failedDocuments.push({
+            documentKey: doc.documentKey,
+            error: err instanceof Error ? err.message : "Embedding failed.",
+          });
+          await pool.query(
+            `UPDATE rag_documents
+             SET ingestion_status = 'failed',
+                 last_ingestion_at = NOW(),
+                 last_ingestion_error = $3,
+                 next_retry_at = NOW() + LEAST(
+                   INTERVAL '6 hours',
+                   INTERVAL '5 minutes' * POWER(2, GREATEST(0, ingestion_attempts - 1))::double precision
+                 ),
+                 updated_at = NOW()
+             WHERE user_id = $1 AND document_key = $2`,
+            [
+              userId,
+              doc.documentKey,
+              err instanceof Error ? err.message : "Embedding failed.",
+            ],
+          );
+          processed++;
         }
       }
     }
   } catch (err) {
     console.error("Failed to load gemini module during sync:", err);
+    const message =
+      err instanceof Error ? err.message : "Embedding provider unavailable.";
+    await pool.query(
+      `UPDATE rag_documents
+       SET ingestion_status = 'failed',
+           last_ingestion_at = NOW(),
+           last_ingestion_error = $2,
+           next_retry_at = NOW() + INTERVAL '5 minutes',
+           updated_at = NOW()
+       WHERE user_id = $1
+         AND document_key = ANY($3::text[])`,
+      [userId, message, materializedWithHashes.map((document) => document.documentKey)],
+    );
+    failedDocuments.push({
+      documentKey: "*",
+      error: message,
+    });
   }
 
   return {
     count: materializedWithHashes.length,
     embedded,
     skipped,
+    ingestedChunks,
+    processedDocuments: materializedWithHashes.length,
+    failedDocuments,
     documentKinds: Array.from(new Set(materializedWithHashes.map((document) => document.documentKind))),
   };
+}
+
+export async function syncRagDocumentsForUser(
+  userId: number,
+  options?: {
+    forceReEmbed?: boolean;
+    retryFailedOnly?: boolean;
+    maxDocuments?: number;
+  },
+) {
+  await ensureInitialized();
+  const lease = await acquireRagSyncLease(userId);
+
+  try {
+    lease.assertActive();
+    return await syncRagDocumentsForUserUnlocked(userId, options, lease.assertActive);
+  } finally {
+    await lease.release().catch((error) => {
+      console.error("Failed to release RAG sync lease.", error);
+    });
+  }
 }
 
 export async function getRagDocumentsByUser(
@@ -636,7 +871,12 @@ export async function getRagDocumentsByUser(
              source_updated_at,
              indexed_at,
              created_at,
-             updated_at
+             updated_at,
+             ingestion_status,
+             ingestion_attempts,
+             last_ingestion_error,
+             next_retry_at,
+             last_ingestion_at
       FROM rag_documents
       WHERE ${clauses.join(" AND ")}
       ORDER BY source_updated_at DESC, id DESC

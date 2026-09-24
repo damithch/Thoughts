@@ -26,6 +26,7 @@ type AgentTaskRequestBody = {
   date?: string;
   taskId?: number;
   newStatus?: TaskStatus;
+  requestId?: string;
 };
 
 type ActionLog = {
@@ -246,11 +247,29 @@ Respond strictly with a JSON object of the following format without markdown wra
         if (act.tool === "create_thought") {
           const title = act.title || promptText;
           const category = act.category || "Reflection";
-          const mood = typeof act.mood === "number" && act.mood >= 1 && act.mood <= 10 ? act.mood : 7;
+          const mood =
+            typeof act.mood === "number" &&
+            Number.isInteger(act.mood) &&
+            act.mood >= 1 &&
+            act.mood <= 10
+              ? act.mood
+              : 7;
           const summary = act.summary || promptText;
           const bodyText = act.body || promptText;
-          const tags = Array.isArray(act.tags) && act.tags.length > 0 ? act.tags : ["agent-capture"];
-          const conceptTags = Array.isArray(act.conceptTags) ? act.conceptTags : [];
+          const normalizeTags = (value: unknown, fallback: string[]) => {
+            const normalized = Array.from(
+              new Set(
+                  (Array.isArray(value) ? value : [])
+                    .filter((tag): tag is string => typeof tag === "string")
+                    .map((tag) => tag.trim().toLowerCase())
+                    .filter(Boolean),
+              ),
+            ).slice(0, 8);
+
+            return normalized.length > 0 ? normalized : fallback;
+          };
+          const tags = normalizeTags(act.tags, ["agent-capture"]);
+          const conceptTags = normalizeTags(act.conceptTags, []);
 
           await createThought({
             title,
@@ -263,6 +282,9 @@ Respond strictly with a JSON object of the following format without markdown wra
             linkedBookIdeaId: null,
             insightReflection: "",
             userId,
+            requestId: body.requestId
+              ? `${body.requestId}:thought:${actionLogs.length}`
+              : undefined,
           });
 
           actionLogs.push({

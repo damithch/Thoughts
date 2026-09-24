@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { randomUUID } from "node:crypto";
 
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 import {
@@ -196,6 +197,7 @@ export async function createThoughtAction(formData: FormData) {
       linkedBookIdeaId,
       insightReflection,
       userId: currentUser.id,
+      requestId: formData.get("requestId")?.toString().trim() || randomUUID(),
     });
   } catch {
     failed = true;
@@ -1005,6 +1007,8 @@ export async function updateUserSettingsAction(formData: FormData) {
   if (ragEnabledKinds.length > 0) {
     patch.rag_enabled_kinds = ragEnabledKinds.map((k) => k.toString());
   }
+
+  patch.rag_exclude_hidden_thoughts = formData.get("rag_exclude_hidden_thoughts") === "on";
 
   const ragCustomPrompt = formData.get("rag_custom_prompt");
   if (ragCustomPrompt !== null) patch.rag_custom_prompt = ragCustomPrompt.toString();

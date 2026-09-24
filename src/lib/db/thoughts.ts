@@ -1,4 +1,5 @@
 import { pool } from "@/lib/db/client";
+import type { PoolClient } from "pg";
 import { ensureInitialized, seedThoughts } from "@/lib/db/init";
 import type {
   DeleteThought,
@@ -54,6 +55,7 @@ const thoughtSelect = `
 `;
 
 async function syncThoughtInsightData(
+  db: Pick<PoolClient, "query">,
   thoughtId: number,
   userId: number,
   conceptTags: string[],
@@ -68,7 +70,7 @@ async function syncThoughtInsightData(
     ),
   ).slice(0, 8);
 
-  await pool.query(
+  await db.query(
     `
       DELETE FROM thought_concept_tags
       WHERE thought_id = $1
@@ -78,7 +80,7 @@ async function syncThoughtInsightData(
 
   if (normalizedConceptTags.length > 0) {
     for (const tag of normalizedConceptTags) {
-      const { rows } = await pool.query<{ id: number }>(
+      const { rows } = await db.query<{ id: number }>(
         `
           INSERT INTO concept_tags (user_id, name)
           VALUES ($1, $2)
@@ -92,7 +94,7 @@ async function syncThoughtInsightData(
       const conceptTagId = rows[0]?.id;
 
       if (conceptTagId) {
-        await pool.query(
+        await db.query(
           `
             INSERT INTO thought_concept_tags (thought_id, concept_tag_id)
             VALUES ($1, $2)
@@ -107,7 +109,7 @@ async function syncThoughtInsightData(
   const trimmedReflection = insightReflection.trim();
 
   if (linkedBookIdeaId || trimmedReflection) {
-    await pool.query(
+    await db.query(
       `
         INSERT INTO insight_logs (thought_id, book_idea_id, reflection, updated_at)
         VALUES ($1, $2, $3, NOW())
@@ -120,7 +122,7 @@ async function syncThoughtInsightData(
       [thoughtId, linkedBookIdeaId, trimmedReflection],
     );
   } else {
-    await pool.query(
+    await db.query(
       `
         DELETE FROM insight_logs
         WHERE thought_id = $1
@@ -159,37 +161,87 @@ export async function getThoughts(): Promise<ThoughtsResult> {
 
 export async function createThought(input: NewThought) {
   await ensureInitialized();
+  const client = await pool.connect();
+  let thoughtId: number | undefined;
 
-  const { rows } = await pool.query<{ id: number }>(
-    `
-      INSERT INTO thoughts (title, category, mood, tags, excerpt, body, user_id, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      RETURNING id
-    `,
-    [input.title, input.category, input.mood, input.tags, input.summary, input.body, input.userId],
-  );
+  try {
+    await client.query("BEGIN");
 
-  const thoughtId = rows[0]?.id;
-
-  if (thoughtId) {
-    await syncThoughtInsightData(
-      thoughtId,
-      input.userId,
-      input.conceptTags,
-      input.linkedBookIdeaId,
-      input.insightReflection,
+    const { rows } = await client.query<{ id: number }>(
+      `
+        INSERT INTO thoughts (
+          title, category, mood, tags, excerpt, body, user_id, request_id, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        ON CONFLICT (user_id, request_id)
+        WHERE request_id IS NOT NULL
+        DO NOTHING
+        RETURNING id
+      `,
+      [
+        input.title,
+        input.category,
+        input.mood,
+        input.tags,
+        input.summary,
+        input.body,
+        input.userId,
+        input.requestId ?? null,
+      ],
     );
-    // Fire-and-forget: don't block the response waiting for RAG sync
-    import("./rag")
-      .then((mod) => {
-        if (mod?.syncRagDocumentsForUser) {
-          return mod.syncRagDocumentsForUser(input.userId);
-        }
-      })
-      .catch((e) => {
-        console.error("RAG sync failed:", e);
-      });
+
+    thoughtId = rows[0]?.id;
+
+    if (!thoughtId && input.requestId) {
+      const existing = await client.query<{ id: number }>(
+        `
+          SELECT id
+          FROM thoughts
+          WHERE user_id = $1 AND request_id = $2
+          LIMIT 1
+        `,
+        [input.userId, input.requestId],
+      );
+      thoughtId = existing.rows[0]?.id;
+    }
+
+    if (!thoughtId) {
+      throw new Error("Thought insert did not return an id.");
+    }
+
+    if (rows[0]?.id) {
+      await syncThoughtInsightData(
+        client,
+        thoughtId,
+        input.userId,
+        input.conceptTags,
+        input.linkedBookIdeaId,
+        input.insightReflection,
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch((rollbackError) => {
+      console.error("Failed to roll back thought transaction.", rollbackError);
+    });
+    throw error;
+  } finally {
+    client.release();
   }
+
+  // Fire-and-forget: don't block the response waiting for RAG sync
+  import("./rag")
+    .then((mod) => {
+      if (mod?.syncRagDocumentsForUser) {
+        return mod.syncRagDocumentsForUser(input.userId);
+      }
+    })
+    .catch((e) => {
+      console.error("RAG sync failed:", e);
+    });
+
+  return thoughtId;
 }
 
 export async function getThoughtsByUser(
@@ -294,40 +346,60 @@ export async function getThoughtsByUserMonth(userId: number, month: string) {
 
 export async function updateThought(input: UpdateThought) {
   await ensureInitialized();
+  const client = await pool.connect();
+  let updated = false;
 
-  const { rowCount } = await pool.query(
-    `
-      UPDATE thoughts
-      SET title = $1,
-          category = $2,
-          mood = $3,
-          tags = $4,
-          excerpt = $5,
-          body = $6,
-          updated_at = NOW()
-      WHERE id = $7
-        AND user_id = $8
-    `,
-    [
-      input.title,
-      input.category,
-      input.mood,
-      input.tags,
-      input.summary,
-      input.body,
-      input.id,
-      input.userId,
-    ],
-  );
-
-  if (rowCount === 1) {
-    await syncThoughtInsightData(
-      input.id,
-      input.userId,
-      input.conceptTags,
-      input.linkedBookIdeaId,
-      input.insightReflection,
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `
+        UPDATE thoughts
+        SET title = $1,
+            category = $2,
+            mood = $3,
+            tags = $4,
+            excerpt = $5,
+            body = $6,
+            updated_at = NOW()
+        WHERE id = $7
+          AND user_id = $8
+      `,
+      [
+        input.title,
+        input.category,
+        input.mood,
+        input.tags,
+        input.summary,
+        input.body,
+        input.id,
+        input.userId,
+      ],
     );
+
+    updated = result.rowCount === 1;
+
+    if (updated) {
+      await syncThoughtInsightData(
+        client,
+        input.id,
+        input.userId,
+        input.conceptTags,
+        input.linkedBookIdeaId,
+        input.insightReflection,
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch((rollbackError) => {
+      console.error("Failed to roll back thought update transaction.", rollbackError);
+    });
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  if (updated) {
     // Fire-and-forget: don't block the response waiting for RAG sync
     import("./rag")
       .then((mod) => {
@@ -340,7 +412,7 @@ export async function updateThought(input: UpdateThought) {
       });
   }
 
-  return rowCount === 1;
+  return updated;
 }
 
 export async function deleteThought(input: DeleteThought) {
@@ -371,6 +443,17 @@ export async function setThoughtHiddenState(input: SetThoughtHiddenState) {
     `,
     [input.isHidden, input.id, input.userId],
   );
+
+  if (rowCount === 1 && input.isHidden) {
+    await pool.query(
+      `DELETE FROM embeddings WHERE user_id = $1 AND document_key = $2`,
+      [input.userId, `thought:${input.id}`],
+    );
+    await pool.query(
+      `DELETE FROM rag_documents WHERE user_id = $1 AND document_key = $2`,
+      [input.userId, `thought:${input.id}`],
+    );
+  }
 
   return rowCount === 1;
 }

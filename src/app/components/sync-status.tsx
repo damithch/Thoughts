@@ -11,6 +11,7 @@ type SyncResult = {
   document_kinds: string[];
   processed_documents: number;
   ingested_chunks: number;
+  failed_documents: Array<{ documentKey: string; error: string }>;
 };
 
 export default function SyncStatus() {
@@ -19,13 +20,17 @@ export default function SyncStatus() {
   const [error, setError] = useState<string | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
-  async function runSync(force: boolean) {
+  async function runSync(force: boolean, retryFailed = false) {
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const url = force ? "/api/rag/documents?force=1" : "/api/rag/documents";
+      const url = retryFailed
+        ? "/api/rag/documents/retry"
+        : force
+          ? "/api/rag/documents?force=1"
+          : "/api/rag/documents";
       const res = await fetch(url, { method: "POST" });
 
       if (!res.ok) {
@@ -76,6 +81,14 @@ export default function SyncStatus() {
           className="rounded-full border border-amber-900/15 bg-amber-800 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? "Syncing…" : "⚠ Force Re-Embed All"}
+        </button>
+        <button
+          type="button"
+          onClick={() => runSync(false, true)}
+          disabled={loading}
+          className="rounded-full border border-rose-900/15 bg-rose-700 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading ? "Retrying…" : "Retry failed (up to 10)"}
         </button>
       </div>
 
@@ -142,6 +155,19 @@ export default function SyncStatus() {
               <span>Completed: {lastSyncAt}</span>
             </>
           ) : null}
+        </div>
+      ) : null}
+
+      {result?.failed_documents.length ? (
+        <div className="mt-4 rounded-xl border border-rose-900/10 bg-rose-50/80 p-3 text-sm text-rose-900">
+          <p className="font-semibold">Some documents were not indexed.</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {result.failed_documents.slice(0, 5).map((failure) => (
+              <li key={`${failure.documentKey}-${failure.error}`}>
+                {failure.documentKey}: {failure.error}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
     </section>

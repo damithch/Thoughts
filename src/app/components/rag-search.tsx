@@ -1,6 +1,16 @@
 "use client";
 import React, { useState } from "react";
 import type { RagResultItem } from "./live-rag-context";
+import type { RagDocumentKind } from "@/lib/db/types";
+
+const RAG_KINDS: { value: RagDocumentKind; label: string }[] = [
+  { value: "thought", label: "Thoughts" },
+  { value: "book_idea", label: "Book ideas" },
+  { value: "conversation_summary", label: "Conversations" },
+  { value: "ba_entry", label: "BA entries" },
+  { value: "day_note", label: "Day notes" },
+  { value: "daily_rollup", label: "Daily rollups" },
+];
 
 export function RagSearch() {
   const [query, setQuery] = useState("");
@@ -8,6 +18,26 @@ export function RagSearch() {
   const [answer, setAnswer] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [kinds, setKinds] = useState<RagDocumentKind[]>([]);
+  const [tags, setTags] = useState("");
+  const [categories, setCategories] = useState("");
+  const [minMood, setMinMood] = useState("");
+  const [maxMood, setMaxMood] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  function getFilters() {
+    return {
+      ...(kinds.length ? { kinds } : {}),
+      ...(tags.trim() ? { tags: tags.split(",").map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(categories.trim() ? { categories: categories.split(",").map((value) => value.trim()).filter(Boolean) } : {}),
+      ...(minMood ? { minMood: Number(minMood) } : {}),
+      ...(maxMood ? { maxMood: Number(maxMood) } : {}),
+      ...(fromDate ? { fromDate } : {}),
+      ...(toDate ? { toDate } : {}),
+    };
+  }
 
   async function runRetrieval() {
     setError(null);
@@ -20,7 +50,7 @@ export function RagSearch() {
       const r = await fetch("/api/retrieval", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, k: 6 }),
+        body: JSON.stringify({ query, k: 6, ...getFilters() }),
       });
 
       if (!r.ok) throw new Error(`Retrieval failed: ${r.status}`);
@@ -43,7 +73,7 @@ export function RagSearch() {
       const r = await fetch("/api/rag/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: query, k: 6 }),
+        body: JSON.stringify({ question: query, k: 6, ...getFilters() }),
       });
 
       if (!r.ok) {
@@ -75,6 +105,46 @@ export function RagSearch() {
           <button className="flex-1 rounded-lg bg-emerald-900 px-3 py-2 text-sm text-white sm:flex-none" onClick={runRetrieval} disabled={loading}>Retrieve</button>
           <button className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white sm:flex-none" onClick={runGenerate} disabled={loading}>Generate</button>
         </div>
+        <button
+          type="button"
+          className="mt-3 text-xs font-medium text-emerald-800 underline-offset-2 hover:underline"
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          {filtersOpen ? "Hide filters" : "Filter retrieval"}
+        </button>
+        {filtersOpen ? (
+          <div className="mt-3 space-y-3 rounded-lg border border-emerald-950/10 bg-white/60 p-3">
+            <div>
+              <p className="text-xs font-medium text-stone-700">Document types</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {RAG_KINDS.map((kind) => (
+                  <label key={kind.value} className="flex items-center gap-1.5 text-xs text-stone-700">
+                    <input
+                      type="checkbox"
+                      checked={kinds.includes(kind.value)}
+                      onChange={(event) =>
+                        setKinds((current) =>
+                          event.target.checked
+                            ? [...current, kind.value]
+                            : current.filter((value) => value !== kind.value),
+                        )
+                      }
+                    />
+                    {kind.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input className="rounded-lg border px-2 py-1.5 text-xs" placeholder="Tags (comma separated)" value={tags} onChange={(event) => setTags(event.target.value)} />
+              <input className="rounded-lg border px-2 py-1.5 text-xs" placeholder="Categories (comma separated)" value={categories} onChange={(event) => setCategories(event.target.value)} />
+              <input className="rounded-lg border px-2 py-1.5 text-xs" type="number" min={1} max={10} placeholder="Minimum mood" value={minMood} onChange={(event) => setMinMood(event.target.value)} />
+              <input className="rounded-lg border px-2 py-1.5 text-xs" type="number" min={1} max={10} placeholder="Maximum mood" value={maxMood} onChange={(event) => setMaxMood(event.target.value)} />
+              <label className="text-[11px] text-stone-500">From date<input className="mt-1 block w-full rounded-lg border px-2 py-1.5 text-xs text-stone-700" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label>
+              <label className="text-[11px] text-stone-500">To date<input className="mt-1 block w-full rounded-lg border px-2 py-1.5 text-xs text-stone-700" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {error ? <div className="mt-3 text-sm text-red-700">{error}</div> : null}

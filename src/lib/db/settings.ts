@@ -19,6 +19,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   rag_chunk_size: 1500,
   rag_chunk_overlap: 200,
   rag_enabled_kinds: ALL_RAG_KINDS,
+  rag_exclude_hidden_thoughts: true,
   rag_custom_prompt: "",
 
   // AI Agent
@@ -54,15 +55,29 @@ export async function getUserSettings(userId: number): Promise<UserSettings> {
   }
 
   const stored = rows[0].settings;
+  const ragChunkSize = clampInt(
+    stored.rag_chunk_size,
+    500,
+    3000,
+    DEFAULT_USER_SETTINGS.rag_chunk_size,
+  );
+  const ragChunkOverlap = Math.min(
+    clampInt(stored.rag_chunk_overlap, 0, 500, DEFAULT_USER_SETTINGS.rag_chunk_overlap),
+    ragChunkSize - 1,
+  );
 
   // Merge stored values over defaults, ensuring every key has a valid value.
   return {
     rag_default_k: clampInt(stored.rag_default_k, 1, 50, DEFAULT_USER_SETTINGS.rag_default_k),
     rag_k_thought: clampInt(stored.rag_k_thought, 1, 50, DEFAULT_USER_SETTINGS.rag_k_thought),
     rag_k_summary: clampInt(stored.rag_k_summary, 1, 50, DEFAULT_USER_SETTINGS.rag_k_summary),
-    rag_chunk_size: clampInt(stored.rag_chunk_size, 500, 3000, DEFAULT_USER_SETTINGS.rag_chunk_size),
-    rag_chunk_overlap: clampInt(stored.rag_chunk_overlap, 0, 500, DEFAULT_USER_SETTINGS.rag_chunk_overlap),
+    rag_chunk_size: ragChunkSize,
+    rag_chunk_overlap: ragChunkOverlap,
     rag_enabled_kinds: parseRagKinds(stored.rag_enabled_kinds),
+    rag_exclude_hidden_thoughts: safeBool(
+      stored.rag_exclude_hidden_thoughts,
+      DEFAULT_USER_SETTINGS.rag_exclude_hidden_thoughts,
+    ),
     rag_custom_prompt: safeString(stored.rag_custom_prompt, DEFAULT_USER_SETTINGS.rag_custom_prompt),
 
     agent_temperature: clampFloat(stored.agent_temperature, 0, 1, DEFAULT_USER_SETTINGS.agent_temperature),

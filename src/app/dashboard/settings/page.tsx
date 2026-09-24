@@ -170,7 +170,10 @@ export default async function SettingsPage({
 
             {/* Enabled document kinds */}
             <div className="mt-5">
-              <p className="text-xs font-medium text-stone-700 mb-2">Enabled Document Types</p>
+              <p className="text-xs font-medium text-stone-700 mb-2">Included Document Types</p>
+              <p className="mb-2 text-[11px] text-stone-400">
+                Disabled kinds are removed from the RAG index and cannot be retrieved.
+              </p>
               <div className="flex flex-wrap gap-3">
                 {ALL_RAG_KINDS.map((kind) => (
                   <label
@@ -189,6 +192,21 @@ export default async function SettingsPage({
                 ))}
               </div>
             </div>
+
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-3">
+              <input
+                type="checkbox"
+                name="rag_exclude_hidden_thoughts"
+                defaultChecked={settings.rag_exclude_hidden_thoughts}
+                className="mt-0.5 h-4 w-4 rounded border-stone-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span>
+                <span className="block text-sm font-medium text-stone-800">Exclude hidden thoughts</span>
+                <span className="mt-0.5 block text-[11px] text-stone-500">
+                  Hidden thoughts stay out of materialization and retrieval. Uncheck only if they should be searchable.
+                </span>
+              </span>
+            </label>
 
             {/* Custom RAG prompt */}
             <div className="mt-5">

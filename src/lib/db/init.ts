@@ -128,6 +128,17 @@ export async function ensureInitialized() {
       `);
 
       await pool.query(`
+        ALTER TABLE thoughts
+        ADD COLUMN IF NOT EXISTS request_id TEXT
+      `);
+
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS thoughts_user_request_id_idx
+        ON thoughts (user_id, request_id)
+        WHERE request_id IS NOT NULL
+      `);
+
+      await pool.query(`
         CREATE TABLE IF NOT EXISTS daily_tasks (
           id BIGSERIAL PRIMARY KEY,
           user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -392,6 +403,28 @@ export async function ensureInitialized() {
         ALTER TABLE rag_documents
         ADD COLUMN IF NOT EXISTS content_hash TEXT
       `);
+      await pool.query(`
+        ALTER TABLE rag_documents
+        ADD COLUMN IF NOT EXISTS ingestion_status TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS ingestion_attempts INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS last_ingestion_error TEXT,
+        ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS last_ingestion_at TIMESTAMPTZ
+      `);
+      await pool.query(`
+        UPDATE rag_documents
+        SET ingestion_status = 'indexed'
+        WHERE ingestion_status = 'pending' AND indexed_at IS NOT NULL
+      `);
+      await pool.query(`
+        ALTER TABLE rag_documents
+        DROP CONSTRAINT IF EXISTS rag_documents_ingestion_status_check
+      `);
+      await pool.query(`
+        ALTER TABLE rag_documents
+        ADD CONSTRAINT rag_documents_ingestion_status_check
+        CHECK (ingestion_status IN ('pending', 'processing', 'indexed', 'failed'))
+      `);
 
       await pool.query(`
         CREATE INDEX IF NOT EXISTS rag_documents_user_kind_idx
@@ -401,6 +434,21 @@ export async function ensureInitialized() {
       await pool.query(`
         CREATE INDEX IF NOT EXISTS rag_documents_user_source_date_idx
         ON rag_documents (user_id, source_date DESC, indexed_at DESC)
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rag_sync_leases (
+          user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          lease_id TEXT NOT NULL,
+          acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS rag_sync_leases_expires_idx
+        ON rag_sync_leases (expires_at)
       `);
 
       try {

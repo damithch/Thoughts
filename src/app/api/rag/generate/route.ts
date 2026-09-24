@@ -4,15 +4,24 @@ import { pool } from "@/lib/db/client";
 import { getUserSettings } from "@/lib/db/settings";
 import { embedTexts, generateWithFallback, GeminiApiError } from "@/lib/gemini";
 import { resolveTemporalRange } from "@/lib/temporal";
+import { rankHybridResults, selectDiverseResults } from "@/lib/rag-retrieval";
+import {
+  appendRagFilterClauses,
+  parseRagQueryFilters,
+  type RagQueryFilters,
+} from "@/lib/rag-filters";
 import crypto from "node:crypto";
 
 type RetrievalRow = {
   document_key: string;
+  document_kind: string;
+  source_date: string | null;
   source_entity_id: string;
   chunk_index: number;
   chunk_text: string;
   metadata: Record<string, unknown>;
   distance: number;
+  keyword_rank?: number;
 };
 
 export async function POST(request: Request) {
@@ -22,7 +31,7 @@ export async function POST(request: Request) {
 
   const settings = await getUserSettings(currentUser.id);
 
-  let payload: { question?: string; k?: number; kThought?: number; kSummary?: number };
+  let payload: { question?: string; k?: number; kThought?: number; kSummary?: number } & RagQueryFilters;
 
   try {
     payload = await request.json() as typeof payload;
@@ -31,11 +40,20 @@ export async function POST(request: Request) {
   }
 
   const question = (payload.question ?? "").toString().trim();
-  const k = Math.max(1, Math.min(Number(payload.k ?? settings.rag_default_k), 50));
+  const kValue = payload.k ?? settings.rag_default_k;
+  if (!Number.isInteger(kValue) || kValue < 1 || kValue > 50) {
+    return NextResponse.json({ error: "k must be an integer between 1 and 50." }, { status: 400 });
+  }
+  const k = kValue;
 
   if (!question) return NextResponse.json({ error: "Question is required." }, { status: 400 });
 
   try {
+    const filters = parseRagQueryFilters(payload, settings.rag_enabled_kinds);
+    if (filters.error) {
+      return NextResponse.json({ error: filters.error }, { status: 400 });
+    }
+    const queryFilters = filters.value!;
     let qEmb: number[] = [];
     const useSynthetic = request.headers.get("x-use-synthetic-embedding") === "1";
 
@@ -48,43 +66,97 @@ export async function POST(request: Request) {
 
     const embStr = `[${qEmb.join(",")}]`;
 
-    const kThought = Math.max(1, Math.min(Number(payload.kThought ?? settings.rag_k_thought), 50));
-    const kSummary = Math.max(1, Math.min(Number(payload.kSummary ?? settings.rag_k_summary), 50));
+    const kThoughtValue = payload.kThought ?? settings.rag_k_thought;
+    const kSummaryValue = payload.kSummary ?? settings.rag_k_summary;
+    if (!Number.isInteger(kThoughtValue) || kThoughtValue < 1 || kThoughtValue > 50 ||
+        !Number.isInteger(kSummaryValue) || kSummaryValue < 1 || kSummaryValue > 50) {
+      return NextResponse.json({ error: "kThought and kSummary must be integers between 1 and 50." }, { status: 400 });
+    }
+    const kThought = kThoughtValue;
+    const kSummary = kSummaryValue;
+    const candidateK = Math.min(50, Math.max(k, kThought, kSummary) * 3);
 
     let rows: RetrievalRow[] = [];
 
     try {
       // Parallel retrieval for thoughts/general docs and conversation_summary logs via vector
+      const thoughtClauses = [
+        "e.user_id = $2",
+        "d.document_kind <> 'conversation_summary'",
+      ];
+      const thoughtValues: unknown[] = [embStr, currentUser.id];
+      appendRagFilterClauses(thoughtClauses, thoughtValues, queryFilters, "d");
+      const summaryClauses = [
+        "e.user_id = $2",
+        "d.document_kind = 'conversation_summary'",
+      ];
+      const summaryValues: unknown[] = [embStr, currentUser.id];
+      appendRagFilterClauses(summaryClauses, summaryValues, queryFilters, "d");
+
       const [thoughtRes, summaryRes] = await Promise.all([
         pool.query<RetrievalRow>(
           `
-            SELECT e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+            SELECT e.document_key, d.document_kind, d.source_date, e.source_entity_id,
+                   e.chunk_index, e.chunk_text, e.metadata,
                    e.embedding <-> $1::vector AS distance
             FROM embeddings e
-            JOIN rag_documents d ON e.document_key = d.document_key
-            WHERE e.user_id = $2 AND d.document_kind <> 'conversation_summary'
+            JOIN rag_documents d
+              ON e.document_key = d.document_key
+             AND e.user_id = d.user_id
+            WHERE ${thoughtClauses.join(" AND ")}
             ORDER BY distance ASC
-            LIMIT $3
+            LIMIT ${Math.max(kThought, candidateK)}
           `,
-          [embStr, currentUser.id, kThought],
+          thoughtValues,
         ),
         pool.query<RetrievalRow>(
           `
-            SELECT e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+            SELECT e.document_key, d.document_kind, d.source_date, e.source_entity_id,
+                   e.chunk_index, e.chunk_text, e.metadata,
                    e.embedding <-> $1::vector AS distance
             FROM embeddings e
-            JOIN rag_documents d ON e.document_key = d.document_key
-            WHERE e.user_id = $2 AND d.document_kind = 'conversation_summary'
+            JOIN rag_documents d
+              ON e.document_key = d.document_key
+             AND e.user_id = d.user_id
+            WHERE ${summaryClauses.join(" AND ")}
             ORDER BY distance ASC
-            LIMIT $3
+            LIMIT ${Math.max(kSummary, candidateK)}
           `,
-          [embStr, currentUser.id, kSummary],
+          summaryValues,
         ),
       ]);
 
       rows = [...thoughtRes.rows, ...summaryRes.rows]
         .sort((a, b) => Number(a.distance) - Number(b.distance))
-        .slice(0, k);
+        ;
+
+      const keywordClauses = ["d.user_id = $1", "d.document_kind = ANY($2::text[])"];
+      const keywordValues: unknown[] = [currentUser.id, queryFilters.kinds];
+      appendRagFilterClauses(keywordClauses, keywordValues, queryFilters, "d");
+      const queryPlaceholder = keywordValues.length + 1;
+      keywordClauses.push(
+        `to_tsvector('simple', coalesce(d.title, '') || ' ' || coalesce(d.content, '')) @@ plainto_tsquery('simple', $${queryPlaceholder})`,
+      );
+      keywordValues.push(question);
+      const keywordRes = await pool.query<RetrievalRow>(
+        `
+          SELECT d.document_key, d.document_kind, d.source_date, d.source_entity_id,
+                 0 AS chunk_index, d.content AS chunk_text, d.metadata,
+                 1 AS distance,
+                 ts_rank(
+                   to_tsvector('simple', coalesce(d.title, '') || ' ' || coalesce(d.content, '')),
+                   plainto_tsquery('simple', $${queryPlaceholder})
+                 ) AS keyword_rank
+          FROM rag_documents d
+          WHERE ${keywordClauses.join(" AND ")}
+          ORDER BY keyword_rank DESC
+          LIMIT ${candidateK}
+        `,
+        keywordValues,
+      );
+      const seen = new Set(rows.map((row) => `${row.document_key}:${row.chunk_index}`));
+      rows.push(...keywordRes.rows.filter((row) => !seen.has(`${row.document_key}:${row.chunk_index}`)));
+      rows = rankHybridResults(rows).slice(0, candidateK);
     } catch (err) {
       console.warn("[RAG Generate] Vector search query failed, using text fallback:", err);
     }
@@ -92,16 +164,22 @@ export async function POST(request: Request) {
     // Fallback: If vector search yields zero results, search rag_documents directly
     if (rows.length === 0) {
       const searchPattern = `%${question.replace(/[%_]/g, "\\$&")}%`;
+      const fallbackClauses = [
+        "d.user_id = $1",
+        "(d.title ILIKE $2 OR d.content ILIKE $2)",
+      ];
+      const fallbackValues: unknown[] = [currentUser.id, searchPattern];
+      appendRagFilterClauses(fallbackClauses, fallbackValues, queryFilters, "d");
       const fallbackRes = await pool.query<RetrievalRow>(
         `
-          SELECT document_key, source_entity_id, 0 AS chunk_index, content AS chunk_text, metadata, 0 AS distance
-          FROM rag_documents
-          WHERE user_id = $1
-            AND (title ILIKE $2 OR content ILIKE $2)
-          ORDER BY source_updated_at DESC
-          LIMIT $3
+          SELECT document_key, document_kind, source_date, source_entity_id,
+                 0 AS chunk_index, content AS chunk_text, metadata, 0 AS distance
+          FROM rag_documents d
+          WHERE ${fallbackClauses.join(" AND ")}
+          ORDER BY d.source_updated_at DESC
+          LIMIT ${candidateK}
         `,
-        [currentUser.id, searchPattern, k],
+        fallbackValues,
       );
       rows = fallbackRes.rows;
     }
@@ -115,36 +193,49 @@ export async function POST(request: Request) {
         `[RAG Generate] Temporal range detected: "${temporalRange.label}" → ${temporalRange.startDate} to ${temporalRange.endDate}`,
       );
 
+      const temporalClauses = [
+        "d.user_id = $1",
+        "d.source_date >= $2::date",
+        "d.source_date <= $3::date",
+      ];
+      const temporalValues: unknown[] = [
+        currentUser.id,
+        temporalRange.startDate,
+        temporalRange.endDate,
+      ];
+      appendRagFilterClauses(temporalClauses, temporalValues, queryFilters, "d");
       const temporalRes = await pool.query<RetrievalRow>(
         `
-          SELECT document_key, source_entity_id, 0 AS chunk_index, content AS chunk_text, metadata, 0 AS distance
-          FROM rag_documents
-          WHERE user_id = $1
-            AND source_date >= $2::date
-            AND source_date <= $3::date
-          ORDER BY source_date DESC, source_updated_at DESC
-          LIMIT $4
+          SELECT document_key, document_kind, source_date, source_entity_id,
+                 0 AS chunk_index, content AS chunk_text, metadata, 0 AS distance
+          FROM rag_documents d
+          WHERE ${temporalClauses.join(" AND ")}
+          ORDER BY d.source_date DESC, d.source_updated_at DESC
+          LIMIT ${candidateK}
         `,
-        [currentUser.id, temporalRange.startDate, temporalRange.endDate, k],
+        temporalValues,
       );
 
       const existingKeys = new Set(temporalRes.rows.map((row) => row.document_key));
       const vectorOnly = rows.filter((row) => !existingKeys.has(row.document_key));
-      rows = [...temporalRes.rows, ...vectorOnly];
+      rows = rankHybridResults([...temporalRes.rows, ...vectorOnly]);
     }
+
+    rows = selectDiverseResults(rows, k);
 
     // Build prompt parts: instruction + each retrieved chunk as its own part + question
     const temporalContext = temporalRange
       ? `\n\nThe user is asking about the period from ${temporalRange.startDate} to ${temporalRange.endDate} (${temporalRange.label}). Prioritise information from this date range in your answer.`
       : "";
 
-    const baseInstruction = `You are a helpful assistant with access to the user's private journal excerpts. Rely strictly on the information provided in the excerpts to give a direct, clear, and comprehensive answer to the user's question. If the information is not present in the excerpts, respond with "I don't know".${temporalContext}`;
+    const baseInstruction = `You are a helpful assistant with access to the user's private journal excerpts. Rely strictly on the information provided in the excerpts to give a direct, clear, and comprehensive answer to the user's question. If the information is not present in the excerpts, respond with "I don't know". Cite supporting excerpts inline using their exact labels, such as [Excerpt 1]. Do not invent citations or cite an excerpt that does not support the claim.${temporalContext}`;
     const instruction = settings.rag_custom_prompt
       ? `${baseInstruction}\n\nAdditional instructions from user: ${settings.rag_custom_prompt}`
       : baseInstruction;
 
     const chunkParts = rows.map((r, i) => {
-      return `[Excerpt #${i + 1}] (Document: ${r.document_key})\n${r.chunk_text}`;
+      const date = r.source_date ? `, Date: ${r.source_date}` : "";
+      return `[Excerpt ${i + 1}] (Document: ${r.document_key}, Kind: ${r.document_kind}${date})\n${r.chunk_text}`;
     });
 
     const questionPart = `USER QUESTION:\n${question}\n\nANSWER:`;
@@ -178,7 +269,7 @@ export async function POST(request: Request) {
         token_exceeded: 400,
         auth_error: 401,
         overloaded: 503,
-        api_error: 502,
+        api_error: error.statusCode === 504 ? 504 : 502,
       };
       return NextResponse.json(
         { error: error.message, errorType: error.errorType, details: error.message },

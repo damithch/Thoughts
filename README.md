@@ -193,7 +193,10 @@ GEMINI_API_KEY=your-gemini-api-key
 # Optional Gemini configuration
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 GEMINI_LLM_MODEL=gemini-3.6-flash
-EMBEDDING_DIM=768
+EMBEDDING_DIM=1536
+
+# Optional RAG sync lease duration (seconds, default 600; max 3600)
+RAG_SYNC_LEASE_SECONDS=600
 
 # Required only for external MCP access
 MCP_API_KEY=replace-with-a-secret-api-key

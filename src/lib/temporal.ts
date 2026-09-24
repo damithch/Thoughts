@@ -1,9 +1,18 @@
-import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
+import { getCurrentColomboDate, shiftColomboDate } from "./time.ts";
+import type { RagQueryFilters } from "./rag-filters";
 
 export type TemporalRange = {
   startDate: string;
   endDate: string;
   label: string;
+};
+
+export type RagQueryIntent = {
+  originalQuery: string;
+  rewrittenQuery: string;
+  temporalRange: TemporalRange | null;
+  filters: Pick<RagQueryFilters, "tags" | "categories" | "minMood" | "maxMood" | "fromDate" | "toDate">;
+  matchedPhrases: string[];
 };
 
 /**
@@ -131,19 +140,83 @@ const TEMPORAL_PATTERNS: Array<{
 
 /**
  * Resolve a user query to a temporal date range, if it contains
- * a recognisable date-relative expression.  Returns `null` when
+ * a recognisable date-relative expression. Returns `null` when
  * no temporal intent is detected.
  */
 export function resolveTemporalRange(query: string): TemporalRange | null {
   const today = getCurrentColomboDate();
-
   for (const { pattern, resolve } of TEMPORAL_PATTERNS) {
     const match = query.match(pattern);
+    if (match) return resolve(today, match);
+  }
+  return null;
+}
 
-    if (match) {
-      return resolve(today, match);
-    }
+const SAFE_FILTER_PATTERNS: Array<{
+  pattern: RegExp;
+  getValue: (match: RegExpMatchArray) => { field: "tags" | "categories"; value: string } | null;
+}> = [
+  {
+    pattern: /\btag(?:ged)?\s*(?:with|:)?\s*(?:"([^"]+)"|'([^']+)'|([a-z0-9][a-z0-9 _-]*?))(?=\s*(?:,|$|\b(?:and|about|from|for|during|last|past|today|yesterday|this|mood|category)\b))/i,
+    getValue: (match) => ({ field: "tags", value: match[1] || match[2] || match[3] }),
+  },
+  {
+    pattern: /\bcategory\s*(?::|is|=)?\s*(?:"([^"]+)"|'([^']+)'|([a-z0-9][a-z0-9 _-]*?))(?=\s*(?:,|$|\b(?:and|about|from|for|during|last|past|today|yesterday|this|mood|tag)\b))/i,
+    getValue: (match) => ({ field: "categories", value: match[1] || match[2] || match[3] }),
+  },
+];
+
+function extractMood(query: string) {
+  const match = query.match(/\bmood\s*(?:is\s*)?(>=|at least|above|over|=)\s*(10|[1-9])\b/i)
+    || query.match(/\bmood\s*(10|[1-9])\s*\+/i);
+  if (!match) return null;
+  const value = Number(match[2] || match[1]);
+  if (!Number.isInteger(value) || value < 1 || value > 10) return null;
+  return { value, operator: match[1] === "=" ? "equal" as const : "min" as const, text: match[0] };
+}
+
+/** Extract only unambiguous retrieval intents and remove control phrases. */
+export function extractRagQueryIntent(query: string): RagQueryIntent {
+  let rewrittenQuery = query.trim();
+  const matchedPhrases: string[] = [];
+  const filters: RagQueryIntent["filters"] = {};
+
+  for (const { pattern, getValue } of SAFE_FILTER_PATTERNS) {
+    const match = rewrittenQuery.match(pattern);
+    if (!match) continue;
+    const extracted = getValue(match);
+    const value = extracted?.value.trim();
+    if (!extracted || !value) continue;
+    filters[extracted.field] = [value];
+    matchedPhrases.push(match[0]);
+    rewrittenQuery = rewrittenQuery.replace(match[0], " ");
   }
 
-  return null;
+  const mood = extractMood(rewrittenQuery);
+  if (mood) {
+    if (mood.operator === "equal") {
+      filters.minMood = mood.value;
+      filters.maxMood = mood.value;
+    } else {
+      filters.minMood = mood.value;
+    }
+    matchedPhrases.push(mood.text);
+    rewrittenQuery = rewrittenQuery.replace(mood.text, " ");
+  }
+
+  const temporalRange = resolveTemporalRange(rewrittenQuery);
+  if (temporalRange) {
+    const temporalMatch = TEMPORAL_PATTERNS.find(({ pattern }) => pattern.test(rewrittenQuery));
+    const match = temporalMatch && rewrittenQuery.match(temporalMatch.pattern);
+    if (match) {
+      matchedPhrases.push(match[0]);
+      rewrittenQuery = rewrittenQuery.replace(match[0], " ");
+    }
+    filters.fromDate = temporalRange.startDate;
+    filters.toDate = temporalRange.endDate;
+  }
+
+  rewrittenQuery = rewrittenQuery.replace(/\s+/g, " ").replace(/\s+([,?.])/g, "$1").trim();
+  if (!rewrittenQuery) rewrittenQuery = "entries";
+  return { originalQuery: query, rewrittenQuery, temporalRange, filters, matchedPhrases };
 }

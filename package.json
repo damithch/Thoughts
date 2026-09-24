@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node scripts/run-tests.mjs"
+    "test": "node --experimental-strip-types scripts/run-tests.mjs",
+    "test:query-intent": "node --experimental-default-type=module --experimental-strip-types scripts/query-intent-eval.mts"
   },
   "dependencies": {
     "next": "16.2.7",

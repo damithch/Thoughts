@@ -72,6 +72,7 @@ export type NewThought = {
   linkedBookIdeaId: number | null;
   insightReflection: string;
   userId: number;
+  requestId?: string;
 };
 
 export type UpdateThought = {
@@ -313,6 +314,11 @@ export type RagDocument = {
   indexed_at: Date;
   created_at: Date;
   updated_at: Date;
+  ingestion_status: "pending" | "processing" | "indexed" | "failed";
+  ingestion_attempts: number;
+  last_ingestion_error: string | null;
+  next_retry_at: Date | null;
+  last_ingestion_at: Date | null;
 };
 
 export type UpdateTaskInput = {
@@ -347,6 +353,7 @@ export type UserSettings = {
   rag_chunk_size: number;          // default: 1500
   rag_chunk_overlap: number;       // default: 200
   rag_enabled_kinds: RagDocumentKind[]; // default: all 6 kinds
+  rag_exclude_hidden_thoughts: boolean; // default: true
   rag_custom_prompt: string;       // default: "" (appended to built-in prompt)
 
   // AI Agent

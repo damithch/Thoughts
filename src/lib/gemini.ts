@@ -5,7 +5,15 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "
 // Use current Gemini naming by default; allow overrides via env.
 const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
 const GEMINI_LLM_MODEL = process.env.GEMINI_LLM_MODEL ?? "gemini-3.6-flash";
-const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 768);
+const DATABASE_EMBEDDING_DIM = 1536;
+const configuredEmbeddingDim = Number(process.env.EMBEDDING_DIM ?? DATABASE_EMBEDDING_DIM);
+if (configuredEmbeddingDim !== DATABASE_EMBEDDING_DIM) {
+  throw new Error(
+    `EMBEDDING_DIM must be ${DATABASE_EMBEDDING_DIM} to match the pgvector schema; received ${configuredEmbeddingDim}.`,
+  );
+}
+const EMBEDDING_DIM = DATABASE_EMBEDDING_DIM;
+const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS ?? 60_000);
 
 // Embedding model fallback chain. When the primary embedding model is
 // unavailable (rate-limited, 503, deprecated), try these alternatives.
@@ -113,34 +121,54 @@ async function callGenerativeApi(path: string, body: unknown) {
   let lastBody = "";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GEMINI_REQUEST_TIMEOUT_MS);
 
-    const text = await resp.text();
-    lastStatus = resp.status;
-    lastBody = text;
-
-    if (resp.ok) {
+    let resp: Response;
+    try {
       try {
-        return JSON.parse(text);
-      } catch (e) {
-        return text;
+        resp = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw new GeminiApiError(
+            504,
+            "api_error",
+            `Gemini request timed out after ${GEMINI_REQUEST_TIMEOUT_MS} ms.`,
+            "",
+          );
+        }
+        throw error;
       }
-    }
+      const text = await resp.text();
+      lastStatus = resp.status;
+      lastBody = text;
 
-    // For transient server-side errors, retry after a delay.
-    if (resp.status === 503 || resp.status === 429 || resp.status >= 500) {
-      const backoffMs = 500 * Math.pow(2, attempt - 1);
-      await new Promise((res) => setTimeout(res, backoffMs));
-      continue;
-    }
+      if (resp.ok) {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          return text;
+        }
+      }
 
-    // Non-retriable client error: classify and throw immediately.
-    const classified = classifyGeminiError(resp.status, text);
-    throw new GeminiApiError(resp.status, classified.errorType, classified.message, text);
+      // For transient server-side errors, retry after a delay.
+      if (resp.status === 503 || resp.status === 429 || resp.status >= 500) {
+        const backoffMs = 500 * Math.pow(2, attempt - 1);
+        await new Promise((res) => setTimeout(res, backoffMs));
+        continue;
+      }
+
+      // Non-retriable client error: classify and throw immediately.
+      const classified = classifyGeminiError(resp.status, text);
+      throw new GeminiApiError(resp.status, classified.errorType, classified.message, text);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   // All retries exhausted — classify the last error we saw.
@@ -168,6 +196,7 @@ export async function embedTexts(texts: string[]) {
           content: {
             parts: [{ text: t }],
           },
+          outputDimensionality: EMBEDDING_DIM,
         };
 
         const json = await callGenerativeApi(path, body);
@@ -190,6 +219,12 @@ export async function embedTexts(texts: string[]) {
           else if (resEmb && Array.isArray(resEmb.values)) vec = resEmb.values;
         }
 
+        if (vec.length !== EMBEDDING_DIM) {
+          throw new Error(
+            `Embedding model "${model}" returned ${vec.length} dimensions; expected ${EMBEDDING_DIM}.`,
+          );
+        }
+
         embeddings.push(vec);
         embedded = true;
 
@@ -208,28 +243,11 @@ export async function embedTexts(texts: string[]) {
     }
 
     if (!embedded) {
-      embeddings.push([]);
+      throw new Error("Embedding generation failed for one or more chunks.");
     }
   }
 
-  // Normalize embeddings to the configured dimension: truncate or pad with zeros.
-  const dim = EMBEDDING_DIM || 1536;
-  const normalized = embeddings.map((vec) => {
-    if (!vec || !Array.isArray(vec) || vec.length === 0) {
-      return new Array(dim).fill(0);
-    }
-
-    if (vec.length === dim) return vec;
-
-    if (vec.length > dim) return vec.slice(0, dim);
-
-    // pad with zeros
-    const out = vec.slice();
-    while (out.length < dim) out.push(0);
-    return out;
-  });
-
-  return normalized;
+  return embeddings;
 }
 
 export async function generateFromPrompt(promptOrParts: string | string[], maxOutputTokens = 2048, temperature = 0.0, modelOverride?: string) {
@@ -339,8 +357,19 @@ export async function generateWithFallback(
   throw lastError ?? new Error("All fallback models failed.");
 }
 
-export async function ingestMaterializedDocument(userId: number, documentKey: string, sourceEntityId: string, text: string, metadata: Record<string, unknown> = {}) {
-  const chunks = chunkText(text, 1500, 300);
+export async function ingestMaterializedDocument(
+  userId: number,
+  documentKey: string,
+  sourceEntityId: string,
+  text: string,
+  metadata: Record<string, unknown> = {},
+  chunkOptions?: { maxChars?: number; overlap?: number },
+) {
+  const chunks = chunkText(
+    text,
+    chunkOptions?.maxChars ?? 1500,
+    chunkOptions?.overlap ?? 300,
+  );
 
   if (chunks.length === 0) return 0;
 

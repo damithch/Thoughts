@@ -1,0 +1,27 @@
+[
+  {
+    "query": "focus and boundaries last week",
+    "rewrittenQuery": "focus and boundaries",
+    "fromDate": "2026-09-14",
+    "toDate": "2026-09-20"
+  },
+  {
+    "query": "notes tagged with \"sleep\" today",
+    "rewrittenQuery": "notes",
+    "tag": "sleep",
+    "fromDate": "2026-09-24",
+    "toDate": "2026-09-24"
+  },
+  {
+    "query": "category: reflection mood >= 8",
+    "rewrittenQuery": "entries",
+    "category": "reflection",
+    "minMood": 8
+  },
+  {
+    "query": "today",
+    "rewrittenQuery": "entries",
+    "fromDate": "2026-09-24",
+    "toDate": "2026-09-24"
+  }
+]

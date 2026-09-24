@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 
+import { appendRagFilterClauses, parseRagQueryFilters } from "../src/lib/rag-filters.ts";
+import { rankHybridResults, selectDiverseResults } from "../src/lib/rag-retrieval.ts";
+
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
 let passed = 0;
@@ -9,10 +12,10 @@ let failed = 0;
 function test(name, fn) {
   try {
     fn();
-    console.log(`  ✓ ${name}`);
+    console.log(`  âœ“ ${name}`);
     passed++;
   } catch (err) {
-    console.error(`  ✗ ${name}`);
+    console.error(`  âœ— ${name}`);
     console.error("   ", err.message);
     failed++;
   }
@@ -22,13 +25,18 @@ function test(name, fn) {
 function chunkText(text, maxChars = 1500, overlap = 200) {
   const chunks = [];
   if (!text || !text.length) return chunks;
+  const safeMaxChars = Number.isInteger(maxChars) && maxChars > 0 ? maxChars : 1500;
+  const safeOverlap =
+    Number.isInteger(overlap) && overlap >= 0
+      ? Math.min(overlap, safeMaxChars - 1)
+      : Math.min(200, safeMaxChars - 1);
   let start = 0;
   while (start < text.length) {
-    const end = Math.min(start + maxChars, text.length);
+    const end = Math.min(start + safeMaxChars, text.length);
     const chunk = text.slice(start, end).trim();
     if (chunk) chunks.push(chunk);
     if (end === text.length) break;
-    start = Math.max(0, end - overlap);
+    start = end - safeOverlap;
   }
   return chunks;
 }
@@ -48,6 +56,111 @@ test("chunkText: splits long string into overlapping chunks", () => {
   const chunks = chunkText(text, 40, 10);
   assert.ok(chunks.length > 1);
   assert.ok(chunks[0].length <= 40);
+});
+
+test("chunkText: terminates when overlap is equal to or greater than maxChars", () => {
+  const text = "A".repeat(100);
+  const equalOverlap = chunkText(text, 20, 20);
+  const excessiveOverlap = chunkText(text, 20, 50);
+  assert.ok(equalOverlap.length > 1);
+  assert.ok(excessiveOverlap.length > 1);
+  assert.ok(equalOverlap.length <= text.length);
+  assert.ok(excessiveOverlap.length <= text.length);
+  assert.ok(equalOverlap.every((chunk) => chunk.length <= 20));
+  assert.ok(excessiveOverlap.every((chunk) => chunk.length <= 20));
+  assert.equal(equalOverlap.at(-1), "A".repeat(20));
+  assert.equal(excessiveOverlap.at(-1), "A".repeat(20));
+});
+
+// 2a. Metadata filter validation tests
+
+test("filters: validates metadata filters and normalizes values", () => {
+  const result = parseRagQueryFilters(
+    {
+      kinds: ["thought", "journal"],
+      tags: ["  focus  ", " deep-work "],
+      categories: ["  work ", "personal"],
+      minMood: 3,
+      maxMood: 9,
+      fromDate: "2024-01-02",
+      toDate: "2024-02-03",
+    },
+    ["thought", "journal", "summary"],
+  );
+
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.value.kinds, ["thought", "journal"]);
+  assert.deepEqual(result.value.tags, ["focus", "deep-work"]);
+  assert.deepEqual(result.value.categories, ["work", "personal"]);
+  assert.equal(result.value.minMood, 3);
+  assert.equal(result.value.maxMood, 9);
+  assert.equal(result.value.fromDate, "2024-01-02");
+  assert.equal(result.value.toDate, "2024-02-03");
+});
+
+test("filters: rejects invalid metadata filter inputs", () => {
+  assert.equal(parseRagQueryFilters({ kinds: [] }, ["thought"]).error, "kinds must be a non-empty array.");
+  assert.equal(parseRagQueryFilters({ kinds: ["ghost"] }, ["thought"]).error, "No requested document kinds are enabled.");
+  assert.equal(parseRagQueryFilters({ tags: ["", "valid"] }, ["thought"]).error, "tags must contain non-empty strings.");
+  assert.equal(parseRagQueryFilters({ categories: ["work", "  "] }, ["thought"]).error, "categories must contain non-empty strings.");
+  assert.equal(parseRagQueryFilters({ minMood: 11 }, ["thought"]).error, "minMood must be a number between 1 and 10.");
+  assert.equal(parseRagQueryFilters({ minMood: 8, maxMood: 7 }, ["thought"]).error, "minMood cannot be greater than maxMood.");
+  assert.equal(parseRagQueryFilters({ fromDate: "2024-02-10", toDate: "2024-02-09" }, ["thought"]).error, "fromDate cannot be after toDate.");
+  assert.equal(parseRagQueryFilters({ fromDate: "invalid-date" }, ["thought"]).error, "fromDate must be a valid YYYY-MM-DD date.");
+});
+
+test("filters: appends SQL clauses for metadata filters", () => {
+  const clauses = [];
+  const values = [];
+
+  appendRagFilterClauses(
+    clauses,
+    values,
+    {
+      kinds: ["thought"],
+      tags: ["alpha", "beta"],
+      categories: ["work"],
+      minMood: 4,
+      maxMood: 7,
+      fromDate: "2024-01-01",
+      toDate: "2024-02-01",
+    },
+    "d",
+  );
+
+  assert.equal(clauses.length, 7);
+  assert.deepEqual(values, [["thought"], ["alpha", "beta"], ["work"], 4, 7, "2024-01-01", "2024-02-01"]);
+  assert.match(clauses[0], /document_kind = ANY\(\$1::text\[\]\)/);
+  assert.match(clauses[1], /metadata->'tags'\) \?\| \$2::text\[\]/);
+  assert.match(clauses[2], /metadata->>'category' = ANY\(\$3::text\[\]\)/);
+  assert.match(clauses[3], /metadata->>'mood'\)\s*::numeric >= \$4/);
+});
+
+// 2b. Hybrid reranking and merge tests
+
+test("hybrid: reranks merged vector and keyword results by weighted score", () => {
+  const rows = [
+    { document_key: "doc-a", distance: 0.3, keyword_rank: 1 },
+    { document_key: "doc-b", distance: 0.1, keyword_rank: 0 },
+    { document_key: "doc-c", distance: 0.2, keyword_rank: 8 },
+  ];
+
+  const ranked = rankHybridResults(rows);
+  assert.deepEqual(ranked.map((row) => row.document_key), ["doc-c", "doc-a", "doc-b"]);
+});
+
+test("hybrid: preserves a per-document cap while merging diverse results", () => {
+  const rows = [
+    { document_key: "doc-1", distance: 0.8, keyword_rank: 2 },
+    { document_key: "doc-1", distance: 0.2, keyword_rank: 3 },
+    { document_key: "doc-2", distance: 0.1, keyword_rank: 6 },
+    { document_key: "doc-3", distance: 0.4, keyword_rank: 4 },
+    { document_key: "doc-4", distance: 0.6, keyword_rank: 5 },
+  ];
+
+  const selected = selectDiverseResults(rows, 4, 1);
+  assert.deepEqual(selected.map((row) => row.document_key), ["doc-1", "doc-2", "doc-3", "doc-4"]);
+  assert.equal(selected.length, 4);
 });
 
 // 2. Auth cryptography test

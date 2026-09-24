@@ -165,7 +165,10 @@ OUTPUT JSON SCHEMA:
         ? parsed.mood
         : 5,
       tags: Array.isArray(parsed.tags)
-        ? parsed.tags.filter((t: unknown) => typeof t === "string").map((t: string) => t.trim().toLowerCase()).filter(Boolean).slice(0, 8)
+        ? Array.from(new Set(parsed.tags
+            .filter((t: unknown) => typeof t === "string")
+            .map((t: string) => t.trim().toLowerCase())
+            .filter(Boolean))).slice(0, 5)
         : [],
       conceptTags: Array.isArray(parsed.conceptTags)
         ? parsed.conceptTags.filter((t: unknown) => typeof t === "string").map((t: string) => t.trim().toLowerCase()).filter(Boolean).slice(0, 8)
@@ -181,6 +184,14 @@ OUTPUT JSON SCHEMA:
           : null,
       insightReflection: typeof parsed.insightReflection === "string" ? parsed.insightReflection.trim() : "",
     };
+
+    if (!output.title || !output.category || !output.summary || !output.body) {
+      console.error("Smart capture: model returned incomplete structured output.");
+      return NextResponse.json(
+        { error: "The AI returned incomplete fields. Please try again.", errorType: "parse_error" as const },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({ ...output, modelUsed });
   } catch (error) {
