@@ -18,6 +18,7 @@ const loginMessages: Record<string, string> = {
   credentials: "Email or password is incorrect.",
   db: "The database is unavailable right now. Try again in a moment.",
   invalid: "Enter both email and password.",
+  password_reset: "Your password was reset. Please sign in with your new password.",
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -90,6 +91,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
             />
           </label>
+
+          <p className="-mt-1 text-right text-sm">
+            <Link href="/forgot-password" className="font-medium text-emerald-950">
+              Forgot password?
+            </Link>
+          </p>
 
           <button
             type="submit"

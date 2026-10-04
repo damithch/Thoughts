@@ -46,7 +46,19 @@ export type User = {
   name: string;
   email: string;
   password_hash: string;
+  password_updated_at: Date;
   created_at: Date;
+};
+
+export type PasswordResetToken = {
+  id: number;
+  user_id: number;
+  token_hash: string;
+  expires_at: Date;
+  used_at: Date | null;
+  revoked_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
 };
 
 export type NewThought = {
@@ -470,4 +482,3 @@ export type AnchorStreak = {
   totalEntries: number;
   hasToday: boolean;
 };
-

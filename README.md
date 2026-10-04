@@ -107,7 +107,7 @@ External assistants can save structured conversation summaries containing a date
 | Area | Route |
 |---|---|
 | Public landing page | `/` |
-| Authentication | `/login`, `/register` |
+| Authentication | `/login`, `/register`, `/forgot-password`, `/reset-password` |
 | Journal dashboard | `/dashboard` |
 | Daily execution | `/dashboard/today` |
 | Recurring tasks | `/dashboard/tasks` |
@@ -127,6 +127,8 @@ External assistants can save structured conversation summaries containing a date
 - `GET|POST /api/rag/documents` - Inspect, synchronize, and embed materialized RAG documents.
 - `POST /api/mcp` - MCP JSON-RPC endpoint for external assistants.
 - `POST /api/conversations/create` - Authenticated integration endpoint for conversation summaries.
+- `POST /api/auth/forgot-password` - Request a password reset link (always returns a generic response).
+- `POST /api/auth/reset-password` - Validate a reset token and set a new password.
 - `GET|POST /api/backup` - Export or restore a full JSON backup.
 - `GET /api/reports/daily` - Generate a daily report.
 - `GET /api/reports/monthly` - Generate a monthly report.
@@ -196,9 +198,19 @@ EMBEDDING_DIM=768
 # Required only for external MCP access
 MCP_API_KEY=replace-with-a-secret-api-key
 MCP_USER_ID=1
+
+# Optional password-reset email provider (Resend)
+APP_BASE_URL=http://localhost:3000
+RESEND_API_KEY=your-resend-api-key
+RESET_EMAIL_FROM=Thoughts <no-reply@example.com>
+
+# Optional: use a dedicated reset-token hashing secret
+RESET_TOKEN_SECRET=replace-with-a-long-random-secret
 ```
 
 `GOOGLE_API_KEY` can be used as an alternative to `GEMINI_API_KEY`. Never commit real credentials or expose server-only secrets in client code. If the browser-based task agent is enabled, configure its public client key according to the deployment's security model.
+
+For local development, if `RESEND_API_KEY` is not set, password reset links are logged server-side in non-production mode so you can complete the reset flow without a live email provider.
 
 ## Development commands
 

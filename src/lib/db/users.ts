@@ -9,7 +9,7 @@ export async function createUser(input: NewUser) {
     `
       INSERT INTO users (name, email, password_hash)
       VALUES ($1, $2, $3)
-      RETURNING id, name, email, password_hash, created_at
+      RETURNING id, name, email, password_hash, password_updated_at, created_at
     `,
     [input.name, input.email.toLowerCase(), input.passwordHash],
   );
@@ -22,7 +22,7 @@ export async function getUserByEmail(email: string) {
 
   const { rows } = await pool.query<User>(
     `
-      SELECT id, name, email, password_hash, created_at
+      SELECT id, name, email, password_hash, password_updated_at, created_at
       FROM users
       WHERE email = $1
       LIMIT 1
@@ -36,9 +36,11 @@ export async function getUserByEmail(email: string) {
 export async function getUserById(userId: number) {
   await ensureInitialized();
 
-  const { rows } = await pool.query<Pick<User, "id" | "name" | "email" | "created_at">>(
+  const { rows } = await pool.query<
+    Pick<User, "id" | "name" | "email" | "created_at" | "password_updated_at">
+  >(
     `
-      SELECT id, name, email, created_at
+      SELECT id, name, email, created_at, password_updated_at
       FROM users
       WHERE id = $1
       LIMIT 1

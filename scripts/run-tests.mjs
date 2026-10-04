@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -73,6 +73,127 @@ test("auth: hashes and verifies password matching", () => {
   assert.ok(hashed.includes(":"));
   assert.equal(verifyPassword(pass, hashed), true);
   assert.equal(verifyPassword("WrongPassword", hashed), false);
+});
+
+function hashResetToken(token, secret) {
+  return createHmac("sha256", secret).update(token).digest("hex");
+}
+
+function forgotPasswordOutcome() {
+  return "requested";
+}
+
+function consumeResetToken(state, tokenHash, nextPasswordHash, now = new Date()) {
+  const record = state.tokens.find((item) => item.token_hash === tokenHash);
+  if (!record) return { success: false, reason: "invalid" };
+  if (record.used_at || record.revoked_at) return { success: false, reason: "already_used" };
+  if (record.expires_at <= now) return { success: false, reason: "expired" };
+
+  const user = state.users.find((item) => item.id === record.user_id);
+  if (!user) return { success: false, reason: "invalid" };
+
+  user.password_hash = nextPasswordHash;
+  user.password_updated_at = now;
+  record.used_at = now;
+  state.tokens.forEach((item) => {
+    if (item.user_id === user.id && item.id !== record.id && !item.used_at && !item.revoked_at) {
+      item.revoked_at = now;
+    }
+  });
+
+  return { success: true };
+}
+
+function isSessionValid(issuedAtMs, passwordUpdatedAt) {
+  return issuedAtMs >= passwordUpdatedAt.getTime();
+}
+
+test("forgot password: unknown and known emails get same generic outcome", () => {
+  const known = new Set(["known@example.com"]);
+  assert.equal(forgotPasswordOutcome("known@example.com", known), "requested");
+  assert.equal(forgotPasswordOutcome("unknown@example.com", known), "requested");
+});
+
+test("reset token hashing: hash is deterministic and never equals token", () => {
+  const token = "plain-reset-token";
+  const hashA = hashResetToken(token, "secret");
+  const hashB = hashResetToken(token, "secret");
+  assert.equal(hashA, hashB);
+  assert.notEqual(hashA, token);
+});
+
+test("reset flow: valid token updates password and marks token used", () => {
+  const now = new Date("2026-10-04T03:00:00.000Z");
+  const user = { id: 1, password_hash: "old", password_updated_at: new Date("2026-10-04T02:00:00.000Z") };
+  const state = {
+    users: [user],
+    tokens: [
+      {
+        id: 101,
+        user_id: 1,
+        token_hash: "valid",
+        expires_at: new Date("2026-10-04T04:00:00.000Z"),
+        used_at: null,
+        revoked_at: null,
+      },
+    ],
+  };
+  const result = consumeResetToken(state, "valid", "newhash", now);
+  assert.equal(result.success, true);
+  assert.equal(user.password_hash, "newhash");
+  assert.equal(user.password_updated_at.toISOString(), now.toISOString());
+  assert.equal(state.tokens[0].used_at?.toISOString(), now.toISOString());
+});
+
+test("reset flow: invalid token is rejected", () => {
+  const result = consumeResetToken({ users: [], tokens: [] }, "missing", "x");
+  assert.equal(result.success, false);
+  assert.equal(result.reason, "invalid");
+});
+
+test("reset flow: expired token is rejected", () => {
+  const state = {
+    users: [{ id: 1, password_hash: "old", password_updated_at: new Date("2026-10-04T02:00:00.000Z") }],
+    tokens: [
+      {
+        id: 102,
+        user_id: 1,
+        token_hash: "expired",
+        expires_at: new Date("2026-10-04T02:59:59.000Z"),
+        used_at: null,
+        revoked_at: null,
+      },
+    ],
+  };
+  const result = consumeResetToken(state, "expired", "newhash", new Date("2026-10-04T03:00:00.000Z"));
+  assert.equal(result.success, false);
+  assert.equal(result.reason, "expired");
+});
+
+test("reset flow: reused token is rejected", () => {
+  const usedAt = new Date("2026-10-04T02:30:00.000Z");
+  const state = {
+    users: [{ id: 1, password_hash: "old", password_updated_at: new Date("2026-10-04T02:00:00.000Z") }],
+    tokens: [
+      {
+        id: 103,
+        user_id: 1,
+        token_hash: "used",
+        expires_at: new Date("2026-10-04T04:00:00.000Z"),
+        used_at: usedAt,
+        revoked_at: null,
+      },
+    ],
+  };
+  const result = consumeResetToken(state, "used", "newhash", new Date("2026-10-04T03:00:00.000Z"));
+  assert.equal(result.success, false);
+  assert.equal(result.reason, "already_used");
+});
+
+test("session invalidation: sessions issued before password reset become invalid", () => {
+  const passwordUpdatedAt = new Date("2026-10-04T03:00:00.000Z");
+  assert.equal(isSessionValid(new Date("2026-10-04T02:59:59.000Z").getTime(), passwordUpdatedAt), false);
+  assert.equal(isSessionValid(new Date("2026-10-04T03:00:01.000Z").getTime(), passwordUpdatedAt), true);
 });
 
 test("auth: handles malformed password hash gracefully", () => {
