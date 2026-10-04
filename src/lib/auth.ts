@@ -19,6 +19,7 @@ const authSecretValue: string = authSecret;
 type SessionPayload = {
   userId: number;
   expiresAt: number;
+  issuedAt?: number;
 };
 
 function isDynamicServerUsageError(error: unknown) {
@@ -112,6 +113,7 @@ export async function createSession(userId: number) {
   const payload = {
     userId,
     expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
+    issuedAt: Date.now(),
   };
 
   cookieStore.set(SESSION_COOKIE_NAME, encodeSession(payload), {
@@ -144,7 +146,22 @@ export async function getCurrentUser() {
       return null;
     }
 
-    return getUserById(payload.userId);
+    const user = await getUserById(payload.userId);
+
+    if (!user) {
+      return null;
+    }
+
+    const issuedAt =
+      typeof payload.issuedAt === "number"
+        ? payload.issuedAt
+        : payload.expiresAt - SESSION_TTL_SECONDS * 1000;
+
+    if (new Date(issuedAt).getTime() < user.password_updated_at.getTime()) {
+      return null;
+    }
+
+    return user;
   } catch (error) {
     if (!isDynamicServerUsageError(error)) {
       console.error("Failed to resolve the current session.", error);

@@ -34,6 +34,7 @@ import {
   upsertDayRecord,
   upsertUserSettings,
 } from "@/lib/db";
+import { isValidPassword } from "@/lib/password-reset";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 function parseMood(value: FormDataEntryValue | null) {
@@ -410,7 +411,7 @@ export async function registerAction(formData: FormData) {
   const email = formData.get("email")?.toString().trim().toLowerCase() ?? "";
   const password = formData.get("password")?.toString() ?? "";
 
-  if (!name || !email || password.length < 8) {
+  if (!name || !email || !isValidPassword(password)) {
     redirect("/register?toast=invalid&type=error");
   }
 
@@ -1089,4 +1090,3 @@ export async function createAnchorNoteAction(formData: FormData) {
   revalidatePath("/dashboard");
   redirect("/dashboard?toast=anchor_saved&type=success");
 }
-
