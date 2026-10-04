@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHmac, randomBytes } from "node:crypto";
+import { randomBytes, scryptSync } from "node:crypto";
 
 export const PASSWORD_RESET_TOKEN_TTL_MS = 1000 * 60 * 30;
 const MIN_FORGOT_PASSWORD_RESPONSE_MS = 400;
@@ -20,7 +20,7 @@ export function generatePasswordResetToken() {
 }
 
 export function hashPasswordResetToken(token: string) {
-  return createHmac("sha256", getResetTokenSecret()).update(token).digest("hex");
+  return scryptSync(token, getResetTokenSecret(), 64).toString("hex");
 }
 
 export function getPasswordResetExpiryDate(now = Date.now()) {

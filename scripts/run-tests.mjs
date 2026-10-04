@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHmac, scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -76,7 +76,7 @@ test("auth: hashes and verifies password matching", () => {
 });
 
 function hashResetToken(token, secret) {
-  return createHmac("sha256", secret).update(token).digest("hex");
+  return scryptSync(token, secret, 64).toString("hex");
 }
 
 function forgotPasswordOutcome() {
