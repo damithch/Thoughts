@@ -1,4 +1,5 @@
 import { pool } from "@/lib/db/client";
+import { EMBEDDING_DIM } from "@/lib/embedding-config";
 
 export const seedThoughts = [
   {
@@ -382,7 +383,7 @@ export async function ensureInitialized() {
           content TEXT NOT NULL DEFAULT '',
           metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
           source_updated_at TIMESTAMPTZ NOT NULL,
-          indexed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          indexed_at TIMESTAMPTZ,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE (user_id, document_key),
@@ -403,6 +404,12 @@ export async function ensureInitialized() {
         ALTER TABLE rag_documents
         ADD COLUMN IF NOT EXISTS content_hash TEXT
       `);
+      // NULL means "not embedded yet"; sync clears it whenever a document's content changes.
+      await pool.query(`
+        ALTER TABLE rag_documents
+        ALTER COLUMN indexed_at DROP NOT NULL,
+        ALTER COLUMN indexed_at DROP DEFAULT
+      `);
       await pool.query(`
         ALTER TABLE rag_documents
         ADD COLUMN IF NOT EXISTS ingestion_status TEXT NOT NULL DEFAULT 'pending',
@@ -410,11 +417,6 @@ export async function ensureInitialized() {
         ADD COLUMN IF NOT EXISTS last_ingestion_error TEXT,
         ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS last_ingestion_at TIMESTAMPTZ
-      `);
-      await pool.query(`
-        UPDATE rag_documents
-        SET ingestion_status = 'indexed'
-        WHERE ingestion_status = 'pending' AND indexed_at IS NOT NULL
       `);
       await pool.query(`
         ALTER TABLE rag_documents
@@ -465,11 +467,40 @@ export async function ensureInitialized() {
             source_entity_id TEXT NOT NULL,
             chunk_index INTEGER NOT NULL,
             chunk_text TEXT NOT NULL,
-            embedding VECTOR(1536),
+            embedding VECTOR(${EMBEDDING_DIM}),
             metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             UNIQUE (user_id, document_key, chunk_index)
           )
+        `);
+
+        // CREATE TABLE IF NOT EXISTS never resizes an existing column, so older databases
+        // can still hold a different dimension and reject every insert. Vectors of another
+        // size are unusable with current query embeddings; the next sync re-embeds them.
+        const { rows: embeddingColumn } = await pool.query<{ type: string }>(`
+          SELECT format_type(atttypid, atttypmod) AS type
+          FROM pg_attribute
+          WHERE attrelid = 'embeddings'::regclass AND attname = 'embedding'
+        `);
+        if (embeddingColumn[0] && embeddingColumn[0].type !== `vector(${EMBEDDING_DIM})`) {
+          await pool.query(`
+            ALTER TABLE embeddings
+            ALTER COLUMN embedding TYPE vector(${EMBEDDING_DIM}) USING NULL
+          `);
+        }
+
+        // A document only counts as indexed if it has real vectors; otherwise send it back
+        // through the next sync instead of leaving it invisible to vector search.
+        await pool.query(`
+          UPDATE rag_documents d
+          SET ingestion_status = 'pending', updated_at = NOW()
+          WHERE d.ingestion_status = 'indexed'
+            AND NOT EXISTS (
+              SELECT 1 FROM embeddings e
+              WHERE e.user_id = d.user_id
+                AND e.document_key = d.document_key
+                AND e.embedding IS NOT NULL
+            )
         `);
 
         await pool.query(`
@@ -477,10 +508,9 @@ export async function ensureInitialized() {
           ON embeddings (user_id, created_at DESC)
         `);
 
-        await pool.query(`
-          CREATE INDEX IF NOT EXISTS embeddings_embedding_idx
-          ON embeddings USING ivfflat (embedding vector_l2_ops) WITH (lists = 100)
-        `);
+        // An ivfflat index scans ~1/lists of vectors and applies the per-user filters
+        // afterwards, so it returned far fewer than k rows. Per-user exact scans are cheap.
+        await pool.query(`DROP INDEX IF EXISTS embeddings_embedding_idx`);
       } catch (vectorError) {
         console.warn("pgvector extension or vector index initialization skipped/failed:", vectorError);
       }

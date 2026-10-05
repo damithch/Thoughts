@@ -1,26 +1,21 @@
 import { pool } from "@/lib/db/client";
 import { chunkText } from "@/lib/chunk";
+import {
+  EMBEDDING_DIM,
+  EMBEDDING_MODEL,
+  normalizeVector,
+  type EmbeddingTaskType,
+} from "@/lib/embedding-config";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-// Use current Gemini naming by default; allow overrides via env.
-const GEMINI_EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
 const GEMINI_LLM_MODEL = process.env.GEMINI_LLM_MODEL ?? "gemini-3.6-flash";
-const DATABASE_EMBEDDING_DIM = 1536;
-const configuredEmbeddingDim = Number(process.env.EMBEDDING_DIM ?? DATABASE_EMBEDDING_DIM);
-if (configuredEmbeddingDim !== DATABASE_EMBEDDING_DIM) {
+const configuredEmbeddingDim = Number(process.env.EMBEDDING_DIM ?? EMBEDDING_DIM);
+if (configuredEmbeddingDim !== EMBEDDING_DIM) {
   throw new Error(
-    `EMBEDDING_DIM must be ${DATABASE_EMBEDDING_DIM} to match the pgvector schema; received ${configuredEmbeddingDim}.`,
+    `EMBEDDING_DIM must be ${EMBEDDING_DIM} to match the pgvector schema; received ${configuredEmbeddingDim}.`,
   );
 }
-const EMBEDDING_DIM = DATABASE_EMBEDDING_DIM;
 const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS ?? 60_000);
-
-// Embedding model fallback chain. When the primary embedding model is
-// unavailable (rate-limited, 503, deprecated), try these alternatives.
-const GEMINI_EMBEDDING_FALLBACK_MODELS = [
-  'gemini-embedding-001',
-  'text-embedding-004',
-];
 
 // Resilient multi-model fallback array. When the primary model is unavailable
 // (rate-limited, overloaded, deprecated, 5xx), the system walks through this
@@ -176,75 +171,46 @@ async function callGenerativeApi(path: string, body: unknown) {
   throw new GeminiApiError(lastStatus, classified.errorType, classified.message, lastBody);
 }
 
-export async function embedTexts(texts: string[]) {
+// No cross-model fallback: vectors from different embedding models are not comparable,
+// so a query embedded by a fallback model would be matched against the wrong vector space.
+export async function embedTexts(texts: string[], taskType: EmbeddingTaskType) {
   if (!texts || texts.length === 0) return [] as number[][];
   const embeddings: number[][] = [];
 
-  // Build the ordered list of embedding models to try: primary first, then fallbacks (deduped).
-  const embeddingModels = [
-    GEMINI_EMBEDDING_MODEL,
-    ...GEMINI_EMBEDDING_FALLBACK_MODELS.filter((m) => m !== GEMINI_EMBEDDING_MODEL),
-  ];
-
   for (const t of texts) {
-    let embedded = false;
+    const json = await callGenerativeApi(`${EMBEDDING_MODEL}:embedContent`, {
+      content: {
+        parts: [{ text: t }],
+      },
+      taskType,
+      outputDimensionality: EMBEDDING_DIM,
+    });
 
-    for (const model of embeddingModels) {
-      try {
-        const path = `${model}:embedContent`;
-        const body = {
-          content: {
-            parts: [{ text: t }],
-          },
-          outputDimensionality: EMBEDDING_DIM,
-        };
-
-        const json = await callGenerativeApi(path, body);
-
-        // Normalized response handling (various shapes across versions)
-        let vec: number[] = [];
-        if (Array.isArray(json) && typeof json[0] === 'number') {
-          vec = json as unknown as number[];
-        } else if (Array.isArray((json as any).embeddings)) {
-          vec = (json as any).embeddings[0]?.embedding ?? (json as any).embeddings[0]?.vector ?? [];
-        } else if (Array.isArray((json as any).data)) {
-          vec = (json as any).data[0]?.embedding ?? (json as any).data[0]?.vector ?? [];
-        } else if ((json as any).embedding && Array.isArray((json as any).embedding)) {
-          vec = (json as any).embedding;
-        } else if ((json as any).embedding && Array.isArray((json as any).embedding?.values)) {
-          vec = (json as any).embedding.values;
-        } else if ((json as any).results && Array.isArray((json as any).results)) {
-          const resEmb = (json as any).results[0]?.embedding;
-          if (resEmb && Array.isArray(resEmb)) vec = resEmb;
-          else if (resEmb && Array.isArray(resEmb.values)) vec = resEmb.values;
-        }
-
-        if (vec.length !== EMBEDDING_DIM) {
-          throw new Error(
-            `Embedding model "${model}" returned ${vec.length} dimensions; expected ${EMBEDDING_DIM}.`,
-          );
-        }
-
-        embeddings.push(vec);
-        embedded = true;
-
-        if (model !== GEMINI_EMBEDDING_MODEL) {
-          console.log(`[Embedding Fallback] Primary model "${GEMINI_EMBEDDING_MODEL}" failed, succeeded with "${model}"`);
-        }
-        break; // success — stop trying models for this chunk
-      } catch (e) {
-        const isLast = model === embeddingModels[embeddingModels.length - 1];
-        if (!isLast) {
-          console.warn(`[Embedding Fallback] Model "${model}" failed, trying next...`, e instanceof Error ? e.message : e);
-          continue;
-        }
-        console.error(`[Embedding Fallback] All embedding models failed for chunk. Last error:`, e);
-      }
+    // Normalized response handling (various shapes across versions)
+    let vec: number[] = [];
+    if (Array.isArray(json) && typeof json[0] === 'number') {
+      vec = json as unknown as number[];
+    } else if (Array.isArray((json as any).embeddings)) {
+      vec = (json as any).embeddings[0]?.embedding ?? (json as any).embeddings[0]?.vector ?? [];
+    } else if (Array.isArray((json as any).data)) {
+      vec = (json as any).data[0]?.embedding ?? (json as any).data[0]?.vector ?? [];
+    } else if ((json as any).embedding && Array.isArray((json as any).embedding)) {
+      vec = (json as any).embedding;
+    } else if ((json as any).embedding && Array.isArray((json as any).embedding?.values)) {
+      vec = (json as any).embedding.values;
+    } else if ((json as any).results && Array.isArray((json as any).results)) {
+      const resEmb = (json as any).results[0]?.embedding;
+      if (resEmb && Array.isArray(resEmb)) vec = resEmb;
+      else if (resEmb && Array.isArray(resEmb.values)) vec = resEmb.values;
     }
 
-    if (!embedded) {
-      throw new Error("Embedding generation failed for one or more chunks.");
+    if (vec.length !== EMBEDDING_DIM) {
+      throw new Error(
+        `Embedding model "${EMBEDDING_MODEL}" returned ${vec.length} dimensions; expected ${EMBEDDING_DIM}.`,
+      );
     }
+
+    embeddings.push(normalizeVector(vec));
   }
 
   return embeddings;
@@ -373,7 +339,7 @@ export async function ingestMaterializedDocument(
 
   if (chunks.length === 0) return 0;
 
-  const embeddings = await embedTexts(chunks);
+  const embeddings = await embedTexts(chunks, "RETRIEVAL_DOCUMENT");
 
   // Upsert per-chunk into embeddings table. Store embedding as vector literal string.
   for (let i = 0; i < chunks.length; i++) {

@@ -230,16 +230,7 @@ export async function createThought(input: NewThought) {
     client.release();
   }
 
-  // Fire-and-forget: don't block the response waiting for RAG sync
-  import("./rag")
-    .then((mod) => {
-      if (mod?.syncRagDocumentsForUser) {
-        return mod.syncRagDocumentsForUser(input.userId);
-      }
-    })
-    .catch((e) => {
-      console.error("RAG sync failed:", e);
-    });
+  scheduleRagSync(input.userId);
 
   return thoughtId;
 }
@@ -400,16 +391,7 @@ export async function updateThought(input: UpdateThought) {
   }
 
   if (updated) {
-    // Fire-and-forget: don't block the response waiting for RAG sync
-    import("./rag")
-      .then((mod) => {
-        if (mod?.syncRagDocumentsForUser) {
-          return mod.syncRagDocumentsForUser(input.userId);
-        }
-      })
-      .catch((e) => {
-        console.error("RAG sync failed:", e);
-      });
+    scheduleRagSync(input.userId);
   }
 
   return updated;
@@ -426,6 +408,12 @@ export async function deleteThought(input: DeleteThought) {
     `,
     [input.id, input.userId],
   );
+
+  if (rowCount === 1) {
+    // Remove the thought's searchable text now; the sync then rebuilds that day's rollup.
+    await removeThoughtFromRagIndex(input.userId, input.id);
+    scheduleRagSync(input.userId);
+  }
 
   return rowCount === 1;
 }
@@ -444,16 +432,34 @@ export async function setThoughtHiddenState(input: SetThoughtHiddenState) {
     [input.isHidden, input.id, input.userId],
   );
 
-  if (rowCount === 1 && input.isHidden) {
-    await pool.query(
-      `DELETE FROM embeddings WHERE user_id = $1 AND document_key = $2`,
-      [input.userId, `thought:${input.id}`],
-    );
-    await pool.query(
-      `DELETE FROM rag_documents WHERE user_id = $1 AND document_key = $2`,
-      [input.userId, `thought:${input.id}`],
-    );
+  if (rowCount === 1) {
+    if (input.isHidden) {
+      await removeThoughtFromRagIndex(input.userId, input.id);
+    }
+    // Rebuilds the daily rollup, which lists thought titles and tags for that day.
+    scheduleRagSync(input.userId);
   }
 
   return rowCount === 1;
+}
+
+async function removeThoughtFromRagIndex(userId: number, thoughtId: number) {
+  const documentKey = `thought:${thoughtId}`;
+  await pool.query(
+    `DELETE FROM embeddings WHERE user_id = $1 AND document_key = $2`,
+    [userId, documentKey],
+  );
+  await pool.query(
+    `DELETE FROM rag_documents WHERE user_id = $1 AND document_key = $2`,
+    [userId, documentKey],
+  );
+}
+
+// Fire-and-forget so the request isn't blocked waiting for embeddings.
+function scheduleRagSync(userId: number) {
+  import("./rag")
+    .then((mod) => mod.syncRagDocumentsForUser(userId))
+    .catch((e) => {
+      console.error("RAG sync failed:", e);
+    });
 }

@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       const hash = crypto.createHash("sha256").update(intent.rewrittenQuery).digest();
       qEmb = Array.from({ length: 1536 }, (_, i) => hash[i % hash.length] / 255);
     } else {
-      qEmb = (await embedTexts([intent.rewrittenQuery]))[0] ?? [];
+      qEmb = (await embedTexts([intent.rewrittenQuery], "RETRIEVAL_QUERY"))[0] ?? [];
     }
 
     const embStr = `[${qEmb.join(",")}]`;
@@ -99,15 +99,17 @@ export async function POST(request: Request) {
     let merged: RetrievalRow[] = [];
 
     try {
-      // Parallel retrieval for thoughts/general docs and conversation_summary logs via vector
+      // Chunks of pending/failed documents may still hold text from before an edit.
       const thoughtClauses = [
         "e.user_id = $2",
+        "d.ingestion_status = 'indexed'",
         "d.document_kind <> 'conversation_summary'",
       ];
       const thoughtValues: unknown[] = [embStr, currentUser.id];
       appendRagFilterClauses(thoughtClauses, thoughtValues, queryFilters, "d");
       const summaryClauses = [
         "e.user_id = $2",
+        "d.ingestion_status = 'indexed'",
         "d.document_kind = 'conversation_summary'",
       ];
       const summaryValues: unknown[] = [embStr, currentUser.id];
@@ -118,7 +120,7 @@ export async function POST(request: Request) {
           `
             SELECT e.id, e.user_id, e.document_key, d.document_kind, d.source_date,
                    e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
-                   e.embedding <-> $1::vector AS distance
+                   e.embedding <=> $1::vector AS distance
             FROM embeddings e
             JOIN rag_documents d
               ON e.document_key = d.document_key
@@ -133,7 +135,7 @@ export async function POST(request: Request) {
           `
             SELECT e.id, e.user_id, e.document_key, d.document_kind, d.source_date,
                    e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
-                   e.embedding <-> $1::vector AS distance
+                   e.embedding <=> $1::vector AS distance
             FROM embeddings e
             JOIN rag_documents d
               ON e.document_key = d.document_key

@@ -21,7 +21,7 @@ content.split(/\r?\n/).forEach((l) => {
     const idxRes = await pool.query("select indexname, indexdef from pg_indexes where tablename='embeddings'");
     console.log('Existing indexes on embeddings:', JSON.stringify(idxRes.rows, null, 2));
 
-    // Drop any existing ivfflat indexes (they will be recreated)
+    // Drop any ivfflat indexes; retrieval uses per-user exact scans instead.
     for (const r of idxRes.rows) {
       if (r.indexdef && r.indexdef.includes('ivfflat')) {
         console.log('Dropping index', r.indexname);
@@ -32,10 +32,6 @@ content.split(/\r?\n/).forEach((l) => {
     // Alter column type
     console.log('Altering column type to vector(' + targetDim + ')');
     await pool.query(`ALTER TABLE embeddings ALTER COLUMN embedding TYPE vector(${targetDim})`);
-
-    // Recreate ivfflat index
-    console.log('Creating new ivfflat index embeddings_embedding_idx');
-    await pool.query(`CREATE INDEX IF NOT EXISTS embeddings_embedding_idx ON embeddings USING ivfflat (embedding) WITH (lists = 100)`);
 
     console.log('Done.');
   } catch (e) {

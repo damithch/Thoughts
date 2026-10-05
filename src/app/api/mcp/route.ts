@@ -1168,7 +1168,7 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       throw new Error("search_journal requires a query string.");
     }
 
-    const [qEmb] = await embedTexts([query]);
+    const [qEmb] = await embedTexts([query], "RETRIEVAL_QUERY");
 
     if (!qEmb || qEmb.length === 0) {
       throw new Error("Failed to generate embedding for search query.");
@@ -1178,11 +1178,15 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
 
     const { rows } = await pool.query(
       `
-        SELECT document_key, source_entity_id, chunk_index, chunk_text, metadata,
-               embedding <-> $1::vector AS distance
-        FROM embeddings
-        WHERE user_id = $2
-        ORDER BY embedding <-> $1::vector
+        SELECT e.document_key, e.source_entity_id, e.chunk_index, e.chunk_text, e.metadata,
+               e.embedding <=> $1::vector AS distance
+        FROM embeddings e
+        JOIN rag_documents d
+          ON e.document_key = d.document_key
+         AND e.user_id = d.user_id
+        WHERE e.user_id = $2
+          AND d.ingestion_status = 'indexed'
+        ORDER BY distance ASC
         LIMIT $3
       `,
       [embStr, userId, k],

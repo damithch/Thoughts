@@ -311,7 +311,7 @@ export type RagDocument = {
   content: string;
   metadata: Record<string, unknown>;
   source_updated_at: Date;
-  indexed_at: Date;
+  indexed_at: Date | null;
   created_at: Date;
   updated_at: Date;
   ingestion_status: "pending" | "processing" | "indexed" | "failed";

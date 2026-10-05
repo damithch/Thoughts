@@ -3,6 +3,7 @@ import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { appendRagFilterClauses, parseRagQueryFilters } from "../src/lib/rag-filters.ts";
 import { rankHybridResults, selectDiverseResults } from "../src/lib/rag-retrieval.ts";
+import { normalizeVector } from "../src/lib/embedding-config.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -161,6 +162,19 @@ test("hybrid: preserves a per-document cap while merging diverse results", () =>
   const selected = selectDiverseResults(rows, 4, 1);
   assert.deepEqual(selected.map((row) => row.document_key), ["doc-1", "doc-2", "doc-3", "doc-4"]);
   assert.equal(selected.length, 4);
+});
+
+// 2c. Embedding normalization tests
+
+test("embeddings: normalizes vectors to unit length", () => {
+  const normalized = normalizeVector([3, 4]);
+  assert.deepEqual(normalized, [0.6, 0.8]);
+  const length = Math.sqrt(normalizeVector([1, 2, 3, 4]).reduce((sum, v) => sum + v * v, 0));
+  assert.ok(Math.abs(length - 1) < 1e-12);
+});
+
+test("embeddings: leaves zero vectors unchanged instead of dividing by zero", () => {
+  assert.deepEqual(normalizeVector([0, 0, 0]), [0, 0, 0]);
 });
 
 // 2. Auth cryptography test

@@ -12,6 +12,7 @@ import {
 } from "@/lib/db/tasks";
 import { getThoughtsByUser } from "@/lib/db/thoughts";
 import { getUserSettings } from "@/lib/db/settings";
+import { EMBEDDING_INDEX_VERSION } from "@/lib/embedding-config";
 import { toColomboExportParts } from "@/lib/time";
 import type {
   BehaviouralActivationEntry,
@@ -458,7 +459,7 @@ async function upsertRagDocument(input: RagDocumentUpsertInput) {
         updated_at,
         ingestion_status
       )
-      VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8::jsonb, $9, $10, NOW(), NOW(), 'pending')
+      VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8::jsonb, $9, $10, NULL, NOW(), 'pending')
       ON CONFLICT (user_id, document_key)
       DO UPDATE SET
         document_kind = EXCLUDED.document_kind,
@@ -608,11 +609,11 @@ async function syncRagDocumentsForUserUnlocked(
     }),
   ].filter((document) => settings.rag_enabled_kinds.includes(document.documentKind));
 
-  // Include chunk settings so changing the indexing shape re-embeds existing documents.
+  // Include chunk and embedding settings so changing the indexing shape re-embeds existing documents.
   const materializedWithHashes = materialized.map((doc) => ({
     ...doc,
     contentHash: sha256(
-      [doc.content, settings.rag_chunk_size, settings.rag_chunk_overlap].join("\0"),
+      [doc.content, settings.rag_chunk_size, settings.rag_chunk_overlap, EMBEDDING_INDEX_VERSION].join("\0"),
     ),
   }));
 
