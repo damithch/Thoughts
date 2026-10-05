@@ -53,7 +53,7 @@ What is **good** (keep): parameterised SQL everywhere I looked; `timingSafeEqual
 * **Type safety**: 42 `any` (mostly `gemini.ts`, `smart-capture`), `payload = … as any`. Define response types or use zod.
 * **Env handling**: `process.env.X` read in ~10 places at import time with different defaults (`GEMINI_EMBEDDING_MODEL` default repeated in health route, config, gemini). Single `env.ts` (zod) validated at boot.
 * **Logging**: `console.log` of user query text (first 60 chars) in retrieval — journal content in server logs. Remove or redact.
-* **Docs drift**: `IMPLEMENTATION_COMPLETE.md`, `TASK_MANAGEMENT_GUIDE.md` at repo root and 17 ad-hoc `scripts/*.js` (CommonJS, 28 lint errors, some seed *fake embeddings* into the DB: `seed_fake_embeddings.js`, `delete_synthetic_embeddings.js`) → move to `docs/` and `scripts/dev/`, add the scripts dir to ESLint ignores or convert to ESM.
+* **Docs drift**: `IMPLEMENTATION_COMPLETE.md`, `TASK_MANAGEMENT_GUIDE.md` at repo root and 14 ad-hoc `scripts/*.js` (CommonJS, 28 lint errors, some seed *fake embeddings* into the DB: `seed_fake_embeddings.js`, `delete_synthetic_embeddings.js`) → move to `docs/` and `scripts/dev/`, add the scripts dir to ESLint ignores or convert to ESM.
 * **`package.json`**: no `"type"` → Node prints `MODULE_TYPELESS_PACKAGE_JSON` warning on every test; `test` relies on `--experimental-strip-types`. No `typecheck` script, no CI workflow in repo (`.github/` absent).
 * **AGENTS.md** warns this Next.js version differs from training data and asks to read `node_modules/next/dist/docs/`; the codebase has no `proxy.ts`, uses `force-dynamic` everywhere and none of the Next 16 caching APIs — worth a dedicated pass against those docs.
 
