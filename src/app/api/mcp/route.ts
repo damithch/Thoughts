@@ -632,7 +632,7 @@ async function listTasksForUser(userId: number, filters: { date?: string | null;
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE ${clauses.join(" AND ")}

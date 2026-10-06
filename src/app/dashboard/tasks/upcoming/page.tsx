@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Toast } from "@/app/components/toast";
+import { ensureTodaysRoutines } from "@/app/dashboard/tasks/_lib/ensure-todays-routines";
 import { OverdueBanner } from "@/app/dashboard/tasks/_components/overdue-banner";
 import { TaskInlineAdd } from "@/app/dashboard/tasks/_components/task-inline-add";
 import { TaskList } from "@/app/dashboard/tasks/_components/task-list";
@@ -40,6 +41,8 @@ export default async function UpcomingPage({ searchParams }: UpcomingPageProps) 
   const days = Array.from({ length: UPCOMING_DAYS }, (_, index) => shiftColomboDate(today, index));
   const lastDay = days[days.length - 1];
   const months = Array.from(new Set(days.map((day) => day.slice(0, 7))));
+
+  await ensureTodaysRoutines(currentUser.id, today);
 
   const [tasks, routines, overdueTasks, ...skipsByMonth] = await Promise.all([
     getTasksByUserDateRange(currentUser.id, today, lastDay),

@@ -127,7 +127,7 @@ Agent                      — a command bar on every tasks view, not a separate
 | 4.4 | The agent sees a **compact** context (id, title, status, date for the next 14 days + overdue), not the full JSON of one day |
 | 4.5 | Command bar (Ctrl+J) available on every tasks view |
 
-### Phase 5: stats and polish (about 1 day)
+### Phase 5: stats and polish (about 1 day) — done
 - Completion rate = done / (done + open) for **past** days only; skipped shown separately; days with no tasks don't break streaks.
 - Weekly review: what slipped, what keeps getting rolled forward (a roll-forward count per task).
 - Tests: the service module (create/move/roll forward/recurring generation and skips) against a real Postgres in CI.

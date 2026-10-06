@@ -8,6 +8,7 @@ const tabs = [
   { href: "/dashboard/tasks/upcoming", label: "Upcoming" },
   { href: "/dashboard/tasks/inbox", label: "Inbox" },
   { href: "/dashboard/tasks/routines", label: "Routines" },
+  { href: "/dashboard/tasks/review", label: "Review" },
 ] as const;
 
 export function TasksTabs({ inboxCount }: { inboxCount: number }) {

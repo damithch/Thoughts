@@ -6,7 +6,8 @@ import { logoutAction } from "@/app/actions";
 import { TaskCommandBar } from "@/app/dashboard/tasks/_components/task-command-bar";
 import { TasksTabs } from "@/app/dashboard/tasks/_components/tasks-tabs";
 import { getCurrentUser } from "@/lib/auth";
-import { generateDailyTasksFromRecurring, getInboxOpenTaskCount } from "@/lib/db";
+import { ensureTodaysRoutines } from "@/app/dashboard/tasks/_lib/ensure-todays-routines";
+import { getInboxOpenTaskCount } from "@/lib/db";
 import { getCurrentColomboDate } from "@/lib/time";
 
 // One Tasks area: Today, Upcoming, Inbox and Routines share this header, the tabs and the
@@ -22,11 +23,7 @@ export default async function TasksLayout({ children }: { children: React.ReactN
 
   // Today's routines are created on the first visit of the day, whichever tab is opened.
   // Idempotent, and occurrences the user deleted stay deleted.
-  try {
-    await generateDailyTasksFromRecurring(currentUser.id, today);
-  } catch (error) {
-    console.error("Failed to generate today's routine tasks.", error);
-  }
+  await ensureTodaysRoutines(currentUser.id, today);
 
   const inboxCount = await getInboxOpenTaskCount(currentUser.id);
 

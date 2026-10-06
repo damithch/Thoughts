@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getTaskCompletionStats,
   getRecurringSkipsByUserMonth,
   getRecurringTasksByUser,
   getTasksByUserMonth,
@@ -11,6 +12,7 @@ import {
   type TaskStatus,
 } from "@/lib/db";
 import { isRoutineScheduledOn } from "@/lib/tasks/recurrence";
+import { computeDayStreak } from "@/lib/tasks/stats";
 import {
   getCurrentColomboDate,
   getCurrentColomboMonth,
@@ -360,11 +362,17 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
   const currentDate = getCurrentColomboDate();
   const currentMonth = getCurrentColomboMonth();
   const monthDays = getMonthDays(currentMonth);
-  const [recurringTasks, monthTasks, recurringSkips] = await Promise.all([
+  const [recurringTasks, monthTasks, recurringSkips, completionHistory] = await Promise.all([
     getRecurringTasksByUser(currentUser.id),
     getTasksByUserMonth(currentUser.id, currentMonth),
     getRecurringSkipsByUserMonth(currentUser.id, currentMonth),
+    getTaskCompletionStats(currentUser.id, 120),
   ]);
+  // Same source and rules as the weekly review: empty days don't break the streak.
+  const dayStreak = computeDayStreak(
+    completionHistory.map((day) => ({ date: day.date, total: day.total_tasks, done: day.completed_tasks })),
+    currentDate,
+  );
 
   const skippedOccurrences = new Set(
     recurringSkips.map((skip) => `${skip.recurring_task_id}:${skip.skip_date}`),
@@ -430,7 +438,7 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
           </span>
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5">
           <StatCard
             label="Overall"
             value={`${overallRate}%`}
@@ -444,7 +452,12 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
             sublabel="tasks done"
           />
           <StatCard
-            label="Best Streak"
+            label="Day Streak"
+            value={`${dayStreak.current}`}
+            sublabel={`all-done days in a row (best ${dayStreak.best})`}
+          />
+          <StatCard
+            label="Best Routine Streak"
             value={`${bestRowStreak}`}
             sublabel="days in a row"
           />

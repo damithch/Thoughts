@@ -253,6 +253,11 @@ export async function ensureInitialized() {
         WHERE recurring_task_id IS NOT NULL
       `);
 
+      await pool.query(`
+        ALTER TABLE daily_tasks
+        ADD COLUMN IF NOT EXISTS rollover_count INTEGER NOT NULL DEFAULT 0
+      `);
+
       // Undated tasks live in the Inbox.
       await pool.query(`
         ALTER TABLE daily_tasks

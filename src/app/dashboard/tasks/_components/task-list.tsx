@@ -170,6 +170,11 @@ function TaskRow({
                 In progress
               </span>
             ) : null}
+            {optimisticTask.rollover_count >= 2 ? (
+              <span className="rounded-full border border-amber-900/15 bg-amber-50 px-2 py-0.5 text-amber-900">
+                Pushed back {optimisticTask.rollover_count}×
+              </span>
+            ) : null}
             {optimisticTask.status === "skipped" ? (
               <span className="rounded-full border border-stone-900/15 bg-stone-100 px-2 py-0.5">Skipped</span>
             ) : null}
