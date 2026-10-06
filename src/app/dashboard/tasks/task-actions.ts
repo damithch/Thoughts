@@ -12,6 +12,7 @@ import {
   updateTaskStatus,
 } from "@/lib/db";
 import type { TaskItem } from "@/lib/db";
+import { undoAgentRun, type AgentUndo } from "@/lib/tasks/agent-execute";
 import {
   isValidTaskDate,
   normalizeTaskTitle,
@@ -245,6 +246,69 @@ export async function undoDeleteTaskAction(task: TaskItem): Promise<TaskActionRe
   } catch (error) {
     console.error("Failed to restore task.", error);
     return { ok: false, error: "That task could not be restored." };
+  }
+
+  revalidateTaskViews();
+  return { ok: true };
+}
+
+// Reverses an agent run (tasks it created, changed or deleted). Every id is re-checked against
+// the current user by the DB functions it calls.
+export async function undoAgentRunAction(undo: AgentUndo): Promise<TaskActionResult> {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    return { ok: false, error: SESSION_EXPIRED };
+  }
+
+  const isTaskList = (value: unknown): value is TaskItem[] =>
+    Array.isArray(value) && value.every((task) => task && typeof task === "object" && parseTaskId((task as TaskItem).id));
+
+  if (
+    !undo ||
+    !Array.isArray(undo.createdTaskIds) ||
+    !undo.createdTaskIds.every((id) => parseTaskId(id)) ||
+    !isTaskList(undo.changedTasks) ||
+    !isTaskList(undo.deletedTasks)
+  ) {
+    return { ok: false, error: "Nothing to undo." };
+  }
+
+  const sanitize = (task: TaskItem): TaskItem | null => {
+    const title = normalizeTaskTitle(task.title);
+    const priority = parseTaskPriorityValue(task.priority);
+    const status = parseTaskStatusValue(task.status);
+    const date = parseOptionalTaskDate(task.scheduled_date ?? null);
+
+    if (!title || !priority || !status || !date.ok) {
+      return null;
+    }
+
+    return {
+      ...task,
+      id: Number(task.id),
+      title,
+      priority,
+      status,
+      scheduled_date: date.date,
+      tags: Array.isArray(task.tags) ? task.tags.filter((tag) => typeof tag === "string") : [],
+      note: typeof task.note === "string" ? task.note : "",
+      recurring_task_id: parseTaskId(task.recurring_task_id),
+      created_at: new Date(task.created_at),
+      started_at: task.started_at ? new Date(task.started_at) : null,
+      completed_at: task.completed_at ? new Date(task.completed_at) : null,
+    };
+  };
+
+  try {
+    await undoAgentRun(currentUser.id, {
+      createdTaskIds: undo.createdTaskIds.map(Number),
+      changedTasks: undo.changedTasks.map(sanitize).filter((task): task is TaskItem => task !== null),
+      deletedTasks: undo.deletedTasks.map(sanitize).filter((task): task is TaskItem => task !== null),
+    });
+  } catch (error) {
+    console.error("Failed to undo agent run.", error);
+    return { ok: false, error: "Those changes could not be undone." };
   }
 
   revalidateTaskViews();

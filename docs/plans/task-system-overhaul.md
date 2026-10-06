@@ -118,7 +118,7 @@ Agent                      — a command bar on every tasks view, not a separate
 | 3.6 | Inline edit (title, date, priority, note) and Undo toast for delete/complete | UX |
 | 3.7 | `useOptimistic` for status toggles (no full-page redirect per click) | UX |
 
-### Phase 4: a better agent (about 2 days)
+### Phase 4: a better agent (about 2 days) — done
 | # | Change |
 |---|---|
 | 4.1 | Gemini structured output with a JSON schema of operations (`create`, `update`, `move`, `complete`, `delete`, `apply_routines`), each with `taskId`/`date` validated against the service |
