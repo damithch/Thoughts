@@ -1,5 +1,7 @@
 import "server-only";
 
+import { buildResendRequest, RESEND_EMAILS_URL } from "@/lib/resend-request";
+
 type PasswordResetEmailInput = {
   email: string;
   resetLink: string;
@@ -16,13 +18,9 @@ async function sendWithResend({ email, resetLink }: PasswordResetEmailInput) {
     return false;
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: "Token " + resendKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const response = await fetch(
+    RESEND_EMAILS_URL,
+    buildResendRequest(resendKey, {
       from: getFromAddress(),
       to: [email],
       subject: "Reset your Thoughts password",
@@ -34,7 +32,14 @@ async function sendWithResend({ email, resetLink }: PasswordResetEmailInput) {
         "If you did not request this, you can ignore this email.",
       ].join("\n"),
     }),
-  });
+  );
+
+  if (!response.ok) {
+    // The caller swallows errors to avoid account enumeration, so this log is the only trace.
+    console.error(
+      `Resend rejected the password reset email (HTTP ${response.status}): ${await response.text()}`,
+    );
+  }
 
   return response.ok;
 }

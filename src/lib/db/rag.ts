@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import { pool } from "@/lib/db/client";
 import { getBehaviouralActivationEntriesByUser } from "@/lib/db/activation";
-import { getConversationSummariesByUser } from "@/lib/db/conversations";
+import { getAllConversationSummariesByUser } from "@/lib/db/conversations";
 import { ensureInitialized } from "@/lib/db/init";
 import { getBookIdeasByUser } from "@/lib/db/insights";
 import {
@@ -10,7 +10,7 @@ import {
   getDayRecordsByUserMonth,
   getTasksByUserMonth,
 } from "@/lib/db/tasks";
-import { getThoughtsByUser } from "@/lib/db/thoughts";
+import { getAllThoughtsByUser } from "@/lib/db/thoughts";
 import { getUserSettings } from "@/lib/db/settings";
 import { EMBEDDING_INDEX_VERSION } from "@/lib/embedding-config";
 import { toColomboExportParts } from "@/lib/time";
@@ -568,13 +568,13 @@ async function syncRagDocumentsForUserUnlocked(
   await ensureInitialized();
   const settings = await getUserSettings(userId);
 
-  const thoughts = await getThoughtsByUser(
+  // Load the whole archive: anything missing from these lists is pruned from the index below.
+  const thoughts = await getAllThoughtsByUser(
     userId,
-    1000,
     settings.rag_exclude_hidden_thoughts ? "active" : "all",
   );
   const bookIdeas = await getBookIdeasByUser(userId);
-  const conversations = await getConversationSummariesByUser(userId, 1000);
+  const conversations = await getAllConversationSummariesByUser(userId);
   const activationEntries = await getBehaviouralActivationEntriesByUser(userId);
   const months = await getUserActiveMonths(userId);
   const dayNotes: DayRecord[] = [];

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
-import { getThoughtsByUser, getTasksByUser, getRecurringTasksByUser, getBookIdeasByUser } from "@/lib/db";
+import { getAllThoughtsByUser, getTasksByUser, getRecurringTasksByUser, getBookIdeasByUser } from "@/lib/db";
 
 export async function GET() {
   const currentUser = await getCurrentUser();
@@ -15,7 +15,7 @@ export async function GET() {
     await ensureInitialized();
 
     const [thoughts, tasks, recurringTasks, bookIdeas] = await Promise.all([
-      getThoughtsByUser(currentUser.id, 10000),
+      getAllThoughtsByUser(currentUser.id),
       getTasksByUser(currentUser.id),
       getRecurringTasksByUser(currentUser.id),
       getBookIdeasByUser(currentUser.id),

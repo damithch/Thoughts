@@ -240,8 +240,26 @@ export async function getThoughtsByUser(
   limit = 24,
   visibility: "active" | "hidden" | "all" = "all",
 ) {
-  await ensureInitialized();
   const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 24;
+
+  return queryThoughtsByUser(userId, visibility, safeLimit);
+}
+
+// Every thought, with no row cap. For whole-archive work (RAG sync, backup) where a
+// truncated list would silently drop older entries.
+export async function getAllThoughtsByUser(
+  userId: number,
+  visibility: "active" | "hidden" | "all" = "all",
+) {
+  return queryThoughtsByUser(userId, visibility, null);
+}
+
+async function queryThoughtsByUser(
+  userId: number,
+  visibility: "active" | "hidden" | "all",
+  limit: number | null,
+) {
+  await ensureInitialized();
   const visibilityClause =
     visibility === "active"
       ? "AND t.is_hidden = false"
@@ -256,9 +274,9 @@ export async function getThoughtsByUser(
         ${visibilityClause}
       GROUP BY t.id, il.book_idea_id, b.title, bi.idea_text, il.reflection
       ORDER BY t.created_at DESC, t.id DESC
-      LIMIT $2
+      ${limit === null ? "" : "LIMIT $2"}
     `,
-    [userId, safeLimit],
+    limit === null ? [userId] : [userId, limit],
   );
 
   return rows;

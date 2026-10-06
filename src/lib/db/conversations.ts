@@ -36,9 +36,19 @@ export async function createConversationSummary(input: NewConversationSummary) {
 }
 
 export async function getConversationSummariesByUser(userId: number, limit = 12) {
-  await ensureInitialized();
-
   const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 12;
+
+  return queryConversationSummariesByUser(userId, safeLimit);
+}
+
+// Every conversation summary, with no row cap. For whole-archive work (RAG sync) where a
+// truncated list would silently drop older entries.
+export async function getAllConversationSummariesByUser(userId: number) {
+  return queryConversationSummariesByUser(userId, null);
+}
+
+async function queryConversationSummariesByUser(userId: number, limit: number | null) {
+  await ensureInitialized();
 
   const { rows } = await pool.query<ConversationSummary>(
     `
@@ -48,9 +58,9 @@ export async function getConversationSummariesByUser(userId: number, limit = 12)
       FROM conversation_summaries
       WHERE user_id = $1
       ORDER BY conversation_date DESC, created_at DESC, id DESC
-      LIMIT $2
+      ${limit === null ? "" : "LIMIT $2"}
     `,
-    [userId, safeLimit],
+    limit === null ? [userId] : [userId, limit],
   );
 
   return rows;
