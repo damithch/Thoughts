@@ -329,7 +329,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "roll_forward_tasks",
-    description: "Move all open (todo / in_progress) tasks from a source date to a target date.",
+    description: "Move all open (todo / in_progress) one-off tasks from a source date to a target date. Routine (recurring) instances stay on their own day.",
     inputSchema: {
       type: "object",
       properties: {

@@ -98,7 +98,7 @@ Agent                      — a command bar on every tasks view, not a separate
 | 1.6 | Remove the agent's keyword fallback (or reduce it to "LLM unavailable, nothing changed") | 2, 4, 14 |
 | 1.7 | Exclude `skipped` from "completed"; show it separately | 11 |
 
-### Phase 2: fix recurring (about 1–2 days)
+### Phase 2: fix recurring (about 1–2 days) — done
 | # | Change | Fixes |
 |---|---|---|
 | 2.1 | Stop generating in page render. Generate for **today** on first load of the day via an idempotent `INSERT … ON CONFLICT DO NOTHING`, plus the explicit "Apply routines" button for other dates | 8, 10 |

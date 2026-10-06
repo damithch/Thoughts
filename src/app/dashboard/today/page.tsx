@@ -2,8 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import {
+  applyRecurringTasksAction,
   createDailyCheckInAction,
   logoutAction,
+  rollForwardOverdueAction,
   rolloverTasksAction,
   saveDayRecordAction,
   updateTaskStatusAction,
@@ -44,9 +46,15 @@ const todayToastMessages: Record<string, string> = {
   day_invalid: "Choose a valid date and mood before saving the day note.",
   day_save_failed: "The day note could not be saved.",
   day_saved: "Day note saved.",
-  rollover_done: "Open tasks were moved to tomorrow.",
-  rollover_empty: "There were no unfinished tasks to move.",
+  rollover_done: "Unfinished one-off tasks were moved to tomorrow.",
+  rollover_empty: "There were no unfinished one-off tasks to move.",
   rollover_failed: "Those tasks could not be moved.",
+  overdue_moved: "Overdue tasks were moved to this day.",
+  overdue_empty: "There were no overdue tasks to move.",
+  overdue_failed: "The overdue tasks could not be moved.",
+  recurring_applied: "Routines added to this day.",
+  apply_empty: "All routines for this day are already here (or were removed on purpose).",
+  apply_failed: "Routines could not be added.",
   task_created: "Task added for the day.",
   task_invalid: "Add a task title, priority, and date before saving.",
   task_save_failed: "That task could not be created.",
@@ -304,10 +312,18 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
   const nextDate = shiftColomboDate(activeDate, 1);
   const toastMessage = params?.toast ? todayToastMessages[params.toast] : undefined;
 
-  try {
-    await generateDailyTasksFromRecurring(currentUser.id, activeDate);
-  } catch (error) {
-    console.error("Failed to auto-generate recurring tasks for the viewed date.", error);
+  const today = getCurrentColomboDate();
+  const isToday = activeDate === today;
+
+  // Routines are created automatically only for today (idempotent, and deleted occurrences stay
+  // deleted). Other days get them through the explicit "Add routines" button, so browsing the
+  // calendar never fills days with tasks.
+  if (isToday) {
+    try {
+      await generateDailyTasksFromRecurring(currentUser.id, today);
+    } catch (error) {
+      console.error("Failed to generate today's routine tasks.", error);
+    }
   }
 
   const [tasks, dayRecord, overdueCount, checkIns] = await Promise.all([
@@ -442,7 +458,7 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
               {overdueCount}
             </p>
             <p className="mt-3 text-sm leading-7 text-stone-700">
-              Older unfinished tasks still open.
+              Older one-off tasks still open.
             </p>
           </div>
         </section>
@@ -770,7 +786,33 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                     Move unfinished to tomorrow
                   </button>
                 </form>
+                {overdueCount > 0 ? (
+                  <form action={rollForwardOverdueAction} className="flex-1">
+                    <input type="hidden" name="date" value={activeDate} />
+                    <button
+                      type="submit"
+                      className="w-full rounded-full border border-emerald-950/10 bg-white/75 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                    >
+                      Bring {overdueCount} overdue here
+                    </button>
+                  </form>
+                ) : null}
+                {isToday ? null : (
+                  <form action={applyRecurringTasksAction} className="flex-1">
+                    <input type="hidden" name="date" value={activeDate} />
+                    <button
+                      type="submit"
+                      className="w-full rounded-full border border-emerald-950/10 bg-white/75 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                    >
+                      Add routines to this day
+                    </button>
+                  </form>
+                )}
               </div>
+              <p className="text-xs leading-6 text-stone-600">
+                Routines are added to today automatically. Unfinished routines stay on their own
+                day instead of being carried forward, because they come back anyway.
+              </p>
             </div>
 
             <div className="mt-6 rounded-[1.6rem] border border-emerald-950/10 bg-[linear-gradient(180deg,rgba(243,250,243,0.95)_0%,rgba(232,245,233,0.82)_100%)] p-4 sm:p-5">
@@ -780,8 +822,8 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                     Export snapshot
                   </p>
                   <p className="mt-2 text-sm leading-7 text-stone-700">
-                    Recurring tasks are generated automatically for this date. Download the final
-                    task list, progress totals, day note, and thought summary in one payload.
+                    Download the final task list, progress totals, day note, and thought summary
+                    in one payload.
                   </p>
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">

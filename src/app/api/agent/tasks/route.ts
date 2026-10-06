@@ -9,7 +9,7 @@ import {
   generateDailyTasksFromRecurring,
   getRecurringTasksByUser,
   getTasksByUserAndDate,
-  moveOpenTasksToDate,
+  rollForwardOpenTasks,
   updateTaskStatus,
 } from "@/lib/db";
 import type { TaskStatus } from "@/lib/db";
@@ -24,7 +24,7 @@ import {
   parseTaskPriorityValue,
   parseTaskStatusValue,
 } from "@/lib/tasks/validation";
-import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
+import { getCurrentColomboDate } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -69,12 +69,11 @@ export async function POST(request: Request) {
 
   // 1. Handle Quick Preset Actions
   if (body.action === "auto_plan") {
-    const yesterday = shiftColomboDate(getCurrentColomboDate(), -1);
-    const moved = await moveOpenTasksToDate(userId, yesterday, selectedDate);
+    const moved = await rollForwardOpenTasks(userId, selectedDate);
     if (moved > 0) {
       actionLogs.push({
-        tool: "move_open_tasks",
-        details: `Rolled forward ${moved} open task(s) from ${yesterday} to ${selectedDate}`,
+        tool: "roll_forward",
+        details: `Moved ${moved} overdue task(s) onto ${selectedDate}`,
         status: "success",
       });
     }
@@ -111,14 +110,13 @@ export async function POST(request: Request) {
       summaryMessage = `No open high-priority tasks found for ${selectedDate}.`;
     }
   } else if (body.action === "roll_forward") {
-    const yesterday = shiftColomboDate(getCurrentColomboDate(), -1);
-    const moved = await moveOpenTasksToDate(userId, yesterday, selectedDate);
+    const moved = await rollForwardOpenTasks(userId, selectedDate);
     actionLogs.push({
-      tool: "move_open_tasks",
-      details: moved > 0 ? `Moved ${moved} task(s) to ${selectedDate}` : `No open tasks found to roll forward from ${yesterday}`,
+      tool: "roll_forward",
+      details: moved > 0 ? `Moved ${moved} overdue task(s) onto ${selectedDate}` : `No overdue tasks before ${selectedDate}`,
       status: moved > 0 ? "success" : "info",
     });
-    summaryMessage = moved > 0 ? `Successfully rolled forward ${moved} open task(s) from ${yesterday} to ${selectedDate}.` : `No open tasks were found to roll forward from ${yesterday}.`;
+    summaryMessage = moved > 0 ? `Moved ${moved} overdue task(s) onto ${selectedDate}.` : `No overdue tasks before ${selectedDate}.`;
   } else if (body.action === "apply_routines") {
     const applied = await generateDailyTasksFromRecurring(userId, selectedDate);
     actionLogs.push({
@@ -322,11 +320,10 @@ Respond strictly with a JSON object of the following format without markdown wra
             status: "success",
           });
         } else if (act.tool === "roll_forward") {
-          const yesterday = shiftColomboDate(getCurrentColomboDate(), -1);
-          const moved = await moveOpenTasksToDate(userId, yesterday, selectedDate);
+          const moved = await rollForwardOpenTasks(userId, selectedDate);
           actionLogs.push({
-            tool: "move_open_tasks",
-            details: `Rolled forward ${moved} open task(s) from ${yesterday} to ${selectedDate}`,
+            tool: "roll_forward",
+            details: `Moved ${moved} overdue task(s) onto ${selectedDate}`,
             status: "success",
           });
         } else if (act.tool === "apply_recurring") {

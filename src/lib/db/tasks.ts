@@ -9,7 +9,6 @@ import type {
   RecurringTask,
   TaskCompletionStats,
   TaskItem,
-  TaskPriority,
   TaskStatus,
   UpdateRecurringTask,
   UpdateTaskInput,
@@ -63,6 +62,7 @@ export async function getOpenTaskCountBeforeDate(userId: number, date: string) {
       WHERE user_id = $1
         AND scheduled_date < $2::date
         AND status IN ('todo', 'in_progress')
+        AND recurring_task_id IS NULL
     `,
     [userId, date],
   );
@@ -184,8 +184,34 @@ export async function moveOpenTasksToDate(userId: number, fromDate: string, toDa
       WHERE user_id = $1
         AND scheduled_date = $2::date
         AND status IN ('todo', 'in_progress')
+        AND recurring_task_id IS NULL
     `,
     [userId, fromDate, toDate],
+  );
+
+  return rowCount ?? 0;
+}
+
+// Moves every open one-off task scheduled before `toDate` onto `toDate`, however many days
+// overdue it is. Routine instances are left on their own day: the routine recurs anyway, so
+// carrying it forward would only stack up duplicates.
+export async function rollForwardOpenTasks(userId: number, toDate: string) {
+  await ensureInitialized();
+
+  const { rowCount } = await pool.query(
+    `
+      UPDATE daily_tasks
+      SET scheduled_date = $2::date,
+          status = 'todo',
+          started_at = NULL,
+          completed_at = NULL,
+          updated_at = NOW()
+      WHERE user_id = $1
+        AND scheduled_date < $2::date
+        AND status IN ('todo', 'in_progress')
+        AND recurring_task_id IS NULL
+    `,
+    [userId, toDate],
   );
 
   return rowCount ?? 0;
@@ -346,79 +372,60 @@ export async function deleteRecurringTask(id: number, userId: number) {
   return rowCount === 1;
 }
 
+// Creates the day's routine instances. Idempotent: an existing instance (matched by routine id,
+// not title) is never duplicated, and occurrences the user deleted or moved away are skipped.
 export async function generateDailyTasksFromRecurring(userId: number, date: string) {
   await ensureInitialized();
-  const weekday = getWeekdayCode(date);
 
-  const { rows: recurringTasks } = await pool.query<{
-    id: number;
-    title: string;
-    priority: TaskPriority;
-    tags: string[];
-    note: string;
-    days_of_week: string[];
-    start_date: string;
-    end_date: string | null;
-  }>(
+  const { rowCount } = await pool.query(
     `
-      SELECT id, title, priority, tags, note, days_of_week,
-             TO_CHAR(start_date, 'YYYY-MM-DD') AS start_date,
-             TO_CHAR(end_date, 'YYYY-MM-DD') AS end_date
-      FROM recurring_tasks
-      WHERE user_id = $1
-        AND is_active = true
-        AND start_date <= $2::date
-        AND (end_date IS NULL OR end_date >= $2::date)
-        AND $3 = ANY(days_of_week)
+      INSERT INTO daily_tasks (
+        user_id, recurring_task_id, title, status, priority, tags, note, scheduled_date
+      )
+      SELECT r.user_id, r.id, r.title, 'todo', r.priority, r.tags, r.note, $2::date
+      FROM recurring_tasks r
+      WHERE r.user_id = $1
+        AND r.is_active = true
+        AND r.start_date <= $2::date
+        AND (r.end_date IS NULL OR r.end_date >= $2::date)
+        AND $3 = ANY(r.days_of_week)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM recurring_task_skips s
+          WHERE s.recurring_task_id = r.id
+            AND s.skip_date = $2::date
+        )
       ORDER BY
-        CASE priority
+        CASE r.priority
           WHEN 'high' THEN 1
           WHEN 'medium' THEN 2
           ELSE 3
         END,
-        created_at ASC
+        r.created_at ASC
+      ON CONFLICT (user_id, recurring_task_id, scheduled_date)
+        WHERE recurring_task_id IS NOT NULL
+        DO NOTHING
     `,
-    [userId, date, weekday],
+    [userId, date, getWeekdayCode(date)],
   );
 
-  if (recurringTasks.length === 0) {
-    return 0;
-  }
+  return rowCount ?? 0;
+}
 
-  const { rows: existingTasks } = await pool.query<{ title: string; recurring_task_id: number | null }>(
+export async function getRecurringSkipsByUserMonth(userId: number, month: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<{ recurring_task_id: number; skip_date: string }>(
     `
-      SELECT DISTINCT title, recurring_task_id
-      FROM daily_tasks
+      SELECT recurring_task_id, TO_CHAR(skip_date, 'YYYY-MM-DD') AS skip_date
+      FROM recurring_task_skips
       WHERE user_id = $1
-        AND scheduled_date = $2::date
+        AND TO_CHAR(skip_date, 'YYYY-MM') = $2
     `,
-    [userId, date],
+    [userId, month],
   );
 
-  const existingTitles = new Set(existingTasks.map((t) => t.title));
-  const existingRecurringIds = new Set(
-    existingTasks
-      .map((task) => task.recurring_task_id)
-      .filter((value): value is number => value !== null),
-  );
-
-  let count = 0;
-  for (const task of recurringTasks) {
-    if (!existingRecurringIds.has(task.id) && !existingTitles.has(task.title)) {
-      await pool.query(
-        `
-          INSERT INTO daily_tasks (
-            user_id, recurring_task_id, title, status, priority, tags, note, scheduled_date
-          )
-          VALUES ($1, $2, $3, 'todo', $4, $5, $6, $7::date)
-        `,
-        [userId, task.id, task.title, task.priority, task.tags, task.note, date],
-      );
-      count++;
-    }
-  }
-
-  return count;
+  return rows;
 }
 
 export async function getTaskCompletionStats(userId: number, days: number = 30) {
@@ -533,16 +540,28 @@ export async function getTasksByUser(userId: number) {
 export async function deleteTask(id: number, userId: number) {
   await ensureInitialized();
 
-  const { rowCount } = await pool.query(
+  // Deleting a routine instance records a skip so generation doesn't recreate it.
+  const { rows } = await pool.query<{ deleted: number }>(
     `
-      DELETE FROM daily_tasks
-      WHERE id = $1
-        AND user_id = $2
+      WITH deleted AS (
+        DELETE FROM daily_tasks
+        WHERE id = $1
+          AND user_id = $2
+        RETURNING recurring_task_id, scheduled_date
+      ),
+      skipped AS (
+        INSERT INTO recurring_task_skips (user_id, recurring_task_id, skip_date)
+        SELECT $2, recurring_task_id, scheduled_date
+        FROM deleted
+        WHERE recurring_task_id IS NOT NULL
+        ON CONFLICT DO NOTHING
+      )
+      SELECT COUNT(*)::int AS deleted FROM deleted
     `,
     [id, userId],
   );
 
-  return rowCount === 1;
+  return (rows[0]?.deleted ?? 0) === 1;
 }
 
 export async function updateTask(input: UpdateTaskInput) {
@@ -585,8 +604,15 @@ export async function updateTask(input: UpdateTaskInput) {
     values.push(input.note);
   }
 
+  let scheduledDateParam: number | null = null;
+
   if (input.scheduledDate !== undefined) {
-    updates.push(`scheduled_date = $${paramIdx++}::date`);
+    scheduledDateParam = paramIdx++;
+    updates.push(`scheduled_date = $${scheduledDateParam}::date`);
+    // A routine instance moved to another day becomes a one-off there (SET sees the old values).
+    updates.push(
+      `recurring_task_id = CASE WHEN scheduled_date <> $${scheduledDateParam}::date THEN NULL ELSE recurring_task_id END`,
+    );
     values.push(input.scheduledDate);
   }
 
@@ -596,7 +622,25 @@ export async function updateTask(input: UpdateTaskInput) {
 
   updates.push(`updated_at = NOW()`);
 
+  // When rescheduling a routine instance, remember its original day as skipped so generation
+  // doesn't put a fresh copy back there.
+  const skipOriginalDay =
+    scheduledDateParam === null
+      ? ""
+      : `
+    WITH skipped AS (
+      INSERT INTO recurring_task_skips (user_id, recurring_task_id, skip_date)
+      SELECT user_id, recurring_task_id, scheduled_date
+      FROM daily_tasks
+      WHERE id = $1
+        AND user_id = $2
+        AND recurring_task_id IS NOT NULL
+        AND scheduled_date <> $${scheduledDateParam}::date
+      ON CONFLICT DO NOTHING
+    )`;
+
   const query = `
+    ${skipOriginalDay}
     UPDATE daily_tasks
     SET ${updates.join(", ")}
     WHERE id = $1 AND user_id = $2
