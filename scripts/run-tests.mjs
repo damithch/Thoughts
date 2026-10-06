@@ -5,6 +5,14 @@ import { appendRagFilterClauses, parseRagQueryFilters } from "../src/lib/rag-fil
 import { rankHybridResults, selectDiverseResults } from "../src/lib/rag-retrieval.ts";
 import { normalizeVector } from "../src/lib/embedding-config.ts";
 import { buildResendRequest, RESEND_EMAILS_URL } from "../src/lib/resend-request.ts";
+import {
+  isValidTaskDate,
+  normalizeTaskTags,
+  normalizeTaskTitle,
+  parseTaskId,
+  parseTaskPriorityValue,
+  parseTaskStatusValue,
+} from "../src/lib/tasks/validation.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -414,6 +422,38 @@ test("email: Resend request uses Bearer auth and sets a User-Agent", () => {
   assert.equal(request.headers.Authorization, "Bearer re_test_key");
   assert.ok(request.headers["User-Agent"]);
   assert.deepEqual(JSON.parse(request.body), email);
+});
+
+
+test("tasks: accepts only real calendar dates", () => {
+  assert.equal(isValidTaskDate("2026-10-10"), true);
+  assert.equal(isValidTaskDate("2028-02-29"), true);
+  assert.equal(isValidTaskDate("2026-02-29"), false);
+  assert.equal(isValidTaskDate("2026-13-01"), false);
+  assert.equal(isValidTaskDate("tomorrow"), false);
+  assert.equal(isValidTaskDate("2026-10-10T00:00:00Z"), false);
+  assert.equal(isValidTaskDate(undefined), false);
+});
+
+test("tasks: rejects unknown priorities, statuses and ids", () => {
+  assert.equal(parseTaskPriorityValue("high"), "high");
+  assert.equal(parseTaskPriorityValue("urgent"), null);
+  assert.equal(parseTaskStatusValue("in_progress"), "in_progress");
+  assert.equal(parseTaskStatusValue("completed"), null);
+  assert.equal(parseTaskId("42"), 42);
+  assert.equal(parseTaskId(7), 7);
+  assert.equal(parseTaskId(-1), null);
+  assert.equal(parseTaskId("1.5"), null);
+  assert.equal(parseTaskId(null), null);
+});
+
+test("tasks: normalizes titles and tags", () => {
+  assert.equal(normalizeTaskTitle("  Call bank  "), "Call bank");
+  assert.equal(normalizeTaskTitle(42), "");
+  assert.equal(normalizeTaskTitle("x".repeat(500)).length, 200);
+  assert.deepEqual(normalizeTaskTags("Work, admin ,WORK,,"), ["work", "admin"]);
+  assert.deepEqual(normalizeTaskTags(["A", 3, "b"]), ["a", "b"]);
+  assert.deepEqual(normalizeTaskTags(undefined), []);
 });
 
 

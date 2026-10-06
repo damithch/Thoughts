@@ -1,10 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { logoutAction } from "@/app/actions";
+import {
+  deleteAgentTaskAction,
+  loadAgentTasksAction,
+  quickAddAgentTaskAction,
+  setAgentTaskStatusAction,
+  type AgentTaskResult,
+} from "@/app/dashboard/agent/actions";
 import type { RecurringTask, TaskItem, TaskPriority, TaskStatus } from "@/lib/db";
 
 type ActionLog = {
@@ -51,6 +58,7 @@ export function AgentTaskControlCenter({
   const [newTag, setNewTag] = useState("");
 
   const [isPending, startTransition] = useTransition();
+  const latestDateRequest = useRef(initialDate);
 
   // Execute Agent Command
   async function runAgentCommand(actionPayload: { action?: string; customPrompt?: string }) {
@@ -109,91 +117,110 @@ export function AgentTaskControlCenter({
     }
   }
 
-  // Update Task Status
-  async function handleStatusChange(taskId: number, newStatus: TaskStatus) {
-    try {
-      await fetch("/api/mcp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.NEXT_PUBLIC_MCP_API_KEY || "",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: Date.now(),
-          method: "tools/call",
-          params: {
-            name: "update_task_status",
-            arguments: { id: taskId, status: newStatus },
-          },
-        }),
-      });
+  function logWarning(details: string) {
+    setAgentLogs((prev) => [{ tool: "agent_error", details, status: "warning" }, ...prev]);
+  }
 
-      // Optimistic state update
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
-      );
-
-      setAgentLogs((prev) => [
-        {
-          tool: "update_task_status",
-          details: `Updated task #${taskId} status to "${newStatus}"`,
-          status: "success",
-        },
-        ...prev,
-      ]);
-    } catch (err) {
-      console.error(err);
+  function applyResult(result: AgentTaskResult) {
+    if (!result.ok) {
+      logWarning(result.error);
+      return false;
     }
+
+    setTasks(result.tasks);
+    setRecurringTasks(result.recurringTasks);
+    return true;
+  }
+
+  // Switching the date only loads tasks; it never sends anything to the LLM.
+  function handleDateChange(nextDate: string) {
+    setSelectedDate(nextDate);
+    latestDateRequest.current = nextDate;
+    startTransition(async () => {
+      const result = await loadAgentTasksAction(nextDate);
+
+      // Ignore a slow response if another date was picked in the meantime.
+      if (latestDateRequest.current === nextDate) {
+        applyResult(result);
+      }
+    });
+  }
+
+  // Update Task Status (optimistic, rolled back if the server rejects it)
+  async function handleStatusChange(taskId: number, newStatus: TaskStatus) {
+    const previousTasks = tasks;
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
+
+    const result = await setAgentTaskStatusAction(taskId, newStatus, selectedDate);
+
+    if (!applyResult(result)) {
+      setTasks(previousTasks);
+      return;
+    }
+
+    setAgentLogs((prev) => [
+      {
+        tool: "update_task_status",
+        details: `Updated task #${taskId} status to "${newStatus}"`,
+        status: "success",
+      },
+      ...prev,
+    ]);
   }
 
   // Delete Task
   async function handleDeleteTask(taskId: number) {
     if (!confirm("Are you sure you want to delete this task?")) return;
 
-    try {
-      await fetch("/api/mcp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.NEXT_PUBLIC_MCP_API_KEY || "",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: Date.now(),
-          method: "tools/call",
-          params: {
-            name: "delete_task",
-            arguments: { id: taskId },
-          },
-        }),
-      });
+    const previousTasks = tasks;
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
 
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      setAgentLogs((prev) => [
-        {
-          tool: "delete_task",
-          details: `Deleted task #${taskId}`,
-          status: "info",
-        },
-        ...prev,
-      ]);
-    } catch (err) {
-      console.error(err);
+    const result = await deleteAgentTaskAction(taskId, selectedDate);
+
+    if (!applyResult(result)) {
+      setTasks(previousTasks);
+      return;
     }
+
+    setAgentLogs((prev) => [
+      {
+        tool: "delete_task",
+        details: `Deleted task #${taskId}`,
+        status: "info",
+      },
+      ...prev,
+    ]);
   }
 
-  // Quick Add
+  // Quick Add creates the task directly with exactly what was typed (no LLM involved).
   async function handleQuickAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    await runAgentCommand({
-      customPrompt: `Create a ${newPriority} priority task titled "${newTitle.trim()}" for ${selectedDate}${newTag ? ` with tag ${newTag.trim()}` : ""}`,
-    });
+    setIsProcessing(true);
+    try {
+      const result = await quickAddAgentTaskAction({
+        title: newTitle,
+        priority: newPriority,
+        tag: newTag,
+        date: selectedDate,
+      });
 
-    setNewTitle("");
-    setNewTag("");
+      if (applyResult(result)) {
+        setAgentLogs((prev) => [
+          {
+            tool: "create_task",
+            details: `Created task "${newTitle.trim()}" (${newPriority} priority) for ${selectedDate}`,
+            status: "success",
+          },
+          ...prev,
+        ]);
+        setNewTitle("");
+        setNewTag("");
+      }
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   // Filter Tasks
@@ -208,7 +235,8 @@ export function AgentTaskControlCenter({
   const doneTasks = tasks.filter((t) => t.status === "done").length;
   const openHighTasks = tasks.filter((t) => t.priority === "high" && t.status !== "done" && t.status !== "skipped").length;
   const inProgressTasks = tasks.filter((t) => t.status === "in_progress").length;
-  const completionRate = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
+  const countedTasks = tasks.filter((t) => t.status !== "skipped").length;
+  const completionRate = countedTasks === 0 ? 0 : Math.round((doneTasks / countedTasks) * 100);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
@@ -240,12 +268,17 @@ export function AgentTaskControlCenter({
                 type="date"
                 value={selectedDate}
                 onChange={(e) => {
-                  const newD = e.target.value;
-                  setSelectedDate(newD);
-                  runAgentCommand({ customPrompt: `Fetch tasks for date ${newD}` });
+                  if (e.target.value) {
+                    handleDateChange(e.target.value);
+                  }
                 }}
                 className="rounded-full border border-cyan-950/15 bg-white px-4 py-1.5 text-xs font-semibold text-stone-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-950/20"
               />
+              {isPending ? (
+                <span role="status" className="text-xs text-stone-500">
+                  Loading tasks…
+                </span>
+              ) : null}
             </div>
           </div>
 

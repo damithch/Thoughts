@@ -10,12 +10,20 @@ import {
   getRecurringTasksByUser,
   getTasksByUserAndDate,
   moveOpenTasksToDate,
-  updateTask,
   updateTaskStatus,
 } from "@/lib/db";
-import type { TaskItem, TaskPriority, TaskStatus } from "@/lib/db";
+import type { TaskStatus } from "@/lib/db";
 import { getUserSettings } from "@/lib/db/settings";
 import { generateWithFallback } from "@/lib/gemini";
+import {
+  isValidTaskDate,
+  normalizeTaskNote,
+  normalizeTaskTags,
+  normalizeTaskTitle,
+  parseTaskId,
+  parseTaskPriorityValue,
+  parseTaskStatusValue,
+} from "@/lib/tasks/validation";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +55,10 @@ export async function POST(request: Request) {
     body = (await request.json()) as AgentTaskRequestBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (body.date !== undefined && !isValidTaskDate(body.date)) {
+    return NextResponse.json({ error: "date must be a valid YYYY-MM-DD date." }, { status: 400 });
   }
 
   const selectedDate = body.date || getCurrentColomboDate();
@@ -138,7 +150,9 @@ export async function POST(request: Request) {
 
     // Build prompt for LLM intent parsing
     const baseSystemPrompt = `You are an AI Task & Thought Execution Agent for the personal productivity app 'Thoughts'.
-The user current date is "${selectedDate}".
+Today's date (Asia/Colombo) is "${getCurrentColomboDate()}". The date the user is currently viewing is "${selectedDate}".
+Resolve relative dates such as "tomorrow" or "next Friday" from today's date. Every "scheduledDate" must be an absolute date in YYYY-MM-DD format; if the user names no date, use "${selectedDate}".
+Only use taskId values that appear in the task list below.
 Current daily tasks for ${selectedDate}:
 ${JSON.stringify(tasks, null, 2)}
 
@@ -171,7 +185,7 @@ Respond strictly with a JSON object of the following format without markdown wra
       ? `${settings.agent_custom_prompt}\n\n${baseSystemPrompt}`
       : baseSystemPrompt;
 
-    let parsed: { actions?: any[]; summary?: string } | null = null;
+    let parsed: { actions?: unknown[]; summary?: string } | null = null;
 
     try {
       const { text: llmOutput } = await generateWithFallback(systemPrompt, settings.agent_max_tokens, settings.agent_temperature, settings.llm_model);
@@ -180,111 +194,61 @@ Respond strictly with a JSON object of the following format without markdown wra
         parsed = JSON.parse(jsonMatch[0]);
       }
     } catch (e) {
-      console.warn("LLM parsing failed or unavailable, falling back to rule-based parser:", e);
+      console.warn("Agent LLM call failed or returned unparseable output:", e);
     }
 
-    // Heuristic / pattern matching fallback if LLM is unavailable or unparsed
+    // No keyword guessing: if the model is unavailable or unparseable, change nothing and say so.
+    // (The old fallback created tasks from arbitrary text and could bulk-complete or delete tasks.)
     if (!parsed || !Array.isArray(parsed.actions)) {
-      const lower = promptText.toLowerCase();
-      const actions: any[] = [];
+      actionLogs.push({
+        tool: "agent_unavailable",
+        details: "The AI could not interpret this request, so nothing was changed. Try rephrasing, or use Quick Add.",
+        status: "warning",
+      });
 
-      if (lower.includes("thought") || lower.includes("journal") || lower.includes("reflect") || lower.includes("capture")) {
-        const cleanTitle = promptText
-          .replace(/^(capture thought|capture|add thought|new thought|journal|reflect|thought:?)\s*/i, "")
-          .trim();
-        actions.push({
-          tool: "create_thought",
-          title: cleanTitle.length > 0 ? cleanTitle.slice(0, 100) : promptText,
-          category: "Journal",
-          mood: 7,
-          summary: promptText,
-          body: promptText,
-          tags: ["agent-capture"],
-        });
-      } else if (lower.includes("done") || lower.includes("complete") || lower.includes("finish")) {
-        // Find matching tasks by title or keyword
-        const targets = tasks.filter((t) => lower.includes(t.title.toLowerCase()) || lower.includes(t.priority));
-        if (targets.length > 0) {
-          for (const target of targets) {
-            actions.push({ tool: "update_status", taskId: target.id, status: "done" });
-          }
-        } else if (lower.includes("all") || lower.includes("tasks")) {
-          for (const t of tasks) {
-            if (t.status !== "done") {
-              actions.push({ tool: "update_status", taskId: t.id, status: "done" });
-            }
-          }
-        }
-      } else if (lower.includes("delete") || lower.includes("remove")) {
-        const targets = tasks.filter((t) => lower.includes(t.title.toLowerCase()));
-        for (const target of targets) {
-          actions.push({ tool: "delete_task", taskId: target.id });
-        }
-      } else if (lower.includes("roll forward") || lower.includes("carry over") || lower.includes("move open")) {
-        actions.push({ tool: "roll_forward" });
-      } else if (lower.includes("routine") || lower.includes("recurring") || lower.includes("apply")) {
-        actions.push({ tool: "apply_recurring" });
-      } else {
-        // Default: Create task from prompt
-        const priority: TaskPriority = lower.includes("high") ? "high" : lower.includes("low") ? "low" : "medium";
-        actions.push({
-          tool: "create_task",
-          title: promptText.replace(/^(add|create|new task|please add)\s+/i, ""),
-          priority,
-          scheduledDate: selectedDate,
-        });
-      }
-
-      parsed = {
-        actions,
-        summary: `Processed prompt: "${promptText}".`,
-      };
+      return NextResponse.json({
+        summaryMessage: "Nothing was changed: the AI could not interpret this request right now.",
+        actionLogs,
+        date: selectedDate,
+        tasks: await getTasksByUserAndDate(userId, selectedDate),
+        recurringTasks: await getRecurringTasksByUser(userId),
+      });
     }
 
-    // Execute actions
-    if (parsed.actions && parsed.actions.length > 0) {
-      for (const act of parsed.actions) {
+    // Execute actions. Every field from the model is validated; an invalid or failing operation is
+    // skipped and reported instead of aborting the whole request with a 500.
+    const ownTaskIds = new Set(tasks.map((task) => task.id));
+
+    for (const [index, rawAction] of parsed.actions.entries()) {
+      const act = (rawAction && typeof rawAction === "object" ? rawAction : {}) as Record<string, unknown>;
+      const skip = (reason: string) => {
+        actionLogs.push({ tool: String(act.tool ?? "unknown"), details: `Skipped: ${reason}`, status: "warning" });
+      };
+
+      try {
         if (act.tool === "create_thought") {
-          const title = act.title || promptText;
-          const category = act.category || "Reflection";
+          const title = normalizeTaskTitle(act.title) || promptText.slice(0, 100);
+          const category = typeof act.category === "string" && act.category.trim() ? act.category.trim() : "Reflection";
           const mood =
-            typeof act.mood === "number" &&
-            Number.isInteger(act.mood) &&
-            act.mood >= 1 &&
-            act.mood <= 10
+            typeof act.mood === "number" && Number.isInteger(act.mood) && act.mood >= 1 && act.mood <= 10
               ? act.mood
               : 7;
-          const summary = act.summary || promptText;
-          const bodyText = act.body || promptText;
-          const normalizeTags = (value: unknown, fallback: string[]) => {
-            const normalized = Array.from(
-              new Set(
-                  (Array.isArray(value) ? value : [])
-                    .filter((tag): tag is string => typeof tag === "string")
-                    .map((tag) => tag.trim().toLowerCase())
-                    .filter(Boolean),
-              ),
-            ).slice(0, 8);
-
-            return normalized.length > 0 ? normalized : fallback;
-          };
-          const tags = normalizeTags(act.tags, ["agent-capture"]);
-          const conceptTags = normalizeTags(act.conceptTags, []);
+          const summary = typeof act.summary === "string" && act.summary.trim() ? act.summary.trim() : promptText;
+          const bodyText = typeof act.body === "string" && act.body.trim() ? act.body.trim() : promptText;
+          const tags = normalizeTaskTags(act.tags);
 
           await createThought({
             title,
             category,
             mood,
-            tags,
-            conceptTags,
+            tags: tags.length > 0 ? tags : ["agent-capture"],
+            conceptTags: normalizeTaskTags(act.conceptTags),
             summary,
             body: bodyText,
             linkedBookIdeaId: null,
             insightReflection: "",
             userId,
-            requestId: body.requestId
-              ? `${body.requestId}:thought:${actionLogs.length}`
-              : undefined,
+            requestId: body.requestId ? `${body.requestId}:thought:${index}` : undefined,
           });
 
           actionLogs.push({
@@ -293,15 +257,30 @@ Respond strictly with a JSON object of the following format without markdown wra
             status: "success",
           });
         } else if (act.tool === "create_task") {
-          const title = act.title || promptText;
-          const priority: TaskPriority = act.priority || "medium";
-          const scheduledDate = act.scheduledDate || selectedDate;
+          const title = normalizeTaskTitle(act.title);
+          const priority = act.priority === undefined ? "medium" : parseTaskPriorityValue(act.priority);
+          const scheduledDate = act.scheduledDate === undefined ? selectedDate : act.scheduledDate;
+
+          if (!title) {
+            skip("the task had no title.");
+            continue;
+          }
+          if (!priority) {
+            skip(`"${String(act.priority)}" is not a valid priority.`);
+            continue;
+          }
+          if (!isValidTaskDate(scheduledDate)) {
+            skip(`"${String(act.scheduledDate)}" is not a valid date (expected YYYY-MM-DD).`);
+            continue;
+          }
+
+          const tags = normalizeTaskTags(act.tags);
           await createTask({
             userId,
             title,
             priority,
-            tags: act.tags || [settings.agent_default_tag],
-            note: act.note || `Created via AI Task Agent`,
+            tags: tags.length > 0 ? tags : normalizeTaskTags(settings.agent_default_tag),
+            note: normalizeTaskNote(act.note) || "Created via AI Task Agent",
             scheduledDate,
           });
           actionLogs.push({
@@ -309,19 +288,37 @@ Respond strictly with a JSON object of the following format without markdown wra
             details: `Created task "${title}" (${priority} priority) for ${scheduledDate}`,
             status: "success",
           });
-        } else if (act.tool === "update_status" && act.taskId) {
-          const newStatus: TaskStatus = act.status || "done";
-          await updateTaskStatus({ id: act.taskId, status: newStatus, userId });
+        } else if (act.tool === "update_status") {
+          const taskId = parseTaskId(act.taskId);
+          const newStatus = act.status === undefined ? "done" : parseTaskStatusValue(act.status);
+
+          if (!taskId || !ownTaskIds.has(taskId)) {
+            skip(`task #${String(act.taskId)} is not on ${selectedDate}.`);
+            continue;
+          }
+          if (!newStatus) {
+            skip(`"${String(act.status)}" is not a valid status.`);
+            continue;
+          }
+
+          await updateTaskStatus({ id: taskId, status: newStatus, userId });
           actionLogs.push({
             tool: "update_task_status",
-            details: `Updated task #${act.taskId} status to "${newStatus}"`,
+            details: `Updated task #${taskId} status to "${newStatus}"`,
             status: "success",
           });
-        } else if (act.tool === "delete_task" && act.taskId) {
-          await deleteTask(act.taskId, userId);
+        } else if (act.tool === "delete_task") {
+          const taskId = parseTaskId(act.taskId);
+
+          if (!taskId || !ownTaskIds.has(taskId)) {
+            skip(`task #${String(act.taskId)} is not on ${selectedDate}.`);
+            continue;
+          }
+
+          await deleteTask(taskId, userId);
           actionLogs.push({
             tool: "delete_task",
-            details: `Deleted task #${act.taskId}`,
+            details: `Deleted task #${taskId}`,
             status: "success",
           });
         } else if (act.tool === "roll_forward") {
@@ -339,10 +336,18 @@ Respond strictly with a JSON object of the following format without markdown wra
             details: `Applied ${count} recurring routine(s) to ${selectedDate}`,
             status: "success",
           });
+        } else if (act.tool !== "none") {
+          skip("unknown operation.");
         }
+      } catch (error) {
+        console.error("Agent action failed:", act.tool, error);
+        actionLogs.push({
+          tool: String(act.tool ?? "unknown"),
+          details: "Failed: the database rejected this operation.",
+          status: "warning",
+        });
       }
     }
-
 
     summaryMessage = parsed.summary || `Agent executed ${actionLogs.length} action(s) for your request.`;
   }

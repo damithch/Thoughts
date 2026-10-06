@@ -67,8 +67,13 @@ function isRecurringScheduled(task: RecurringTask, date: string) {
   return task.days_of_week.includes(getWeekdayCode(date));
 }
 
-function isClosed(status: TaskStatus | null) {
-  return status === "done" || status === "skipped";
+function isDone(status: TaskStatus | null) {
+  return status === "done";
+}
+
+// A skipped task (or no task) neither completes nor breaks a streak, and is left out of rates.
+function isNeutral(status: TaskStatus | null) {
+  return status === null || status === "skipped";
 }
 
 function getStreakMetrics(cells: Record<string, TaskStatus | null>, days: string[]) {
@@ -79,10 +84,10 @@ function getStreakMetrics(cells: Record<string, TaskStatus | null>, days: string
   for (const day of days) {
     const status = cells[day];
 
-    if (isClosed(status)) {
+    if (isDone(status)) {
       running += 1;
       best = Math.max(best, running);
-    } else if (status !== null) {
+    } else if (!isNeutral(status)) {
       running = 0;
     }
   }
@@ -90,12 +95,12 @@ function getStreakMetrics(cells: Record<string, TaskStatus | null>, days: string
   for (let index = days.length - 1; index >= 0; index -= 1) {
     const status = cells[days[index]];
 
-    if (isClosed(status)) {
+    if (isDone(status)) {
       current += 1;
       continue;
     }
 
-    if (status !== null) {
+    if (!isNeutral(status)) {
       break;
     }
   }
@@ -312,8 +317,10 @@ function buildMatrixRows(
         const status = row.cells[day];
 
         if (status !== null) {
-          row.totalCount += 1;
-          if (isClosed(status)) {
+          if (!isNeutral(status)) {
+            row.totalCount += 1;
+          }
+          if (isDone(status)) {
             row.closedCount += 1;
           }
           continue;
@@ -335,7 +342,7 @@ function buildMatrixRows(
 
       return row;
     })
-    .filter((row) => row.totalCount > 0)
+    .filter((row) => monthDays.some((day) => row.cells[day] !== null))
     .sort((left, right) => {
       const sourceOrder = { recurring: 0, task: 1 };
       const priorityOrder = { high: 0, medium: 1, low: 2 };
@@ -371,12 +378,12 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
   const monthDayStats = activeDays.map((day) => {
     const statuses = matrixRows
       .map((row) => row.cells[day])
-      .filter((status): status is TaskStatus => status !== null);
+      .filter((status): status is TaskStatus => !isNeutral(status));
 
     return {
       date: day,
       total_tasks: statuses.length,
-      completed_tasks: statuses.filter((status) => isClosed(status)).length,
+      completed_tasks: statuses.filter((status) => isDone(status)).length,
     };
   });
   const totalTasks = monthDayStats.reduce((sum, day) => sum + day.total_tasks, 0);
@@ -432,7 +439,7 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
             value={
               todayStats ? `${todayStats.completed_tasks}/${todayStats.total_tasks}` : "0/0"
             }
-            sublabel="tasks closed"
+            sublabel="tasks done"
           />
           <StatCard
             label="Best Streak"
