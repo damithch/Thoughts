@@ -36,6 +36,15 @@ import {
   upsertUserSettings,
 } from "@/lib/db";
 import { isValidPassword } from "@/lib/password-reset";
+import {
+  isValidTaskDate,
+  normalizeTaskNote,
+  normalizeTaskTags,
+  normalizeTaskTitle,
+  parseTaskId,
+  parseTaskPriorityValue,
+  parseTaskStatusValue,
+} from "@/lib/tasks/validation";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 function parseMood(value: FormDataEntryValue | null) {
@@ -478,39 +487,69 @@ export async function logoutAction() {
   redirect("/login?toast=signed_out&type=success");
 }
 
-export async function createTaskAction(formData: FormData) {
+export type CreateTaskFormState = {
+  error: string | null;
+  values: {
+    title: string;
+    priority: string;
+    tags: string;
+    note: string;
+    date: string;
+  };
+};
+
+// Used with useActionState: on failure the form re-renders with the error and everything the
+// user typed (including the chosen date) instead of bouncing back to today with an empty form.
+export async function createTaskAction(
+  _previousState: CreateTaskFormState,
+  formData: FormData,
+): Promise<CreateTaskFormState> {
   const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     redirect("/login");
   }
 
-  const title = formData.get("title")?.toString().trim() ?? "";
-  const priority = parseTaskPriority(formData.get("priority"));
-  const tags = parseTags(formData.get("tags"));
-  const note = formData.get("note")?.toString().trim() ?? "";
-  const date = parseDate(formData.get("date"));
+  const values = {
+    title: formData.get("title")?.toString() ?? "",
+    priority: formData.get("priority")?.toString() ?? "medium",
+    tags: formData.get("tags")?.toString() ?? "",
+    note: formData.get("note")?.toString() ?? "",
+    date: formData.get("date")?.toString() ?? "",
+  };
+  const title = normalizeTaskTitle(values.title);
+  const priority = parseTaskPriorityValue(values.priority);
 
-  if (!title || !priority || !date) {
-    redirect("/dashboard/today?toast=task_invalid&type=error");
+  if (!title) {
+    return { error: "Give the task a title.", values };
+  }
+
+  if (!priority) {
+    return { error: "Choose a priority.", values };
+  }
+
+  if (!isValidTaskDate(values.date)) {
+    return { error: "Choose a valid date for the task.", values };
   }
 
   try {
     await createTask({
       title,
       priority,
-      tags,
-      note,
-      scheduledDate: date,
+      tags: normalizeTaskTags(values.tags),
+      note: normalizeTaskNote(values.note),
+      scheduledDate: values.date,
       userId: currentUser.id,
     });
-  } catch {
-    redirect("/dashboard/today?toast=task_save_failed&type=error");
+  } catch (error) {
+    console.error("Failed to create task.", error);
+    return { error: "That task could not be saved. Try again.", values };
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/today");
-  redirect(`/dashboard/today?date=${date}&toast=task_created&type=success`);
+  revalidatePath("/dashboard/agent");
+  redirect(`/dashboard/today?date=${values.date}&toast=task_created&type=success`);
 }
 
 export async function updateTaskStatusAction(formData: FormData) {
@@ -956,20 +995,24 @@ export async function updateTaskAction(formData: FormData) {
     redirect("/login");
   }
 
-  const taskId = Number(formData.get("taskId"));
-  const title = formData.get("title")?.toString().trim();
-  const priority = formData.get("priority")?.toString() as TaskPriority;
-  const status = formData.get("status")?.toString() as TaskStatus;
-  const note = formData.get("note")?.toString().trim();
+  const taskId = parseTaskId(formData.get("taskId"));
+  const rawTitle = formData.get("title");
+  const rawPriority = formData.get("priority");
+  const rawStatus = formData.get("status");
+  const rawNote = formData.get("note");
+  const title = rawTitle === null ? undefined : normalizeTaskTitle(rawTitle.toString());
+  const priority = rawPriority === null ? undefined : parseTaskPriorityValue(rawPriority.toString());
+  const status = rawStatus === null ? undefined : parseTaskStatusValue(rawStatus.toString());
 
-  if (Number.isInteger(taskId) && taskId > 0) {
+  // An invalid priority or status is ignored instead of reaching the DB CHECK constraint.
+  if (taskId) {
     await updateTask({
       id: taskId,
       userId: currentUser.id,
       ...(title ? { title } : {}),
       ...(priority ? { priority } : {}),
       ...(status ? { status } : {}),
-      ...(note !== undefined ? { note } : {}),
+      ...(rawNote !== null ? { note: normalizeTaskNote(rawNote.toString()) } : {}),
     });
   }
 

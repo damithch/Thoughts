@@ -180,8 +180,11 @@ export type RecurringTask = {
 
 export type TaskCompletionStats = {
   date: string;
+  // Excludes skipped tasks.
   total_tasks: number;
+  // Done tasks only.
   completed_tasks: number;
+  skipped_tasks: number;
   completion_rate: number;
 };
 

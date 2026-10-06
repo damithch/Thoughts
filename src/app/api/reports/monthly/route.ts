@@ -41,7 +41,9 @@ function buildTaskProgress(tasks: MonthlyTask[]) {
   }
 
   summary.completion_rate =
-    summary.total === 0 ? 0 : Number(((summary.done / summary.total) * 100).toFixed(1));
+    summary.total - summary.skipped === 0
+      ? 0
+      : Number(((summary.done / (summary.total - summary.skipped)) * 100).toFixed(1));
 
   return summary;
 }

@@ -87,7 +87,7 @@ Agent                      — a command bar on every tasks view, not a separate
 
 ## 4. Phased plan
 
-### Phase 1: stop the bleeding (small, safe; about 1 day)
+### Phase 1: stop the bleeding (small, safe; about 1 day) — done
 | # | Change | Fixes |
 |---|---|---|
 | 1.1 | Add a visible date input to the Today quick-add (default = viewed date) + "Jump to date" picker next to ◀ ▶ | 1 |

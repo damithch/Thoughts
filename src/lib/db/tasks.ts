@@ -435,11 +435,14 @@ export async function getTaskCompletionStats(userId: number, days: number = 30) 
       )
       SELECT
         TO_CHAR(dr.date, 'YYYY-MM-DD') AS date,
-        COALESCE(COUNT(dt.id), 0)::int AS total_tasks,
-        COALESCE(COUNT(CASE WHEN dt.status IN ('done', 'skipped') THEN 1 END), 0)::int AS completed_tasks,
+        -- Skipped tasks are reported separately and left out of the rate, so skipping is not "completing".
+        COUNT(CASE WHEN dt.status <> 'skipped' THEN 1 END)::int AS total_tasks,
+        COUNT(CASE WHEN dt.status = 'done' THEN 1 END)::int AS completed_tasks,
+        COUNT(CASE WHEN dt.status = 'skipped' THEN 1 END)::int AS skipped_tasks,
         CASE
-          WHEN COUNT(dt.id) = 0 THEN 0
-          ELSE ROUND(100.0 * COUNT(CASE WHEN dt.status IN ('done', 'skipped') THEN 1 END) / COUNT(dt.id))::int
+          WHEN COUNT(CASE WHEN dt.status <> 'skipped' THEN 1 END) = 0 THEN 0
+          ELSE ROUND(100.0 * COUNT(CASE WHEN dt.status = 'done' THEN 1 END)
+            / COUNT(CASE WHEN dt.status <> 'skipped' THEN 1 END))::int
         END AS completion_rate
       FROM date_range dr
       LEFT JOIN daily_tasks dt
@@ -461,11 +464,13 @@ export async function getTaskCompletionStatsForMonth(userId: number, month: stri
     `
       SELECT
         TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS date,
-        COUNT(*)::int AS total_tasks,
-        COUNT(CASE WHEN status IN ('done', 'skipped') THEN 1 END)::int AS completed_tasks,
+        COUNT(CASE WHEN status <> 'skipped' THEN 1 END)::int AS total_tasks,
+        COUNT(CASE WHEN status = 'done' THEN 1 END)::int AS completed_tasks,
+        COUNT(CASE WHEN status = 'skipped' THEN 1 END)::int AS skipped_tasks,
         CASE
-          WHEN COUNT(*) = 0 THEN 0
-          ELSE ROUND(100.0 * COUNT(CASE WHEN status IN ('done', 'skipped') THEN 1 END) / COUNT(*))::int
+          WHEN COUNT(CASE WHEN status <> 'skipped' THEN 1 END) = 0 THEN 0
+          ELSE ROUND(100.0 * COUNT(CASE WHEN status = 'done' THEN 1 END)
+            / COUNT(CASE WHEN status <> 'skipped' THEN 1 END))::int
         END AS completion_rate
       FROM daily_tasks
       WHERE user_id = $1

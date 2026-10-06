@@ -3,13 +3,13 @@ import { redirect } from "next/navigation";
 
 import {
   createDailyCheckInAction,
-  createTaskAction,
   logoutAction,
   rolloverTasksAction,
   saveDayRecordAction,
   updateTaskStatusAction,
 } from "@/app/actions";
 import { Toast } from "@/app/components/toast";
+import { TaskQuickAddForm } from "@/app/dashboard/today/task-quick-add-form";
 import { getCurrentUser } from "@/lib/auth";
 import {
   generateDailyTasksFromRecurring,
@@ -19,6 +19,7 @@ import {
   getTasksByUserAndDate,
   TaskItem,
 } from "@/lib/db";
+import { isValidTaskDate } from "@/lib/tasks/validation";
 import {
   formatColomboDateLabel,
   getCurrentColomboDate,
@@ -298,9 +299,7 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
 
   const params = await searchParams;
   const requestedDate = params?.date ?? getCurrentColomboDate();
-  const activeDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
-    ? requestedDate
-    : getCurrentColomboDate();
+  const activeDate = isValidTaskDate(requestedDate) ? requestedDate : getCurrentColomboDate();
   const previousDate = shiftColomboDate(activeDate, -1);
   const nextDate = shiftColomboDate(activeDate, 1);
   const toastMessage = params?.toast ? todayToastMessages[params.toast] : undefined;
@@ -473,6 +472,25 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
                   Next day
                 </Link>
               </div>
+              <form action="/dashboard/today" method="get" className="flex items-center gap-2 text-xs">
+                <label htmlFor="jump-to-date" className="uppercase tracking-[0.16em] text-emerald-800/70">
+                  Go to
+                </label>
+                <input
+                  id="jump-to-date"
+                  type="date"
+                  name="date"
+                  required
+                  defaultValue={activeDate}
+                  className="rounded-full border border-emerald-950/10 bg-white/80 px-3 py-2 text-stone-900 outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/30"
+                />
+                <button
+                  type="submit"
+                  className="rounded-full border border-emerald-950/10 bg-white/70 px-4 py-2 uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white"
+                >
+                  Go
+                </button>
+              </form>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs uppercase tracking-[0.16em] text-stone-500">
@@ -730,79 +748,7 @@ export default async function TodayPage({ searchParams }: TodayPageProps) {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <form
-            action={createTaskAction}
-            className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
-          >
-            <input type="hidden" name="date" value={activeDate} />
-            <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
-              Quick add
-            </p>
-            <h2 className="mt-2 font-[family:var(--font-display)] text-2xl leading-none text-stone-900 sm:text-3xl">
-              Add a task for this day
-            </h2>
-
-            <div className="mt-6 grid gap-5">
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Task
-                </span>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  placeholder="Finish API outline"
-                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Priority
-                </span>
-                <select
-                  name="priority"
-                  defaultValue="medium"
-                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                >
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Tags
-                </span>
-                <input
-                  type="text"
-                  name="tags"
-                  placeholder="work, admin, health"
-                  className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm text-stone-700">
-                <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                  Note
-                </span>
-                <textarea
-                  name="note"
-                  rows={4}
-                  placeholder="Optional context, blocker, or success condition."
-                  className="resize-none rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
-                />
-              </label>
-
-              <button
-                type="submit"
-                className="rounded-full bg-emerald-950 px-5 py-3 text-sm uppercase tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-800"
-              >
-                Add task
-              </button>
-            </div>
-          </form>
+          <TaskQuickAddForm defaultDate={activeDate} today={getCurrentColomboDate()} />
 
           <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
             <div className="flex flex-col gap-4">
