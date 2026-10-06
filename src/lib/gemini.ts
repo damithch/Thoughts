@@ -9,10 +9,13 @@ import {
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
 const GEMINI_LLM_MODEL = process.env.GEMINI_LLM_MODEL ?? "gemini-3.6-flash";
+// The pgvector schema and every embedding request use the EMBEDDING_DIM constant (1536);
+// the env var does not change that. A mismatched value is only worth a warning, not a crash
+// that fails `next build` while collecting page data.
 const configuredEmbeddingDim = Number(process.env.EMBEDDING_DIM ?? EMBEDDING_DIM);
 if (configuredEmbeddingDim !== EMBEDDING_DIM) {
-  throw new Error(
-    `EMBEDDING_DIM must be ${EMBEDDING_DIM} to match the pgvector schema; received ${configuredEmbeddingDim}.`,
+  console.warn(
+    `EMBEDDING_DIM=${configuredEmbeddingDim} is ignored; embeddings always use ${EMBEDDING_DIM} dimensions to match the pgvector schema. Remove or update the variable.`,
   );
 }
 const GEMINI_REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS ?? 60_000);
