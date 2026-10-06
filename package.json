@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types scripts/run-tests.mjs",
-    "test:query-intent": "node --experimental-default-type=module --experimental-strip-types scripts/query-intent-eval.mts"
+    "test:query-intent": "node --experimental-default-type=module --experimental-strip-types scripts/query-intent-eval.mts",
+    "test:db": "node --experimental-strip-types --import ./scripts/db-test-register.mjs scripts/db-tests.mts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "16.2.7",

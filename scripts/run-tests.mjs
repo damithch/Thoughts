@@ -16,6 +16,7 @@ import {
 import { getWeekdayCode, isRoutineScheduledOn } from "../src/lib/tasks/recurrence.ts";
 import { describeUpcomingDays, resolveRelativeDate } from "../src/lib/tasks/dates.ts";
 import { buildAgentPlan } from "../src/lib/tasks/agent-plan.ts";
+import { computeDayStreak, routineAdherence } from "../src/lib/tasks/stats.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -562,6 +563,41 @@ test("agent plan: three or more changes to existing tasks are a bulk change", ()
   );
   assert.equal(plan.operations.length, 3);
   assert.ok(plan.operations.every((op) => op.requiresConfirmation));
+});
+
+
+test("stats: empty days don't break a streak and an unfinished today doesn't either", () => {
+  const day = (date, total, done) => ({ date, total, done });
+  const days = [
+    day("2026-10-01", 2, 1), // broken
+    day("2026-10-02", 1, 1),
+    day("2026-10-03", 0, 0), // empty: neutral
+    day("2026-10-04", 3, 3),
+    day("2026-10-05", 2, 2),
+    day("2026-10-06", 4, 1), // today, in progress
+  ];
+  assert.deepEqual(computeDayStreak(days, "2026-10-06"), { current: 3, best: 3 });
+  assert.deepEqual(computeDayStreak([...days.slice(0, 5), day("2026-10-06", 2, 2)], "2026-10-06"), { current: 4, best: 4 });
+  assert.deepEqual(computeDayStreak([day("2026-10-05", 1, 0)], "2026-10-06"), { current: 0, best: 0 });
+});
+
+test("stats: routine adherence counts missed days but not skips or today", () => {
+  const routines = [
+    { id: 1, title: "Gym", is_active: true, days_of_week: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], start_date: "2026-01-01", end_date: null },
+    { id: 2, title: "Old", is_active: false, days_of_week: ["mon"], start_date: "2026-01-01", end_date: null },
+  ];
+  const days = ["2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"];
+  const tasks = [
+    { recurring_task_id: 1, scheduled_date: "2026-10-02", status: "done" },
+    { recurring_task_id: 1, scheduled_date: "2026-10-03", status: "skipped" },
+    // 10-04: no task created -> missed
+    { recurring_task_id: 1, scheduled_date: "2026-10-05", status: "todo" }, // left open -> missed
+    { recurring_task_id: 1, scheduled_date: "2026-10-06", status: "todo" }, // today -> not yet
+  ];
+  assert.deepEqual(routineAdherence(routines, tasks, new Set(), days, "2026-10-06"), [
+    { id: 1, title: "Gym", done: 1, scheduled: 3 },
+  ]);
+  assert.deepEqual(routineAdherence(routines, tasks, new Set(["1:2026-10-04"]), days, "2026-10-06")[0].scheduled, 2);
 });
 
 

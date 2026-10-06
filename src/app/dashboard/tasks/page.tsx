@@ -8,12 +8,12 @@ import {
   saveDayRecordAction,
 } from "@/app/actions";
 import { Toast } from "@/app/components/toast";
+import { ensureTodaysRoutines } from "@/app/dashboard/tasks/_lib/ensure-todays-routines";
 import { OverdueBanner } from "@/app/dashboard/tasks/_components/overdue-banner";
 import { TaskList } from "@/app/dashboard/tasks/_components/task-list";
 import { TaskQuickAddForm } from "@/app/dashboard/tasks/_components/task-quick-add-form";
 import { getCurrentUser } from "@/lib/auth";
 import {
-  generateDailyTasksFromRecurring,
   getDailyCheckInsByUserAndDate,
   getDayRecordByUserAndDate,
   getOverdueOpenTasks,
@@ -202,11 +202,7 @@ export default async function TasksTodayPage({ searchParams }: TodayPageProps) {
   // deleted). Other days get them through the explicit "Add routines" button, so browsing the
   // calendar never fills days with tasks.
   if (isToday) {
-    try {
-      await generateDailyTasksFromRecurring(currentUser.id, today);
-    } catch (error) {
-      console.error("Failed to generate today's routine tasks.", error);
-    }
+    await ensureTodaysRoutines(currentUser.id, today);
   }
 
   const [tasks, dayRecord, overdueTasks, checkIns] = await Promise.all([

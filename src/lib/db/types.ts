@@ -143,6 +143,8 @@ export type TaskItem = {
   // null = an undated task in the Inbox.
   scheduled_date: string | null;
   recurring_task_id: number | null;
+  // How many times this task was pushed to a later day while still open.
+  rollover_count: number;
   user_id: number;
   created_at: Date;
   updated_at: Date;

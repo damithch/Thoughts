@@ -32,7 +32,7 @@ export async function getTasksByUserAndDate(userId: number, date: string) {
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE user_id = $1
@@ -59,7 +59,7 @@ export async function getTasksByUserDateRange(userId: number, fromDate: string, 
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE user_id = $1
@@ -87,7 +87,7 @@ export async function getInboxTasksByUser(userId: number) {
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE user_id = $1
@@ -119,7 +119,7 @@ export async function getTaskByIdForUser(taskId: number, userId: number) {
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE id = $1
@@ -145,9 +145,9 @@ export async function restoreDeletedTask(task: TaskItem, userId: number) {
       `
         INSERT INTO daily_tasks (
           user_id, recurring_task_id, title, status, priority, tags, note, scheduled_date,
-          created_at, started_at, completed_at, updated_at
+          created_at, started_at, completed_at, rollover_count, updated_at
         )
-        SELECT $1, r.id, $3, $4, $5, $6, $7, $8::date, $9, $10, $11, NOW()
+        SELECT $1, r.id, $3, $4, $5, $6, $7, $8::date, $9, $10, $11, $12, NOW()
         FROM (SELECT 1) AS one
         LEFT JOIN recurring_tasks r ON r.id = $2 AND r.user_id = $1
         ON CONFLICT DO NOTHING
@@ -164,6 +164,7 @@ export async function restoreDeletedTask(task: TaskItem, userId: number) {
         task.created_at,
         task.started_at,
         task.completed_at,
+        Number.isInteger(task.rollover_count) && task.rollover_count >= 0 ? task.rollover_count : 0,
       ],
     );
 
@@ -196,7 +197,7 @@ export async function getOverdueOpenTasks(userId: number, date: string) {
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE user_id = $1
@@ -227,6 +228,45 @@ export async function getInboxOpenTaskCount(userId: number) {
   );
 
   return Number(rows[0]?.total ?? "0");
+}
+
+// Open tasks that have been pushed to a later day at least `minimum` times.
+export async function getSlippingOpenTasks(userId: number, minimum = 2) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id, rollover_count,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND status IN ('todo', 'in_progress')
+        AND rollover_count >= $2
+      ORDER BY rollover_count DESC, scheduled_date ASC NULLS LAST, id ASC
+      LIMIT 20
+    `,
+    [userId, minimum],
+  );
+
+  return rows;
+}
+
+export async function getRecurringSkipsByUserRange(userId: number, fromDate: string, toDate: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<{ recurring_task_id: number; skip_date: string }>(
+    `
+      SELECT recurring_task_id, TO_CHAR(skip_date, 'YYYY-MM-DD') AS skip_date
+      FROM recurring_task_skips
+      WHERE user_id = $1
+        AND skip_date BETWEEN $2::date AND $3::date
+    `,
+    [userId, fromDate, toDate],
+  );
+
+  return rows;
 }
 
 export async function getOpenTaskCountBeforeDate(userId: number, date: string) {
@@ -357,6 +397,7 @@ export async function moveOpenTasksToDate(userId: number, fromDate: string, toDa
     `
       UPDATE daily_tasks
       SET scheduled_date = $3::date,
+          rollover_count = rollover_count + CASE WHEN $3::date > scheduled_date THEN 1 ELSE 0 END,
           status = 'todo',
           started_at = NULL,
           completed_at = NULL,
@@ -382,6 +423,7 @@ export async function rollForwardOpenTasks(userId: number, toDate: string) {
     `
       UPDATE daily_tasks
       SET scheduled_date = $2::date,
+          rollover_count = rollover_count + 1,
           status = 'todo',
           started_at = NULL,
           completed_at = NULL,
@@ -678,7 +720,7 @@ export async function getTasksByUserMonth(userId: number, month: string) {
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE user_id = $1
@@ -705,7 +747,7 @@ export async function getTasksByUser(userId: number) {
     `
       SELECT id, title, status, priority, tags, note,
              TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
-             recurring_task_id,
+             recurring_task_id, rollover_count,
              user_id, created_at, updated_at, started_at, completed_at
       FROM daily_tasks
       WHERE user_id = $1
@@ -789,6 +831,10 @@ export async function updateTask(input: UpdateTaskInput) {
   if (input.scheduledDate !== undefined) {
     scheduledDateParam = paramIdx++;
     updates.push(`scheduled_date = $${scheduledDateParam}::date`);
+    // Pushing an open task to a later day counts as a slip (for the weekly review).
+    updates.push(
+      `rollover_count = rollover_count + CASE WHEN status IN ('todo', 'in_progress') AND scheduled_date < $${scheduledDateParam}::date THEN 1 ELSE 0 END`,
+    );
     // A routine instance moved to another day becomes a one-off there (SET sees the old values).
     updates.push(
       `recurring_task_id = CASE WHEN scheduled_date IS DISTINCT FROM $${scheduledDateParam}::date THEN NULL ELSE recurring_task_id END`,

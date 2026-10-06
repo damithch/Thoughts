@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: thoughts_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/thoughts_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Database tests
+        run: npm run test:db
+
+      - name: Build
+        run: npm run build
+        env:
+          AUTH_SECRET: ci-build-secret
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      # The codebase still has pre-existing lint errors (see docs/audit/03-code-issues.md);
+      # report them without failing the build until they are fixed.
+      - name: Lint (non-blocking)
+        run: npm run lint
+        continue-on-error: true
