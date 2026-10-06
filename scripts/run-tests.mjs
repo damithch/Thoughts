@@ -4,6 +4,7 @@ import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { appendRagFilterClauses, parseRagQueryFilters } from "../src/lib/rag-filters.ts";
 import { rankHybridResults, selectDiverseResults } from "../src/lib/rag-retrieval.ts";
 import { normalizeVector } from "../src/lib/embedding-config.ts";
+import { buildResendRequest, RESEND_EMAILS_URL } from "../src/lib/resend-request.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -402,6 +403,17 @@ test("anchor streak: resets to 0 when gap is more than 1 day", () => {
   const result = calculateStreak(["2026-09-15", "2026-09-14"], "2026-09-18");
   assert.equal(result.currentStreak, 0);
   assert.equal(result.longestStreak, 2);
+});
+
+
+test("email: Resend request uses Bearer auth and sets a User-Agent", () => {
+  const email = { from: "a@example.com", to: ["b@example.com"], subject: "Reset", text: "link" };
+  const request = buildResendRequest("re_test_key", email);
+  assert.equal(RESEND_EMAILS_URL, "https://api.resend.com/emails");
+  assert.equal(request.method, "POST");
+  assert.equal(request.headers.Authorization, "Bearer re_test_key");
+  assert.ok(request.headers["User-Agent"]);
+  assert.deepEqual(JSON.parse(request.body), email);
 });
 
 

@@ -518,7 +518,6 @@ export async function getTasksByUser(userId: number) {
       FROM daily_tasks
       WHERE user_id = $1
       ORDER BY scheduled_date DESC, created_at DESC
-      LIMIT 1000
     `,
     [userId],
   );
