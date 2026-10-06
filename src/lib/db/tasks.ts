@@ -290,15 +290,18 @@ export async function getDayRecordsByUserMonth(userId: number, month: string) {
 export async function createTask(input: NewTask) {
   await ensureInitialized();
 
-  await pool.query(
+  const { rows } = await pool.query<{ id: number }>(
     `
       INSERT INTO daily_tasks (
         user_id, title, status, priority, tags, note, scheduled_date
       )
       VALUES ($1, $2, 'todo', $3, $4, $5, $6::date)
+      RETURNING id
     `,
     [input.userId, input.title, input.priority, input.tags, input.note, input.scheduledDate],
   );
+
+  return Number(rows[0].id);
 }
 
 export async function updateTaskStatus(input: UpdateTaskStatusInput) {

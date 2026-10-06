@@ -1,6 +1,11 @@
 import "server-only";
 
-import { Pool } from "pg";
+import { Pool, types } from "pg";
+
+// BIGINT/BIGSERIAL (int8) columns come back as strings by default. Every id in this schema is
+// BIGSERIAL and typed as `number`, so string ids silently broke comparisons such as
+// `ids.has(taskId)` and `idea.id === linkedBookIdeaId`. Ids stay far below 2^53.
+types.setTypeParser(types.builtins.INT8, (value) => Number(value));
 
 function normalizeDatabaseUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);

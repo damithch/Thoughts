@@ -14,6 +14,8 @@ import {
   parseTaskStatusValue,
 } from "../src/lib/tasks/validation.ts";
 import { getWeekdayCode, isRoutineScheduledOn } from "../src/lib/tasks/recurrence.ts";
+import { describeUpcomingDays, resolveRelativeDate } from "../src/lib/tasks/dates.ts";
+import { buildAgentPlan } from "../src/lib/tasks/agent-plan.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -467,6 +469,99 @@ test("routines: weekday codes and schedule windows", () => {
   assert.equal(isRoutineScheduledOn(weekdays, "2026-09-30"), false);
   assert.equal(isRoutineScheduledOn(weekdays, "2026-11-02"), false);
   assert.equal(isRoutineScheduledOn({ ...weekdays, end_date: null }, "2027-03-01"), true);
+});
+
+
+test("dates: resolves relative phrases from a Tuesday", () => {
+  const today = "2026-10-06"; // Tuesday
+  const cases = {
+    "today": "2026-10-06",
+    "Tomorrow": "2026-10-07",
+    "day after tomorrow": "2026-10-08",
+    "in 3 days": "2026-10-09",
+    "in two weeks": "2026-10-20",
+    "friday": "2026-10-09",
+    "this friday": "2026-10-09",
+    "next friday": "2026-10-09",
+    "tuesday": "2026-10-06",
+    "next tuesday": "2026-10-13",
+    "on monday": "2026-10-12",
+    "next week": "2026-10-12",
+    "oct 10": "2026-10-10",
+    "10th of october": "2026-10-10",
+    "jan 5": "2027-01-05",
+    "2026-12-25": "2026-12-25",
+  };
+  for (const [phrase, expected] of Object.entries(cases)) {
+    assert.equal(resolveRelativeDate(phrase, today), expected, phrase);
+  }
+  assert.equal(resolveRelativeDate("someday", today), null);
+  assert.equal(resolveRelativeDate("feb 30", today), null);
+  assert.match(describeUpcomingDays(today, 2), /2026-10-06 tuesday \(today\)\n2026-10-07 wednesday \(tomorrow\)/);
+});
+
+const agentContext = {
+  today: "2026-10-06",
+  defaultDate: "2026-10-06",
+  tasks: [
+    { id: 1, title: "Gym", status: "todo", priority: "medium", scheduled_date: "2026-10-06" },
+    { id: 2, title: "Email", status: "todo", priority: "low", scheduled_date: "2026-10-06" },
+    { id: 3, title: "Report", status: "todo", priority: "high", scheduled_date: "2026-10-07" },
+  ],
+};
+
+test("agent plan: dates resolved in code win over the model's date", () => {
+  const plan = buildAgentPlan(
+    [{ tool: "create_task", title: "Call bank", priority: "high", when: "next friday", date: "2026-10-16" }],
+    agentContext,
+  );
+  assert.equal(plan.operations[0].date, "2026-10-09");
+  assert.equal(plan.operations[0].requiresConfirmation, false);
+  assert.match(plan.operations[0].description, /Call bank.*2026-10-09.*high/);
+});
+
+test("agent plan: rejects unknown tasks, bad dates and bad values", () => {
+  const plan = buildAgentPlan(
+    [
+      { tool: "delete_task", taskId: 99 },
+      { tool: "create_task", title: "X", when: "someday soon" },
+      { tool: "create_task", title: "Y", priority: "urgent" },
+      { tool: "set_status", taskId: 1, status: "finished" },
+      { tool: "drop_database" },
+    ],
+    agentContext,
+  );
+  assert.equal(plan.operations.length, 0);
+  assert.equal(plan.rejected.length, 5);
+});
+
+test("agent plan: deletes and roll-forward need confirmation; small edits don't", () => {
+  const plan = buildAgentPlan(
+    [
+      { tool: "set_status", taskId: 1, status: "done" },
+      { tool: "update_task", taskId: 3, when: "tomorrow", priority: "low" },
+      { tool: "delete_task", taskId: 2 },
+      { tool: "roll_forward" },
+      { tool: "create_task", title: "Inbox idea", toInbox: true },
+    ],
+    agentContext,
+  );
+  const byTool = Object.fromEntries(plan.operations.map((op) => [op.tool, op]));
+  assert.equal(byTool.set_status.requiresConfirmation, false);
+  assert.equal(byTool.update_task.requiresConfirmation, false);
+  assert.equal(byTool.update_task.date, "2026-10-07");
+  assert.equal(byTool.delete_task.requiresConfirmation, true);
+  assert.equal(byTool.roll_forward.requiresConfirmation, true);
+  assert.equal(byTool.create_task.date, null);
+});
+
+test("agent plan: three or more changes to existing tasks are a bulk change", () => {
+  const plan = buildAgentPlan(
+    [1, 2, 3].map((taskId) => ({ tool: "set_status", taskId, status: "done" })),
+    agentContext,
+  );
+  assert.equal(plan.operations.length, 3);
+  assert.ok(plan.operations.every((op) => op.requiresConfirmation));
 });
 
 

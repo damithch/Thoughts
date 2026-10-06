@@ -105,7 +105,9 @@ function classifyGeminiError(status: number, body: string): { errorType: GeminiE
 }
 
 async function callGenerativeApi(path: string, body: unknown) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${path}`;
+  // Overridable for proxies and local testing; defaults to the public Gemini API.
+  const baseUrl = process.env.GEMINI_API_BASE_URL?.replace(/\/+$/, "") || "https://generativelanguage.googleapis.com/v1beta";
+  const url = `${baseUrl}/models/${path}`;
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   // Use API key header only.
@@ -219,7 +221,20 @@ export async function embedTexts(texts: string[], taskType: EmbeddingTaskType) {
   return embeddings;
 }
 
-export async function generateFromPrompt(promptOrParts: string | string[], maxOutputTokens = 2048, temperature = 0.0, modelOverride?: string) {
+export type GenerateOptions = {
+  // Sent as systemInstruction, so instructions are kept apart from user-supplied text.
+  systemInstruction?: string;
+  // Gemini structured output: the response is JSON matching this (OpenAPI-subset) schema.
+  responseSchema?: Record<string, unknown>;
+};
+
+export async function generateFromPrompt(
+  promptOrParts: string | string[],
+  maxOutputTokens = 2048,
+  temperature = 0.0,
+  modelOverride?: string,
+  options: GenerateOptions = {},
+) {
   // Use the modern generateContent method and the nested `contents.parts` body shape
   const model = modelOverride || GEMINI_LLM_MODEL;
   const path = `${model}:generateContent`;
@@ -235,7 +250,13 @@ export async function generateFromPrompt(promptOrParts: string | string[], maxOu
     generationConfig: {
       temperature,
       maxOutputTokens,
+      ...(options.responseSchema
+        ? { responseMimeType: "application/json", responseSchema: options.responseSchema }
+        : {}),
     },
+    ...(options.systemInstruction
+      ? { systemInstruction: { parts: [{ text: options.systemInstruction }] } }
+      : {}),
   } as any;
 
   const json = await callGenerativeApi(path, body);
@@ -277,6 +298,7 @@ export async function generateWithFallback(
   maxOutputTokens = 2048,
   temperature = 0.0,
   primaryModel?: string,
+  options: GenerateOptions = {},
 ): Promise<{ text: string; modelUsed: string }> {
   const primary = primaryModel || GEMINI_LLM_MODEL;
 
@@ -287,7 +309,7 @@ export async function generateWithFallback(
 
   for (const model of modelChain) {
     try {
-      const result = await generateFromPrompt(promptOrParts, maxOutputTokens, temperature, model);
+      const result = await generateFromPrompt(promptOrParts, maxOutputTokens, temperature, model, options);
       return { text: result, modelUsed: model };
     } catch (err) {
       lastError = err as Error;
