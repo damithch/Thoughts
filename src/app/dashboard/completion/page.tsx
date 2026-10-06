@@ -10,6 +10,7 @@ import {
   type TaskItem,
   type TaskStatus,
 } from "@/lib/db";
+import { isRoutineScheduledOn } from "@/lib/tasks/recurrence";
 import {
   getCurrentColomboDate,
   getCurrentColomboMonth,
@@ -36,8 +37,6 @@ type MatrixRow = {
   bestStreak: number;
 };
 
-const WEEKDAY_ORDER = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
-
 function getMonthDays(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
@@ -49,23 +48,8 @@ function getMonthDays(month: string) {
   });
 }
 
-function getWeekdayCode(date: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-
-  return WEEKDAY_ORDER[weekday];
-}
-
 function isRecurringScheduled(task: RecurringTask, date: string) {
-  if (date < task.start_date) {
-    return false;
-  }
-
-  if (task.end_date && date > task.end_date) {
-    return false;
-  }
-
-  return task.days_of_week.includes(getWeekdayCode(date));
+  return isRoutineScheduledOn(task, date);
 }
 
 function isDone(status: TaskStatus | null) {
@@ -297,7 +281,7 @@ function buildMatrixRows(
 
     const row = rows.get(key);
 
-    if (!row) {
+    if (!row || !task.scheduled_date) {
       continue;
     }
 

@@ -52,6 +52,183 @@ export async function getTasksByUserAndDate(userId: number, date: string) {
   return rows;
 }
 
+export async function getTasksByUserDateRange(userId: number, fromDate: string, toDate: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND scheduled_date BETWEEN $2::date AND $3::date
+      ORDER BY
+        scheduled_date ASC,
+        CASE priority
+          WHEN 'high' THEN 1
+          WHEN 'medium' THEN 2
+          ELSE 3
+        END,
+        created_at ASC,
+        id ASC
+    `,
+    [userId, fromDate, toDate],
+  );
+
+  return rows;
+}
+
+export async function getInboxTasksByUser(userId: number) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND scheduled_date IS NULL
+      ORDER BY
+        CASE status
+          WHEN 'in_progress' THEN 1
+          WHEN 'todo' THEN 2
+          ELSE 3
+        END,
+        CASE priority
+          WHEN 'high' THEN 1
+          WHEN 'medium' THEN 2
+          ELSE 3
+        END,
+        created_at DESC,
+        id DESC
+    `,
+    [userId],
+  );
+
+  return rows;
+}
+
+export async function getTaskByIdForUser(taskId: number, userId: number) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE id = $1
+        AND user_id = $2
+      LIMIT 1
+    `,
+    [taskId, userId],
+  );
+
+  return rows[0] ?? null;
+}
+
+// Puts back a task removed by deleteTask (used for Undo). Restoring a routine instance also
+// clears the skip that the delete recorded.
+export async function restoreDeletedTask(task: TaskItem, userId: number) {
+  await ensureInitialized();
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `
+        INSERT INTO daily_tasks (
+          user_id, recurring_task_id, title, status, priority, tags, note, scheduled_date,
+          created_at, started_at, completed_at, updated_at
+        )
+        SELECT $1, r.id, $3, $4, $5, $6, $7, $8::date, $9, $10, $11, NOW()
+        FROM (SELECT 1) AS one
+        LEFT JOIN recurring_tasks r ON r.id = $2 AND r.user_id = $1
+        ON CONFLICT DO NOTHING
+      `,
+      [
+        userId,
+        task.recurring_task_id,
+        task.title,
+        task.status,
+        task.priority,
+        task.tags,
+        task.note,
+        task.scheduled_date,
+        task.created_at,
+        task.started_at,
+        task.completed_at,
+      ],
+    );
+
+    if (task.recurring_task_id !== null && task.scheduled_date !== null) {
+      await client.query(
+        `
+          DELETE FROM recurring_task_skips
+          WHERE user_id = $1
+            AND recurring_task_id = $2
+            AND skip_date = $3::date
+        `,
+        [userId, task.recurring_task_id, task.scheduled_date],
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Open one-off tasks scheduled before `date` (what rollForwardOpenTasks would move).
+export async function getOverdueOpenTasks(userId: number, date: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<TaskItem>(
+    `
+      SELECT id, title, status, priority, tags, note,
+             TO_CHAR(scheduled_date, 'YYYY-MM-DD') AS scheduled_date,
+             recurring_task_id,
+             user_id, created_at, updated_at, started_at, completed_at
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND scheduled_date < $2::date
+        AND status IN ('todo', 'in_progress')
+        AND recurring_task_id IS NULL
+      ORDER BY scheduled_date ASC, created_at ASC, id ASC
+      LIMIT 100
+    `,
+    [userId, date],
+  );
+
+  return rows;
+}
+
+export async function getInboxOpenTaskCount(userId: number) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<{ total: string }>(
+    `
+      SELECT COUNT(*)::text AS total
+      FROM daily_tasks
+      WHERE user_id = $1
+        AND scheduled_date IS NULL
+        AND status IN ('todo', 'in_progress')
+    `,
+    [userId],
+  );
+
+  return Number(rows[0]?.total ?? "0");
+}
+
 export async function getOpenTaskCountBeforeDate(userId: number, date: string) {
   await ensureInitialized();
 
@@ -611,7 +788,7 @@ export async function updateTask(input: UpdateTaskInput) {
     updates.push(`scheduled_date = $${scheduledDateParam}::date`);
     // A routine instance moved to another day becomes a one-off there (SET sees the old values).
     updates.push(
-      `recurring_task_id = CASE WHEN scheduled_date <> $${scheduledDateParam}::date THEN NULL ELSE recurring_task_id END`,
+      `recurring_task_id = CASE WHEN scheduled_date IS DISTINCT FROM $${scheduledDateParam}::date THEN NULL ELSE recurring_task_id END`,
     );
     values.push(input.scheduledDate);
   }
@@ -635,7 +812,7 @@ export async function updateTask(input: UpdateTaskInput) {
       WHERE id = $1
         AND user_id = $2
         AND recurring_task_id IS NOT NULL
-        AND scheduled_date <> $${scheduledDateParam}::date
+        AND scheduled_date IS DISTINCT FROM $${scheduledDateParam}::date
       ON CONFLICT DO NOTHING
     )`;
 

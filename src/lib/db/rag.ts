@@ -319,7 +319,9 @@ function buildDailyRollupDocuments(input: {
   }
 
   for (const task of input.tasks) {
-    dates.add(task.scheduled_date);
+    if (task.scheduled_date) {
+      dates.add(task.scheduled_date);
+    }
   }
 
   for (const checkIn of input.checkIns) {

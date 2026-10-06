@@ -199,7 +199,7 @@ export async function GET(request: Request) {
 
     const dateSet = new Set<string>([
       ...thoughtsPayload.map((thought) => thought.created_date),
-      ...tasksPayload.map((task) => task.scheduled_date),
+      ...tasksPayload.flatMap((task) => (task.scheduled_date ? [task.scheduled_date] : [])),
       ...checkInsPayload.map((checkIn) => checkIn.entry_date),
       ...dayNotesPayload.map((dayNote) => dayNote.entry_date),
       ...conversationLogsPayload.map((summary) => summary.conversation_date),

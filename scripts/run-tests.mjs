@@ -13,6 +13,7 @@ import {
   parseTaskPriorityValue,
   parseTaskStatusValue,
 } from "../src/lib/tasks/validation.ts";
+import { getWeekdayCode, isRoutineScheduledOn } from "../src/lib/tasks/recurrence.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -454,6 +455,18 @@ test("tasks: normalizes titles and tags", () => {
   assert.deepEqual(normalizeTaskTags("Work, admin ,WORK,,"), ["work", "admin"]);
   assert.deepEqual(normalizeTaskTags(["A", 3, "b"]), ["a", "b"]);
   assert.deepEqual(normalizeTaskTags(undefined), []);
+});
+
+
+test("routines: weekday codes and schedule windows", () => {
+  assert.equal(getWeekdayCode("2026-10-06"), "tue");
+  assert.equal(getWeekdayCode("2026-10-11"), "sun");
+  const weekdays = { days_of_week: ["mon", "tue", "wed", "thu", "fri"], start_date: "2026-10-01", end_date: "2026-10-31" };
+  assert.equal(isRoutineScheduledOn(weekdays, "2026-10-06"), true);
+  assert.equal(isRoutineScheduledOn(weekdays, "2026-10-11"), false);
+  assert.equal(isRoutineScheduledOn(weekdays, "2026-09-30"), false);
+  assert.equal(isRoutineScheduledOn(weekdays, "2026-11-02"), false);
+  assert.equal(isRoutineScheduledOn({ ...weekdays, end_date: null }, "2027-03-01"), true);
 });
 
 

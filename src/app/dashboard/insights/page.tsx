@@ -95,10 +95,10 @@ export default async function InsightsPage({ searchParams }: InsightsPageProps) 
                 Journal Dashboard
               </Link>
               <Link
-                href="/dashboard/today"
+                href="/dashboard/tasks"
                 className="rounded-full border border-amber-950/10 px-4 py-3 text-center text-amber-950 transition-colors hover:bg-white"
               >
-                Today View
+                Tasks
               </Link>
               <form action={logoutAction}>
                 <button

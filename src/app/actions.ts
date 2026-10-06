@@ -548,9 +548,8 @@ export async function createTaskAction(
   }
 
   revalidatePath("/dashboard");
-  revalidatePath("/dashboard/today");
-  revalidatePath("/dashboard/agent");
-  redirect(`/dashboard/today?date=${values.date}&toast=task_created&type=success`);
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect(`/dashboard/tasks?date=${values.date}&toast=task_created&type=success`);
 }
 
 export async function updateTaskStatusAction(formData: FormData) {
@@ -565,7 +564,7 @@ export async function updateTaskStatusAction(formData: FormData) {
   const date = parseDate(formData.get("date"));
 
   if (!Number.isInteger(taskId) || taskId <= 0 || !status || !date) {
-    redirect("/dashboard/today?toast=task_update_failed&type=error");
+    redirect("/dashboard/tasks?toast=task_update_failed&type=error");
   }
 
   let updated = false;
@@ -583,11 +582,11 @@ export async function updateTaskStatusAction(formData: FormData) {
   }
 
   if (failed || !updated) {
-    redirect(`/dashboard/today?date=${date}&toast=task_update_failed&type=error`);
+    redirect(`/dashboard/tasks?date=${date}&toast=task_update_failed&type=error`);
   }
 
-  revalidatePath("/dashboard/today");
-  redirect(`/dashboard/today?date=${date}&toast=task_updated&type=success`);
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect(`/dashboard/tasks?date=${date}&toast=task_updated&type=success`);
 }
 
 export async function saveDayRecordAction(formData: FormData) {
@@ -604,11 +603,11 @@ export async function saveDayRecordAction(formData: FormData) {
   const mood = moodValue ? parseMood(moodValue) : null;
 
   if (!date) {
-    redirect("/dashboard/today?toast=day_invalid&type=error");
+    redirect("/dashboard/tasks?toast=day_invalid&type=error");
   }
 
   if (moodValue && !mood) {
-    redirect(`/dashboard/today?date=${date}&toast=day_invalid&type=error`);
+    redirect(`/dashboard/tasks?date=${date}&toast=day_invalid&type=error`);
   }
 
   try {
@@ -620,11 +619,11 @@ export async function saveDayRecordAction(formData: FormData) {
       userId: currentUser.id,
     });
   } catch {
-    redirect(`/dashboard/today?date=${date}&toast=day_save_failed&type=error`);
+    redirect(`/dashboard/tasks?date=${date}&toast=day_save_failed&type=error`);
   }
 
-  revalidatePath("/dashboard/today");
-  redirect(`/dashboard/today?date=${date}&toast=day_saved&type=success`);
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect(`/dashboard/tasks?date=${date}&toast=day_saved&type=success`);
 }
 
 export async function rolloverTasksAction(formData: FormData) {
@@ -637,7 +636,7 @@ export async function rolloverTasksAction(formData: FormData) {
   const fromDate = parseDate(formData.get("date"));
 
   if (!fromDate) {
-    redirect("/dashboard/today?toast=rollover_failed&type=error");
+    redirect("/dashboard/tasks?toast=rollover_failed&type=error");
   }
 
   const toDate = shiftColomboDate(fromDate, 1);
@@ -652,15 +651,15 @@ export async function rolloverTasksAction(formData: FormData) {
   }
 
   if (failed) {
-    redirect(`/dashboard/today?date=${fromDate}&toast=rollover_failed&type=error`);
+    redirect(`/dashboard/tasks?date=${fromDate}&toast=rollover_failed&type=error`);
   }
 
   if (moved === 0) {
-    redirect(`/dashboard/today?date=${fromDate}&toast=rollover_empty&type=info`);
+    redirect(`/dashboard/tasks?date=${fromDate}&toast=rollover_empty&type=info`);
   }
 
-  revalidatePath("/dashboard/today");
-  redirect(`/dashboard/today?date=${toDate}&toast=rollover_done&type=success`);
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect(`/dashboard/tasks?date=${toDate}&toast=rollover_done&type=success`);
 }
 
 export async function createDailyCheckInAction(formData: FormData) {
@@ -677,7 +676,7 @@ export async function createDailyCheckInAction(formData: FormData) {
   const note = formData.get("note")?.toString().trim() ?? "";
 
   if (!date || !mood || !energy || !focus) {
-    redirect(`/dashboard/today?date=${date ?? ""}&toast=checkin_invalid&type=error`);
+    redirect(`/dashboard/tasks?date=${date ?? ""}&toast=checkin_invalid&type=error`);
   }
 
   try {
@@ -690,11 +689,11 @@ export async function createDailyCheckInAction(formData: FormData) {
       userId: currentUser.id,
     });
   } catch {
-    redirect(`/dashboard/today?date=${date}&toast=checkin_save_failed&type=error`);
+    redirect(`/dashboard/tasks?date=${date}&toast=checkin_save_failed&type=error`);
   }
 
-  revalidatePath("/dashboard/today");
-  redirect(`/dashboard/today?date=${date}&toast=checkin_saved&type=success`);
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect(`/dashboard/tasks?date=${date}&toast=checkin_saved&type=success`);
 }
 
 export async function createRecurringTaskAction(formData: FormData) {
@@ -713,7 +712,7 @@ export async function createRecurringTaskAction(formData: FormData) {
   const endDate = parseOptionalDate(formData.get("endDate"));
 
   if (!title || !priority || daysOfWeek.length === 0 || !startDate || (endDate && endDate < startDate)) {
-    redirect("/dashboard/tasks?toast=recurring_invalid&type=error");
+    redirect("/dashboard/tasks/routines?toast=recurring_invalid&type=error");
   }
 
   try {
@@ -728,11 +727,11 @@ export async function createRecurringTaskAction(formData: FormData) {
       userId: currentUser.id,
     });
   } catch {
-    redirect("/dashboard/tasks?toast=recurring_save_failed&type=error");
+    redirect("/dashboard/tasks/routines?toast=recurring_save_failed&type=error");
   }
 
-  revalidatePath("/dashboard/tasks");
-  redirect("/dashboard/tasks?toast=recurring_created&type=success");
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect("/dashboard/tasks/routines?toast=recurring_created&type=success");
 }
 
 export async function updateRecurringTaskAction(formData: FormData) {
@@ -761,7 +760,7 @@ export async function updateRecurringTaskAction(formData: FormData) {
     !startDate ||
     (endDate && endDate < startDate)
   ) {
-    redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
+    redirect("/dashboard/tasks/routines?toast=recurring_update_failed&type=error");
   }
 
   let updated = false;
@@ -786,11 +785,11 @@ export async function updateRecurringTaskAction(formData: FormData) {
   }
 
   if (failed || !updated) {
-    redirect("/dashboard/tasks?toast=recurring_update_failed&type=error");
+    redirect("/dashboard/tasks/routines?toast=recurring_update_failed&type=error");
   }
 
-  revalidatePath("/dashboard/tasks");
-  redirect("/dashboard/tasks?toast=recurring_updated&type=success");
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect("/dashboard/tasks/routines?toast=recurring_updated&type=success");
 }
 
 export async function deleteRecurringTaskAction(formData: FormData) {
@@ -803,7 +802,7 @@ export async function deleteRecurringTaskAction(formData: FormData) {
   const taskId = Number(formData.get("taskId"));
 
   if (!Number.isInteger(taskId) || taskId <= 0) {
-    redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
+    redirect("/dashboard/tasks/routines?toast=recurring_delete_failed&type=error");
   }
 
   let deleted = false;
@@ -817,11 +816,11 @@ export async function deleteRecurringTaskAction(formData: FormData) {
   }
 
   if (failed || !deleted) {
-    redirect("/dashboard/tasks?toast=recurring_delete_failed&type=error");
+    redirect("/dashboard/tasks/routines?toast=recurring_delete_failed&type=error");
   }
 
-  revalidatePath("/dashboard/tasks");
-  redirect("/dashboard/tasks?toast=recurring_deleted&type=success");
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect("/dashboard/tasks/routines?toast=recurring_deleted&type=success");
 }
 
 export async function rollForwardOverdueAction(formData: FormData) {
@@ -834,7 +833,7 @@ export async function rollForwardOverdueAction(formData: FormData) {
   const toDate = parseDate(formData.get("date"));
 
   if (!toDate || !isValidTaskDate(toDate)) {
-    redirect("/dashboard/today?toast=overdue_failed&type=error");
+    redirect("/dashboard/tasks?toast=overdue_failed&type=error");
   }
 
   let moved = 0;
@@ -848,13 +847,15 @@ export async function rollForwardOverdueAction(formData: FormData) {
   }
 
   if (failed) {
-    redirect(`/dashboard/today?date=${toDate}&toast=overdue_failed&type=error`);
+    redirect(`/dashboard/tasks?date=${toDate}&toast=overdue_failed&type=error`);
   }
 
-  revalidatePath("/dashboard/today");
-  revalidatePath("/dashboard/agent");
+  revalidatePath("/dashboard/tasks", "layout");
+  const toast = moved === 0 ? "overdue_empty&type=info" : "overdue_moved&type=success";
   redirect(
-    `/dashboard/today?date=${toDate}&toast=${moved === 0 ? "overdue_empty&type=info" : "overdue_moved&type=success"}`,
+    formData.get("view") === "upcoming"
+      ? `/dashboard/tasks/upcoming?toast=${toast}`
+      : `/dashboard/tasks?date=${toDate}&toast=${toast}`,
   );
 }
 
@@ -868,7 +869,7 @@ export async function applyRecurringTasksAction(formData: FormData) {
   const date = parseDate(formData.get("date"));
 
   if (!date) {
-    redirect("/dashboard/today?toast=apply_failed&type=error");
+    redirect("/dashboard/tasks?toast=apply_failed&type=error");
   }
 
   let count = 0;
@@ -881,15 +882,15 @@ export async function applyRecurringTasksAction(formData: FormData) {
   }
 
   if (failed) {
-    redirect(`/dashboard/today?date=${date}&toast=apply_failed&type=error`);
+    redirect(`/dashboard/tasks?date=${date}&toast=apply_failed&type=error`);
   }
 
   if (count === 0) {
-    redirect(`/dashboard/today?date=${date}&toast=apply_empty&type=info`);
+    redirect(`/dashboard/tasks?date=${date}&toast=apply_empty&type=info`);
   }
 
-  revalidatePath("/dashboard/today");
-  redirect(`/dashboard/today?date=${date}&toast=recurring_applied&type=success`);
+  revalidatePath("/dashboard/tasks", "layout");
+  redirect(`/dashboard/tasks?date=${date}&toast=recurring_applied&type=success`);
 }
 
 export async function createBookAction(formData: FormData) {
@@ -1013,13 +1014,12 @@ export async function deleteTaskAction(formData: FormData) {
     await deleteTask(taskId, currentUser.id);
   }
 
-  revalidatePath("/dashboard/today");
-  revalidatePath("/dashboard/agent");
+  revalidatePath("/dashboard/tasks", "layout");
 
   if (date) {
-    redirect(`/dashboard/today?date=${date}&toast=task_deleted&type=success`);
+    redirect(`/dashboard/tasks?date=${date}&toast=task_deleted&type=success`);
   } else {
-    redirect("/dashboard/today?toast=task_deleted&type=success");
+    redirect("/dashboard/tasks?toast=task_deleted&type=success");
   }
 }
 
@@ -1051,8 +1051,7 @@ export async function updateTaskAction(formData: FormData) {
     });
   }
 
-  revalidatePath("/dashboard/today");
-  revalidatePath("/dashboard/agent");
+  revalidatePath("/dashboard/tasks", "layout");
   revalidatePath("/dashboard/completion");
 }
 

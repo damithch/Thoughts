@@ -76,7 +76,7 @@ export function GlobalSearch() {
       } else if (docKey.startsWith("conversation_summary:")) {
         router.push("/dashboard/conversations");
       } else if (docKey.startsWith("daily_rollup:") || docKey.startsWith("day_note:")) {
-        router.push("/dashboard/today");
+        router.push("/dashboard/tasks");
       } else {
         router.push("/dashboard");
       }

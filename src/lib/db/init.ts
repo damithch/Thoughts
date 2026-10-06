@@ -253,6 +253,18 @@ export async function ensureInitialized() {
         WHERE recurring_task_id IS NOT NULL
       `);
 
+      // Undated tasks live in the Inbox.
+      await pool.query(`
+        ALTER TABLE daily_tasks
+        ALTER COLUMN scheduled_date DROP NOT NULL
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS daily_tasks_user_inbox_idx
+        ON daily_tasks (user_id, created_at)
+        WHERE scheduled_date IS NULL
+      `);
+
       // A routine occurrence the user removed (deleted or rescheduled away from its day).
       // Generation skips these so a deleted routine task does not come back.
       await pool.query(`

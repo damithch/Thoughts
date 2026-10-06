@@ -252,22 +252,10 @@ export default async function DashboardPage({
 
             <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap">
               <Link
-                href="/dashboard/agent"
-                className="rounded-full border border-cyan-950/20 bg-cyan-950 px-4 py-3 text-center text-cyan-50 font-semibold transition-colors hover:bg-cyan-900 shadow-md"
-              >
-                🤖 AI Task Agent
-              </Link>
-              <Link
-                href="/dashboard/today"
+                href="/dashboard/tasks"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
-                Today View
-              </Link>
-              <Link
-                href="/dashboard/tasks"
-                className="rounded-full border border-blue-950/10 px-4 py-3 text-center text-blue-950 transition-colors hover:bg-blue-50"
-              >
-                Task Management
+                Tasks
               </Link>
               <Link
                 href="/dashboard/completion"
