@@ -24,6 +24,7 @@ import {
   generateDailyTasksFromRecurring,
   getUserByEmail,
   moveOpenTasksToDate,
+  rollForwardOpenTasks,
   TaskPriority,
   TaskStatus,
   updateBookIdeaStatus,
@@ -821,6 +822,40 @@ export async function deleteRecurringTaskAction(formData: FormData) {
 
   revalidatePath("/dashboard/tasks");
   redirect("/dashboard/tasks?toast=recurring_deleted&type=success");
+}
+
+export async function rollForwardOverdueAction(formData: FormData) {
+  const currentUser = await getCurrentUser();
+
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const toDate = parseDate(formData.get("date"));
+
+  if (!toDate || !isValidTaskDate(toDate)) {
+    redirect("/dashboard/today?toast=overdue_failed&type=error");
+  }
+
+  let moved = 0;
+  let failed = false;
+
+  try {
+    moved = await rollForwardOpenTasks(currentUser.id, toDate);
+  } catch (error) {
+    console.error("Failed to roll forward overdue tasks.", error);
+    failed = true;
+  }
+
+  if (failed) {
+    redirect(`/dashboard/today?date=${toDate}&toast=overdue_failed&type=error`);
+  }
+
+  revalidatePath("/dashboard/today");
+  revalidatePath("/dashboard/agent");
+  redirect(
+    `/dashboard/today?date=${toDate}&toast=${moved === 0 ? "overdue_empty&type=info" : "overdue_moved&type=success"}`,
+  );
 }
 
 export async function applyRecurringTasksAction(formData: FormData) {

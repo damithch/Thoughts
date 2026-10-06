@@ -253,6 +253,23 @@ export async function ensureInitialized() {
         WHERE recurring_task_id IS NOT NULL
       `);
 
+      // A routine occurrence the user removed (deleted or rescheduled away from its day).
+      // Generation skips these so a deleted routine task does not come back.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS recurring_task_skips (
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          recurring_task_id BIGINT NOT NULL REFERENCES recurring_tasks(id) ON DELETE CASCADE,
+          skip_date DATE NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (recurring_task_id, skip_date)
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS recurring_task_skips_user_date_idx
+        ON recurring_task_skips (user_id, skip_date)
+      `);
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS books (
           id BIGSERIAL PRIMARY KEY,

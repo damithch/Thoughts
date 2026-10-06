@@ -416,7 +416,7 @@ export function AgentTaskControlCenter({
                   <span className="text-lg">🎯</span>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-cyan-950">Auto-Plan Day</p>
-                    <p className="text-[10px] text-stone-600 truncate">Roll forward & apply rules</p>
+                    <p className="text-[10px] text-stone-600 truncate">Bring overdue & add routines</p>
                   </div>
                 </button>
 
@@ -442,7 +442,7 @@ export function AgentTaskControlCenter({
                   <span className="text-lg">⏩</span>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-amber-950">Roll Forward</p>
-                    <p className="text-[10px] text-stone-600 truncate">Carry over yesterday</p>
+                    <p className="text-[10px] text-stone-600 truncate">Bring all overdue here</p>
                   </div>
                 </button>
 

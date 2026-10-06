@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Toast } from "@/app/components/toast";
 import { getCurrentUser } from "@/lib/auth";
 import {
+  getRecurringSkipsByUserMonth,
   getRecurringTasksByUser,
   getTasksByUserMonth,
   type RecurringTask,
@@ -238,6 +239,7 @@ function buildMatrixRows(
   monthTasks: TaskItem[],
   monthDays: string[],
   today: string,
+  skippedOccurrences: Set<string>,
 ) {
   const rows = new Map<string, MatrixRow>();
 
@@ -329,7 +331,13 @@ function buildMatrixRows(
         if (row.source === "recurring") {
           const recurringTask = recurringTasks.find((task) => `recurring-${task.id}` === row.id);
 
-          if (recurringTask && day <= today && isRecurringScheduled(recurringTask, day)) {
+          // A routine day the user deleted on purpose is left empty, not counted as missed.
+          if (
+            recurringTask &&
+            day <= today &&
+            isRecurringScheduled(recurringTask, day) &&
+            !skippedOccurrences.has(`${recurringTask.id}:${day}`)
+          ) {
             row.cells[day] = "todo";
             row.totalCount += 1;
           }
@@ -368,12 +376,22 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
   const currentDate = getCurrentColomboDate();
   const currentMonth = getCurrentColomboMonth();
   const monthDays = getMonthDays(currentMonth);
-  const [recurringTasks, monthTasks] = await Promise.all([
+  const [recurringTasks, monthTasks, recurringSkips] = await Promise.all([
     getRecurringTasksByUser(currentUser.id),
     getTasksByUserMonth(currentUser.id, currentMonth),
+    getRecurringSkipsByUserMonth(currentUser.id, currentMonth),
   ]);
 
-  const matrixRows = buildMatrixRows(recurringTasks, monthTasks, monthDays, currentDate);
+  const skippedOccurrences = new Set(
+    recurringSkips.map((skip) => `${skip.recurring_task_id}:${skip.skip_date}`),
+  );
+  const matrixRows = buildMatrixRows(
+    recurringTasks,
+    monthTasks,
+    monthDays,
+    currentDate,
+    skippedOccurrences,
+  );
   const activeDays = monthDays.filter((day) => day <= currentDate);
   const monthDayStats = activeDays.map((day) => {
     const statuses = matrixRows
