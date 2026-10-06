@@ -41,10 +41,10 @@ export default async function WorryPostponementPage() {
                 Journal Dashboard
               </Link>
               <Link
-                href="/dashboard/today"
+                href="/dashboard/tasks"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
-                Today View
+                Tasks
               </Link>
               <Link
                 href="/dashboard/activation"

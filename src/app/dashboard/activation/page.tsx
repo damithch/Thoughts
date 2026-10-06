@@ -53,16 +53,10 @@ export default async function ActivationPage() {
                 Journal Dashboard
               </Link>
               <Link
-                href="/dashboard/today"
+                href="/dashboard/tasks"
                 className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
               >
-                Today View
-              </Link>
-              <Link
-                href="/dashboard/tasks"
-                className="rounded-full border border-blue-950/10 px-4 py-3 text-center text-blue-950 transition-colors hover:bg-blue-50"
-              >
-                Task Management
+                Tasks
               </Link>
               <Link
                 href="/dashboard/worry-postponement"

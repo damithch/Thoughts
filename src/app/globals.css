@@ -42,9 +42,13 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* In the base layer so Tailwind utilities (text-*, underline) on links can override it.
+   Unlayered, it beat every utility class and links ignored their text colours. */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
 /* Custom Glassmorphism Utilities */

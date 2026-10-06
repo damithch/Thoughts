@@ -434,7 +434,7 @@ export async function GET(request: Request) {
           escapeCsv(task.priority),
           escapeCsv(task.tags.join("|")),
           escapeCsv(task.note),
-          escapeCsv(task.scheduled_date),
+          escapeCsv(task.scheduled_date ?? ""),
           escapeCsv(createdAt.localIso),
           escapeCsv(updatedAt.localIso),
           escapeCsv(task.started_at ? toColomboExportParts(task.started_at).localIso : ""),

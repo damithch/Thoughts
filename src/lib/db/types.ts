@@ -140,7 +140,8 @@ export type TaskItem = {
   priority: TaskPriority;
   tags: string[];
   note: string;
-  scheduled_date: string;
+  // null = an undated task in the Inbox.
+  scheduled_date: string | null;
   recurring_task_id: number | null;
   user_id: number;
   created_at: Date;
@@ -228,7 +229,8 @@ export type NewTask = {
   priority: TaskPriority;
   tags: string[];
   note: string;
-  scheduledDate: string;
+  // null puts the task in the Inbox.
+  scheduledDate: string | null;
   userId: number;
 };
 
@@ -332,7 +334,8 @@ export type UpdateTaskInput = {
   status?: TaskStatus;
   tags?: string[];
   note?: string;
-  scheduledDate?: string;
+  // null moves the task to the Inbox.
+  scheduledDate?: string | null;
 };
 
 export type RagDocumentUpsertInput = {

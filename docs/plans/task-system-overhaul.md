@@ -107,7 +107,7 @@ Agent                      — a command bar on every tasks view, not a separate
 | 2.4 | Rolling a recurring instance forward records a skip for its original date | 8 |
 | 2.5 | Unify roll forward: `rollForwardOpenTasks(userId, toDate)` moves **all** open tasks before `toDate`; used by Today, agent and MCP | 5 |
 
-### Phase 3: one tasks area (about 2–3 days)
+### Phase 3: one tasks area (about 2–3 days) — done
 | # | Change | Fixes |
 |---|---|---|
 | 3.1 | `src/lib/tasks/service.ts` + one shared schema; actions/agent/MCP become thin wrappers | 16 |
