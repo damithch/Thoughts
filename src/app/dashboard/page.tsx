@@ -443,24 +443,24 @@ export default async function DashboardPage({
 
           <div className="mt-5 grid gap-4 md:grid-cols-[1.25fr_0.75fr]">
             <div>
-              <div className="mb-2 grid grid-cols-7 gap-2 text-center text-[11px] uppercase tracking-[0.16em] text-stone-500">
+              <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-normal text-stone-500 sm:gap-2 sm:text-[11px] sm:tracking-[0.16em]">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((dayName) => (
                   <span key={dayName}>{dayName}</span>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
                 {calendarDays.map((cell) =>
                   cell.kind === "empty" ? (
                     <div
                       key={cell.key}
-                      className="aspect-square rounded-2xl border border-transparent"
+                      className="aspect-square rounded-xl border border-transparent sm:rounded-2xl"
                     />
                   ) : (
                     <a
                       key={cell.key}
                       href={`/dashboard/day?date=${cell.date}`}
                       aria-label={cell.isLogged ? `${cell.date}: ${cell.total} cards, mood ${cell.averageMood?.toFixed(1) ?? "0.0"}` : cell.date}
-                      className={`flex aspect-square flex-col justify-between rounded-2xl border p-2 text-left transition sm:p-2.5 ${
+                      className={`flex aspect-square min-w-0 flex-col justify-between overflow-hidden rounded-xl border p-1 text-left transition sm:rounded-2xl sm:p-2.5 ${
                         cell.isLogged
                           ? `border-emerald-900/20 text-emerald-950 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(48,84,53,0.18)] ${moodTierClassName(cell.averageMood)}`
                           : cell.date < today
@@ -468,21 +468,24 @@ export default async function DashboardPage({
                             : "border-stone-900/5 bg-white/20 text-stone-500 hover:bg-white/50"
                       } ${cell.isToday ? "ring-2 ring-emerald-800" : ""}`}
                     >
-                      <div className="flex items-start justify-between">
+                      <div className="flex flex-col items-start gap-0.5 sm:flex-row sm:justify-between sm:gap-0">
                         <span
-                          className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                          className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full text-[11px] font-semibold sm:h-6 sm:min-w-6 sm:text-xs ${
                             cell.isToday ? "bg-emerald-950 text-emerald-50" : ""
                           }`}
                         >
                           {cell.dayNumber}
                         </span>
-                        <span className="flex h-6 items-center gap-[3px]" aria-hidden="true">
+                        <span className="flex items-center gap-[2px] pl-0.5 sm:h-6 sm:gap-[3px] sm:pl-0" aria-hidden="true">
                           {Array.from({ length: Math.min(cell.total, 5) }).map((_, dotIndex) => (
-                            <span key={dotIndex} className="h-1.5 w-1.5 rounded-full bg-emerald-950" />
+                            <span
+                              key={dotIndex}
+                              className={`h-1 w-1 rounded-full bg-emerald-950 sm:h-1.5 sm:w-1.5 ${dotIndex >= 3 ? "hidden sm:block" : ""}`}
+                            />
                           ))}
                         </span>
                       </div>
-                      <div className="text-[11px] font-medium leading-4">
+                      <div className="hidden truncate text-[11px] font-medium leading-4 sm:block">
                         {cell.isLogged
                           ? `Mood ${cell.averageMood?.toFixed(1) ?? "0.0"}`
                           : cell.date < today
@@ -779,7 +782,7 @@ export default async function DashboardPage({
               {filteredThoughts.map((thought: DashboardThought) => (
                 <article
                   key={thought.id}
-                  className="flex aspect-square flex-col rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur-md transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)] sm:p-6"
+                  className="flex flex-col rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 sm:aspect-square shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur-md transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)] sm:p-6"
                 >
                   <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
                     <span className="truncate">{thought.category}</span>

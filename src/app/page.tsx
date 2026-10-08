@@ -66,22 +66,22 @@ export default async function Home() {
   const secondaryButtonClassName =
     "inline-flex min-h-14 w-full items-center justify-center rounded-full border border-white/70 bg-white/70 px-7 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-emerald-950 transition-all hover:-translate-y-0.5 hover:bg-white sm:w-auto";
   const topPillClassName =
-    "inline-flex items-center rounded-full border border-emerald-950/10 bg-white/55 px-4 py-2.5 text-xs uppercase tracking-[0.14em] text-emerald-950 transition hover:bg-white";
+    "inline-flex items-center rounded-full border border-emerald-950/10 bg-white/55 whitespace-nowrap px-3 py-2 text-[11px] uppercase tracking-[0.1em] text-emerald-950 transition hover:bg-white sm:px-4 sm:py-2.5 sm:text-xs sm:tracking-[0.14em]";
   const floatingChipClassName =
-    "absolute inline-flex items-center gap-2 rounded-full border border-emerald-950/10 bg-white/80 px-4 py-2.5 text-[13px] text-emerald-950 shadow-[0_14px_30px_rgba(48,84,53,0.18)] backdrop-blur";
+    "absolute inline-flex items-center gap-2 rounded-full border border-emerald-950/10 bg-white/80 px-3 py-2 text-xs text-emerald-950 shadow-[0_14px_30px_rgba(48,84,53,0.18)] backdrop-blur sm:px-4 sm:py-2.5 sm:text-[13px]";
 
   return (
     <main className="thought-network-bg min-h-screen overflow-hidden px-4 pb-12 pt-6 text-stone-900 sm:px-6">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-14">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 sm:gap-14">
         {/* Top bar */}
-        <header className="flex flex-wrap items-center justify-between gap-4">
+        <header className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
           <Link
             href="/"
-            className="font-[family:var(--font-display)] text-3xl leading-none text-emerald-950"
+            className="font-[family:var(--font-display)] text-2xl leading-none text-emerald-950 sm:text-3xl"
           >
             Thoughts
           </Link>
-          <nav aria-label="Account" className="flex items-center gap-3">
+          <nav aria-label="Account" className="flex items-center gap-2 sm:gap-3">
             {currentUser ? (
               <Link
                 href="/dashboard"
@@ -140,7 +140,7 @@ export default async function Home() {
           </div>
 
           {/* Badge with floating chips */}
-          <div className="relative h-[320px] w-[320px] shrink-0 md:h-[460px] md:w-[460px]">
+          <div className="relative aspect-square w-full max-w-[300px] shrink-0 min-[400px]:max-w-[320px] md:w-[380px] md:max-w-none lg:w-[460px]">
             <svg
               className="absolute -inset-1.5 hidden h-[calc(100%+12px)] w-[calc(100%+12px)] md:block"
               viewBox="0 0 472 472"
@@ -172,19 +172,19 @@ export default async function Home() {
                 alt="The Thoughts badge: a head in profile with an open book and a star"
                 fill
                 priority
-                sizes="(min-width: 768px) 440px, 304px"
+                sizes="(min-width: 1024px) 440px, (min-width: 768px) 360px, 304px"
                 className="scale-[1.16] object-cover"
               />
             </div>
-            <span className={`${floatingChipClassName} -left-6 top-[70px]`}>
+            <span className={`${floatingChipClassName} left-0 top-[15%] md:-left-6`}>
               <span className="h-2 w-2 rounded-full bg-emerald-600" />
               Mood 7/10
             </span>
-            <span className={`${floatingChipClassName} -right-5 top-[150px]`}>
+            <span className={`${floatingChipClassName} right-0 top-[33%] md:-right-5`}>
               <span className="h-2 w-2 rounded-full bg-emerald-600" />
               4-day streak
             </span>
-            <span className={`${floatingChipClassName} bottom-9 left-5`}>
+            <span className={`${floatingChipClassName} bottom-[8%] left-3 md:left-5`}>
               <span className="h-2 w-2 rounded-full bg-emerald-600" />
               One true sentence
             </span>
@@ -230,11 +230,11 @@ export default async function Home() {
                 Days shade by mood, dots count your cards, and missed days stay
                 visible without scolding you.
               </p>
-              <div className="mt-6 grid grid-cols-7 gap-2" aria-hidden="true">
+              <div className="mt-6 grid grid-cols-7 gap-1.5 sm:gap-2" aria-hidden="true">
                 {sampleDays.map((item) => (
                   <div
                     key={item.day}
-                    className={`flex aspect-square flex-col justify-between rounded-[14px] border p-2 text-xs font-semibold text-emerald-950 ${
+                    className={`flex aspect-square flex-col justify-between rounded-[10px] border p-1.5 text-xs font-semibold sm:rounded-[14px] sm:p-2 text-emerald-950 ${
                       item.isFuture
                         ? "border-stone-900/5 bg-white/20 text-stone-500"
                         : item.tier === 0
@@ -243,11 +243,11 @@ export default async function Home() {
                     } ${item.isToday ? "ring-2 ring-emerald-800" : ""}`}
                   >
                     <span>{item.day}</span>
-                    <span className="flex gap-[3px]">
+                    <span className="flex gap-[2px] sm:gap-[3px]">
                       {Array.from({ length: item.cards }).map((_, dotIndex) => (
                         <i
                           key={dotIndex}
-                          className="h-1.5 w-1.5 rounded-full bg-emerald-950"
+                          className="h-1 w-1 rounded-full bg-emerald-950 sm:h-1.5 sm:w-1.5"
                         />
                       ))}
                     </span>
