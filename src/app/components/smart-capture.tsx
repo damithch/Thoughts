@@ -152,7 +152,7 @@ export function SmartCapture({ onAutoFill }: SmartCaptureProps) {
   const errorConfig = error ? ERROR_CONFIG[error.errorType] : null;
 
   return (
-    <div className="rounded-[1.75rem] border border-purple-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(88,48,120,0.08)]">
+    <div className="rounded-[1.75rem] border border-purple-950/10 bg-white/45 p-4 shadow-[0_20px_50px_rgba(88,48,120,0.08)]">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-purple-800/70">

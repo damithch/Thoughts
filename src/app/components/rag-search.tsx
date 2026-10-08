@@ -92,7 +92,7 @@ export function RagSearch() {
   }
 
   return (
-    <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)]">
+    <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)]">
       <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">Search your journal</p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <input

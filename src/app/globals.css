@@ -85,3 +85,17 @@ a {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(120, 110, 100, 0.5);
 }
+
+/* Dashboard background: a faint network of linked thoughts over soft green glows. */
+.thought-network-bg {
+  background-color: #dbeed9;
+  background-image:
+    url("/thought-network.svg"),
+    radial-gradient(rgba(18, 53, 36, 0.1) 1px, transparent 1.5px),
+    radial-gradient(circle at 12% 8%, oklch(90.5% 0.093 164.15 / 0.55) 0, transparent 32%),
+    radial-gradient(circle at 88% 38%, oklch(95% 0.052 163.051 / 0.9) 0, transparent 30%),
+    radial-gradient(circle at 10% 75%, oklch(90.5% 0.093 164.15 / 0.45) 0, transparent 34%),
+    linear-gradient(180deg, #eef8ee 0%, #dbeed9 52%, #c9dfc6 100%);
+  background-size: 520px 520px, 32px 32px, auto, auto, auto, auto;
+  background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+}

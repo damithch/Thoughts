@@ -80,6 +80,16 @@ function shiftMonth(month: string, delta: number) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+type CalendarCell = ReturnType<typeof buildCalendarDays>[number];
+type CalendarDayCell = Extract<CalendarCell, { kind: "day" }>;
+
+function moodTierClassName(mood: number | null) {
+  if (mood === null || mood < 5.5) return "bg-emerald-100/70";
+  if (mood < 6.5) return "bg-emerald-200/70";
+  if (mood < 7.5) return "bg-emerald-300/60";
+  return "bg-emerald-400/55";
+}
+
 function buildCalendarDays(month: string, activityByDate: Map<string, { total: number; averageMood: number }>) {
   const [year, monthIndex] = month.split("-").map(Number);
   const firstDay = new Date(Date.UTC(year, monthIndex - 1, 1));
@@ -221,6 +231,19 @@ export default async function DashboardPage({
     ),
   ).getUTCDate();
   const missedDaysCount = Math.max(daysInActiveMonth - loggedDaysCount, 0);
+  const elapsedCalendarDays = calendarDays.filter(
+    (cell): cell is CalendarDayCell => cell.kind === "day" && cell.date <= today,
+  );
+  let calendarStreak = 0;
+  for (let index = elapsedCalendarDays.length - 1; index >= 0; index -= 1) {
+    const day = elapsedCalendarDays[index];
+
+    if (day.isLogged) {
+      calendarStreak += 1;
+    } else if (!day.isToday) {
+      break;
+    }
+  }
   const latestActivity = latestThought
     ? toColomboDate(latestThought.created_at)
     : "No entries";
@@ -233,10 +256,10 @@ export default async function DashboardPage({
         : "Archive";
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
+    <main className="thought-network-bg min-h-screen overflow-hidden px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
       {toastMessage ? <Toast message={toastMessage} tone={params?.type} /> : null}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
-        <header className="rounded-[2rem] border border-emerald-950/10 bg-white/70 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur sm:rounded-[2.5rem] sm:p-6 md:p-8">
+        <header className="rounded-[2rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur-md sm:rounded-[2.5rem] sm:p-6 md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.22em] text-emerald-800/70 sm:text-sm sm:tracking-[0.28em]">
@@ -331,7 +354,7 @@ export default async function DashboardPage({
         ) : null}
 
         <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               Total cards
             </p>
@@ -339,7 +362,7 @@ export default async function DashboardPage({
               {filteredThoughts.length}
             </p>
           </div>
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               Latest activity
             </p>
@@ -347,7 +370,7 @@ export default async function DashboardPage({
               {latestActivity}
             </p>
           </div>
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               Average mood
             </p>
@@ -357,11 +380,11 @@ export default async function DashboardPage({
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] sm:rounded-[2rem] sm:p-5">
+        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] sm:rounded-[2rem] sm:p-5">
           <RagSearch />
         </section>
 
-        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">
+        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
@@ -401,7 +424,7 @@ export default async function DashboardPage({
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">
+        <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
@@ -448,31 +471,56 @@ export default async function DashboardPage({
                     <a
                       key={cell.key}
                       href={`/dashboard/day?date=${cell.date}`}
-                      className={`flex aspect-square flex-col justify-between rounded-2xl border p-2 text-left transition sm:p-3 ${
+                      aria-label={cell.isLogged ? `${cell.date}: ${cell.total} cards, mood ${cell.averageMood?.toFixed(1) ?? "0.0"}` : cell.date}
+                      className={`flex aspect-square flex-col justify-between rounded-2xl border p-2 text-left transition sm:p-2.5 ${
                         cell.isLogged
-                          ? "border-emerald-900/15 bg-emerald-100/80 text-emerald-950 hover:bg-emerald-100"
-                          : "border-stone-900/8 bg-white/70 text-stone-500 hover:bg-white"
-                      } ${cell.isToday ? "ring-2 ring-emerald-800/30" : ""}`}
+                          ? `border-emerald-900/20 text-emerald-950 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(48,84,53,0.18)] ${moodTierClassName(cell.averageMood)}`
+                          : cell.date < today
+                            ? "border-dashed border-stone-900/20 bg-white/35 text-stone-600 hover:bg-white/70"
+                            : "border-stone-900/5 bg-white/20 text-stone-500 hover:bg-white/50"
+                      } ${cell.isToday ? "ring-2 ring-emerald-800" : ""}`}
                     >
-                      <span className="text-xs font-semibold">{cell.dayNumber}</span>
-                      <div className="text-[11px] leading-4">
-                        {cell.isLogged ? (
-                          <>
-                            <div>{cell.total} card{cell.total === 1 ? "" : "s"}</div>
-                            <div>Mood {cell.averageMood?.toFixed(1) ?? "0.0"}</div>
-                          </>
-                        ) : (
-                          <div>Missed</div>
-                        )}
+                      <div className="flex items-start justify-between">
+                        <span
+                          className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                            cell.isToday ? "bg-emerald-950 text-emerald-50" : ""
+                          }`}
+                        >
+                          {cell.dayNumber}
+                        </span>
+                        <span className="flex h-6 items-center gap-[3px]" aria-hidden="true">
+                          {Array.from({ length: Math.min(cell.total, 5) }).map((_, dotIndex) => (
+                            <span key={dotIndex} className="h-1.5 w-1.5 rounded-full bg-emerald-950" />
+                          ))}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-medium leading-4">
+                        {cell.isLogged
+                          ? `Mood ${cell.averageMood?.toFixed(1) ?? "0.0"}`
+                          : cell.date < today
+                            ? "Missed"
+                            : ""}
                       </div>
                     </a>
                   ),
                 )}
               </div>
+              <div
+                className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600"
+                aria-label="Calendar legend"
+              >
+                <span className="inline-flex items-center gap-1.5"><i className="h-3.5 w-3.5 rounded-[5px] border border-emerald-900/20 bg-emerald-100/70" />Low mood</span>
+                <span className="inline-flex items-center gap-1.5"><i className="h-3.5 w-3.5 rounded-[5px] border border-emerald-900/20 bg-emerald-200/70" /></span>
+                <span className="inline-flex items-center gap-1.5"><i className="h-3.5 w-3.5 rounded-[5px] border border-emerald-900/20 bg-emerald-300/60" /></span>
+                <span className="inline-flex items-center gap-1.5"><i className="h-3.5 w-3.5 rounded-[5px] border border-emerald-900/20 bg-emerald-400/55" />High mood</span>
+                <span className="inline-flex items-center gap-1.5"><i className="h-3.5 w-3.5 rounded-[5px] border border-dashed border-stone-900/30 bg-white/35" />Missed</span>
+                <span className="inline-flex items-center gap-1.5"><i className="h-3.5 w-3.5 rounded-full bg-emerald-950" />Today</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-950" /><span className="h-1.5 w-1.5 rounded-full bg-emerald-950" />Cards logged</span>
+              </div>
             </div>
 
             <div className="grid gap-4">
-              <div className="rounded-[1.5rem] border border-emerald-950/10 bg-white/70 p-4">
+              <div className="rounded-[1.5rem] border border-emerald-950/10 bg-white/50 p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                   This month
                 </p>
@@ -482,8 +530,22 @@ export default async function DashboardPage({
                 <p className="mt-3 text-sm leading-7 text-stone-700">
                   {missedDaysCount} missed days in {formatMonthLabel(activeMonth)}.
                 </p>
+                <div
+                  className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-950/10"
+                  role="img"
+                  aria-label={`${loggedDaysCount} of ${daysInActiveMonth} days logged`}
+                >
+                  <div
+                    className="h-full rounded-full bg-emerald-800"
+                    style={{ width: `${Math.min((loggedDaysCount / daysInActiveMonth) * 100, 100)}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs leading-5 text-stone-500">
+                  {loggedDaysCount} of {daysInActiveMonth} days
+                  {calendarStreak > 0 ? `, ${calendarStreak}-day streak` : ""}
+                </p>
               </div>
-              <div className="rounded-[1.5rem] border border-emerald-950/10 bg-white/70 p-4">
+              <div className="rounded-[1.5rem] border border-emerald-950/10 bg-white/50 p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                   How to use it
                 </p>
@@ -522,7 +584,7 @@ export default async function DashboardPage({
             <form
               action="/api/reports/daily"
               method="get"
-              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
+              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
             >
               <div className="mb-6">
                 <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
@@ -582,7 +644,7 @@ export default async function DashboardPage({
             <form
               action="/api/reports/monthly"
               method="get"
-              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
+              className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
             >
               <div className="mb-6">
                 <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
@@ -622,7 +684,7 @@ export default async function DashboardPage({
               </div>
             </form>
 
-            <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
+            <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
                 Summary
               </p>
@@ -636,7 +698,7 @@ export default async function DashboardPage({
               </p>
             </div>
 
-            <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/75 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
+            <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8">
               <p className="text-xs uppercase tracking-[0.18em] text-cyan-900/70">
                 Claude conversation log
               </p>
@@ -725,119 +787,103 @@ export default async function DashboardPage({
               </p>
             </div>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {filteredThoughts.map((thought: DashboardThought) => (
                 <article
                   key={thought.id}
-                  className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_26px_70px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6"
+                  className="flex aspect-square flex-col rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur-md transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)] sm:p-6"
                 >
-                  <div className="flex flex-col gap-2 text-xs uppercase tracking-[0.22em] text-stone-500 sm:flex-row sm:items-center sm:justify-between">
-                    <span>{thought.category}</span>
-                    <span>Mood {thought.mood}/10</span>
+                  <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                    <span className="truncate">{thought.category}</span>
+                    <span className="whitespace-nowrap">Mood {thought.mood}/10</span>
                   </div>
-                  <h3 className="mt-5 font-[family:var(--font-display)] text-3xl leading-none text-stone-900 sm:mt-6 sm:text-4xl">
+                  <h3 className="mt-3 font-[family:var(--font-display)] text-2xl leading-tight text-stone-900 sm:text-[1.65rem]">
                     {thought.title}
                   </h3>
-                  <p className="mt-4 text-sm leading-7 text-stone-700 sm:text-base">
+                  <p className="mt-3 line-clamp-4 text-sm leading-6 text-stone-700">
                     {thought.summary}
                   </p>
-                  {thought.body ? (
-                    <details className="mt-4 rounded-2xl border border-emerald-950/10 bg-white/65 p-4">
-                      <summary className="cursor-pointer text-xs uppercase tracking-[0.16em] text-emerald-900/75">
+                  {thought.body || thought.linked_idea_text || thought.insight_reflection ? (
+                    <details className="mt-3 rounded-2xl border border-emerald-950/10 bg-white/50 p-3">
+                      <summary className="cursor-pointer text-[11px] uppercase tracking-[0.14em] text-emerald-900/75">
                         Open full note
                       </summary>
-                      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-stone-700">
-                        {thought.body}
-                      </p>
-                    </details>
-                  ) : null}
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    {thought.tags.length === 0 ? (
-                      <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-                        No tags
-                      </span>
-                    ) : (
-                      thought.tags.map((tag) => (
-                        <Link
-                          key={`${thought.id}-${tag}`}
-                          href={`/dashboard?tag=${encodeURIComponent(tag)}`}
-                          className="rounded-full border border-emerald-950/10 bg-white/75 px-3 py-1 text-xs uppercase tracking-[0.14em] text-emerald-950 transition hover:bg-white"
-                        >
-                          {tag}
-                        </Link>
-                      ))
-                    )}
-                  </div>
-                  {(thought.concept_tags.length > 0 || thought.linked_idea_text || thought.insight_reflection) ? (
-                    <div className="mt-4 rounded-2xl border border-amber-900/10 bg-amber-50/80 p-4">
-                      {thought.concept_tags.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {thought.concept_tags.map((tag) => (
-                            <span
-                              key={`${thought.id}-concept-${tag}`}
-                              className="rounded-full border border-amber-900/10 bg-white/75 px-3 py-1 text-xs uppercase tracking-[0.14em] text-amber-900"
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
+                      {thought.body ? (
+                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-stone-700">
+                          {thought.body}
+                        </p>
                       ) : null}
                       {thought.linked_idea_text ? (
-                        <p className="mt-3 text-xs uppercase tracking-[0.16em] text-amber-900/75">
+                        <p className="mt-3 text-xs uppercase tracking-[0.14em] text-amber-900/75">
                           {thought.linked_book_title ? `${thought.linked_book_title} - ` : ""}
                           {thought.linked_idea_text}
                         </p>
                       ) : null}
                       {thought.insight_reflection ? (
-                        <p className="mt-3 text-sm leading-7 text-stone-700">
+                        <p className="mt-3 text-sm leading-6 text-stone-700">
                           {thought.insight_reflection}
                         </p>
                       ) : null}
-                    </div>
+                    </details>
                   ) : null}
-                  <p className="mt-6 text-xs uppercase tracking-[0.2em] text-stone-400">
+                  <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
+                    {thought.tags.map((tag) => (
+                      <Link
+                        key={`${thought.id}-${tag}`}
+                        href={`/dashboard?tag=${encodeURIComponent(tag)}`}
+                        className="rounded-full border border-emerald-950/10 bg-white/60 px-2.5 py-0.5 text-[11px] uppercase tracking-[0.12em] text-emerald-950 transition hover:bg-white"
+                      >
+                        {tag}
+                      </Link>
+                    ))}
+                    {thought.concept_tags.map((tag) => (
+                      <span
+                        key={`${thought.id}-concept-${tag}`}
+                        className="rounded-full border border-amber-900/10 bg-amber-50/70 px-2.5 py-0.5 text-[11px] uppercase tracking-[0.12em] text-amber-900"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[11px] uppercase tracking-[0.16em] text-stone-500">
                     {toColomboDate(thought.created_at)}
                   </p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.2em] text-stone-400">
-                    Updated{" "}
-                    {toColomboDate(thought.updated_at)}
-                  </p>
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                  <div className="mt-3 flex gap-1.5">
                     <Link
                       href={`/dashboard?edit=${thought.id}`}
-                      className="inline-flex rounded-full border border-emerald-950/10 bg-white/70 px-4 py-3 text-center text-xs uppercase tracking-[0.16em] text-emerald-950 transition hover:bg-white sm:py-2"
+                      className="inline-flex flex-1 justify-center rounded-full border border-emerald-950/10 bg-white/60 px-2 py-1.5 text-[11px] uppercase tracking-[0.08em] text-emerald-950 transition hover:bg-white"
                     >
                       Edit
                     </Link>
                     {thought.is_hidden ? (
-                      <form action={unhideThoughtAction}>
+                      <form action={unhideThoughtAction} className="flex-1">
                         <input type="hidden" name="thoughtId" value={thought.id} />
                         <button
                           type="submit"
                           disabled={!databaseAvailable}
-                          className="inline-flex w-full justify-center rounded-full border border-cyan-950/10 bg-cyan-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2"
+                          className="inline-flex w-full justify-center rounded-full border border-cyan-950/10 bg-cyan-50/90 px-2 py-1.5 text-[11px] uppercase tracking-[0.08em] text-cyan-900 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           Restore
                         </button>
                       </form>
                     ) : (
-                      <form action={hideThoughtAction}>
+                      <form action={hideThoughtAction} className="flex-1">
                         <input type="hidden" name="thoughtId" value={thought.id} />
                         <button
                           type="submit"
                           disabled={!databaseAvailable}
-                          className="inline-flex w-full justify-center rounded-full border border-amber-900/10 bg-amber-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2"
+                          className="inline-flex w-full justify-center rounded-full border border-amber-900/10 bg-amber-50/90 px-2 py-1.5 text-[11px] uppercase tracking-[0.08em] text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           Hide
                         </button>
                       </form>
                     )}
-                    <form action={deleteThoughtAction}>
+                    <form action={deleteThoughtAction} className="flex-1">
                       <input type="hidden" name="thoughtId" value={thought.id} />
                       <button
                         type="submit"
                         disabled={!databaseAvailable}
-                        className="inline-flex w-full justify-center rounded-full border border-rose-900/10 bg-rose-50/90 px-4 py-3 text-xs uppercase tracking-[0.16em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-2"
+                        className="inline-flex w-full justify-center rounded-full border border-rose-900/10 bg-rose-50/90 px-2 py-1.5 text-[11px] uppercase tracking-[0.08em] text-rose-900 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Delete
                       </button>
