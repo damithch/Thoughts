@@ -86,7 +86,7 @@ export function ThoughtFormSection({
       <form
         ref={formRef}
         action={editingThought ? updateAction : createAction}
-        className="rounded-[1.5rem] border border-emerald-950/10 bg-white/75 p-4 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
+        className="rounded-[1.5rem] border border-emerald-950/10 bg-white/45 p-4 shadow-[0_26px_80px_rgba(48,84,53,0.10)] backdrop-blur sm:rounded-[2rem] sm:p-6 md:p-8"
       >
         <div className="mb-4 flex items-start justify-between gap-3 sm:mb-6 sm:gap-4">
           <div>
