@@ -266,7 +266,7 @@ export default async function RoutinesPage(props: TasksPageProps) {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-1">
-            <div className="sticky top-6 rounded-2xl border border-emerald-950/10 bg-white/80 p-6 shadow-sm">
+            <div className="sticky top-6 rounded-2xl border border-emerald-950/10 bg-white/50 p-6 shadow-sm backdrop-blur-md">
               <h2 className="text-xl font-semibold text-emerald-950">Create Recurring Task</h2>
               <p className="mt-2 text-sm leading-6 text-stone-600">
                 This creates a rule. Matching dates will generate separate daily task instances

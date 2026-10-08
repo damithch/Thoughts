@@ -149,7 +149,7 @@ function Card({
 }) {
   return (
     <section
-      className={`rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur sm:p-6 ${className}`}
+      className={`rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur-md sm:p-6 ${className}`}
     >
       {children}
     </section>

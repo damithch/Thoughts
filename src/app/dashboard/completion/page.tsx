@@ -156,7 +156,7 @@ function StatCard({
   sublabel: string;
 }) {
   return (
-    <div className="rounded-[1.35rem] border border-stone-900/8 bg-white/80 px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+    <div className="rounded-[1.35rem] border border-stone-900/8 bg-white/55 px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
       <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{label}</p>
       <p className="mt-2 font-[family:var(--font-display)] text-3xl leading-none text-stone-950">
         {value}
@@ -183,7 +183,7 @@ function CompletionTrendChart({ stats }: { stats: Array<{ date: string; total_ta
   const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
 
   return (
-    <div className="mb-6 rounded-[1.5rem] border border-purple-950/10 bg-white/80 p-5 shadow-sm">
+    <div className="mb-6 rounded-[1.5rem] border border-purple-950/10 bg-white/55 p-5 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-purple-900">
           Daily Completion Rate Trend ({stats.length} Days)
@@ -411,7 +411,7 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
   });
 
   return (
-    <div className="min-h-screen bg-[#f7f4ee] px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
+    <div className="min-h-screen thought-network-bg px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
       {params?.toast ? <Toast message="View task completion" tone={params?.type} /> : null}
 
       <div className="mx-auto max-w-7xl">
@@ -470,7 +470,7 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
 
         <CompletionTrendChart stats={monthDayStats} />
 
-        <div className="overflow-x-auto rounded-[1.5rem] border border-stone-900/10 bg-white/80 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
+        <div className="overflow-x-auto rounded-[1.5rem] border border-stone-900/10 bg-white/55 shadow-[0_18px_50px_rgba(15,23,42,0.05)]">
           <table className="w-full border-collapse" style={{ minWidth: `${340 + monthDays.length * 34}px` }}>
             <thead>
               <tr className="border-b border-stone-200">
@@ -602,19 +602,19 @@ export default async function TaskCompletionPage(props: CompletionPageProps) {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-stone-500">
-          <span className="rounded-full border border-stone-200 bg-white/80 px-3 py-1.5">
+          <span className="rounded-full border border-stone-200 bg-white/55 px-3 py-1.5">
             Done = green
           </span>
-          <span className="rounded-full border border-stone-200 bg-white/80 px-3 py-1.5">
+          <span className="rounded-full border border-stone-200 bg-white/55 px-3 py-1.5">
             Skipped = gray
           </span>
-          <span className="rounded-full border border-stone-200 bg-white/80 px-3 py-1.5">
+          <span className="rounded-full border border-stone-200 bg-white/55 px-3 py-1.5">
             In progress = amber
           </span>
-          <span className="rounded-full border border-stone-200 bg-white/80 px-3 py-1.5">
+          <span className="rounded-full border border-stone-200 bg-white/55 px-3 py-1.5">
             To do = empty box
           </span>
-          <span className="rounded-full border border-stone-200 bg-white/80 px-3 py-1.5">
+          <span className="rounded-full border border-stone-200 bg-white/55 px-3 py-1.5">
             Future days are faded
           </span>
         </div>

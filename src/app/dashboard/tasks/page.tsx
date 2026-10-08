@@ -257,7 +257,7 @@ export default async function TasksTodayPage({ searchParams }: TodayPageProps) {
         />
 
         <section className="grid gap-4 md:grid-cols-4">
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               Progress
             </p>
@@ -268,7 +268,7 @@ export default async function TasksTodayPage({ searchParams }: TodayPageProps) {
               Tasks finished today.
             </p>
           </div>
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               Day close mood
             </p>
@@ -279,7 +279,7 @@ export default async function TasksTodayPage({ searchParams }: TodayPageProps) {
               End-of-day rating saved for this date.
             </p>
           </div>
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               In motion
             </p>
@@ -290,7 +290,7 @@ export default async function TasksTodayPage({ searchParams }: TodayPageProps) {
               Tasks currently in progress.
             </p>
           </div>
-          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
+          <div className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur">
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-800/70">
               Carry-over
             </p>

@@ -28,7 +28,7 @@ export default async function TasksLayout({ children }: { children: React.ReactN
   const inboxCount = await getInboxOpenTaskCount(currentUser.id);
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(180deg,#eef8ee_0%,#dbeed9_52%,#c9dfc6_100%)] px-4 py-6 text-stone-900 sm:px-6 sm:py-8">
+    <main className="min-h-screen thought-network-bg px-4 py-6 text-stone-900 sm:px-6 sm:py-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="font-[family:var(--font-display)] text-4xl leading-none sm:text-5xl">Tasks</h1>

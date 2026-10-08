@@ -23,7 +23,7 @@ function shortDay(date: string) {
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-[1.25rem] border border-emerald-950/10 bg-white/80 p-4 shadow-sm">
+    <div className="rounded-[1.25rem] border border-emerald-950/10 bg-white/50 p-4 shadow-sm backdrop-blur-md">
       <p className="text-xs uppercase tracking-[0.16em] text-emerald-800/80">{label}</p>
       <p className="mt-2 font-[family:var(--font-display)] text-4xl leading-none text-stone-900">{value}</p>
       <p className="mt-2 text-xs text-stone-600">{hint}</p>
