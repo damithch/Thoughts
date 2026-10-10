@@ -7,6 +7,7 @@ import { getUserById } from "@/lib/db";
 
 const SESSION_COOKIE_NAME = "thoughts_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+const MOBILE_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 
 const authSecret = process.env.AUTH_SECRET;
 
@@ -20,6 +21,7 @@ type SessionPayload = {
   userId: number;
   expiresAt: number;
   issuedAt?: number;
+  kind?: "mobile";
 };
 
 function isDynamicServerUsageError(error: unknown) {
@@ -131,6 +133,26 @@ export async function clearSession() {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
+// Loads the session's user, rejecting sessions issued before the user's last password change.
+async function resolveSessionUser(payload: SessionPayload, ttlSeconds: number) {
+  const user = await getUserById(payload.userId);
+
+  if (!user) {
+    return null;
+  }
+
+  const issuedAt =
+    typeof payload.issuedAt === "number"
+      ? payload.issuedAt
+      : payload.expiresAt - ttlSeconds * 1000;
+
+  if (new Date(issuedAt).getTime() < user.password_updated_at.getTime()) {
+    return null;
+  }
+
+  return user;
+}
+
 export async function getCurrentUser() {
   try {
     const cookieStore = await cookies();
@@ -142,30 +164,54 @@ export async function getCurrentUser() {
 
     const payload = decodeSession(sessionValue);
 
-    if (!payload) {
+    // A mobile token is only valid as a bearer token, never as the browser cookie.
+    if (!payload || payload.kind === "mobile") {
       return null;
     }
 
-    const user = await getUserById(payload.userId);
-
-    if (!user) {
-      return null;
-    }
-
-    const issuedAt =
-      typeof payload.issuedAt === "number"
-        ? payload.issuedAt
-        : payload.expiresAt - SESSION_TTL_SECONDS * 1000;
-
-    if (new Date(issuedAt).getTime() < user.password_updated_at.getTime()) {
-      return null;
-    }
-
-    return user;
+    return await resolveSessionUser(payload, SESSION_TTL_SECONDS);
   } catch (error) {
     if (!isDynamicServerUsageError(error)) {
       console.error("Failed to resolve the current session.", error);
     }
+    return null;
+  }
+}
+
+// Signed token for the mobile app, sent as `Authorization: Bearer <token>`. Same signing as the
+// session cookie, but marked `kind: "mobile"` so the two can't be swapped for each other.
+export function createMobileToken(userId: number) {
+  const now = Date.now();
+
+  return {
+    token: encodeSession({
+      userId,
+      kind: "mobile",
+      issuedAt: now,
+      expiresAt: now + MOBILE_TOKEN_TTL_SECONDS * 1000,
+    }),
+    expiresAt: new Date(now + MOBILE_TOKEN_TTL_SECONDS * 1000),
+  };
+}
+
+export async function getMobileUser(request: Request) {
+  const header = request.headers.get("authorization") ?? "";
+  const match = /^Bearer\s+(\S+)$/i.exec(header);
+
+  if (!match) {
+    return null;
+  }
+
+  try {
+    const payload = decodeSession(match[1]);
+
+    if (!payload || payload.kind !== "mobile") {
+      return null;
+    }
+
+    return await resolveSessionUser(payload, MOBILE_TOKEN_TTL_SECONDS);
+  } catch (error) {
+    console.error("Failed to resolve the mobile token.", error);
     return null;
   }
 }
