@@ -3,6 +3,15 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { getMobileUser } from "@/lib/auth";
+import { getBookIdeasByUser } from "@/lib/db";
+import type { BookIdeaStatus } from "@/lib/db";
+import {
+  isValidTaskDate,
+  normalizeTaskNote,
+  normalizeTaskTags,
+  normalizeTaskTitle,
+  parseTaskPriorityValue,
+} from "@/lib/tasks/validation";
 
 type User = NonNullable<Awaited<ReturnType<typeof getMobileUser>>>;
 
@@ -47,6 +56,55 @@ export async function readJsonObject(request: Request): Promise<Record<string, u
   } catch {
     return null;
   }
+}
+
+// A linked insight idea must be one of the user's own (the insert itself doesn't check this).
+// Returns undefined for "not sent", null for "no link", or the id; false if it isn't theirs.
+export async function readOwnedBookIdeaId(value: unknown, userId: number) {
+  if (value === undefined) return undefined;
+  if (value === null || value === 0) return null;
+
+  const id = typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+
+  if (!id) return false;
+
+  const ideas = await getBookIdeasByUser(userId);
+
+  return ideas.some((idea) => idea.id === id) ? id : false;
+}
+
+export const IDEA_STATUSES: BookIdeaStatus[] = ["understood", "noticed", "applied", "internalized"];
+
+const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+// Same rules as the web routine form: a title, priority, at least one weekday and a start date
+// (an end date, if given, can't be before it).
+export function readRoutineInput(body: Record<string, unknown>) {
+  const title = normalizeTaskTitle(body.title);
+  const priority = parseTaskPriorityValue(body.priority ?? "medium");
+  const daysOfWeek = Array.isArray(body.daysOfWeek)
+    ? WEEKDAYS.filter((day) => (body.daysOfWeek as unknown[]).includes(day))
+    : [];
+  const startDate = body.startDate;
+  const endDate = body.endDate === undefined || body.endDate === null || body.endDate === "" ? null : body.endDate;
+
+  if (!title) return { error: "Give the routine a title." };
+  if (!priority) return { error: "priority must be low, medium or high." };
+  if (daysOfWeek.length === 0) return { error: "Pick at least one day of the week." };
+  if (!isValidTaskDate(startDate)) return { error: "startDate must be a valid YYYY-MM-DD date." };
+  if (endDate !== null && (!isValidTaskDate(endDate) || endDate < startDate)) {
+    return { error: "The end date must be a valid date on or after the start date." };
+  }
+
+  return {
+    title,
+    priority,
+    daysOfWeek,
+    startDate,
+    endDate,
+    note: normalizeTaskNote(body.note),
+    tags: normalizeTaskTags(body.tags),
+  };
 }
 
 export function toPublicUser(user: User) {

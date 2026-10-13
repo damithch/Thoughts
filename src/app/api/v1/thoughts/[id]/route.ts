@@ -1,11 +1,12 @@
 import { revalidatePath } from "next/cache";
 
-import { deleteThought, getThoughtByIdForUser, updateThought } from "@/lib/db";
+import { deleteThought, getThoughtByIdForUser, setThoughtHiddenState, updateThought } from "@/lib/db";
 import {
   apiError,
   parseIdParam,
   readJsonObject,
   readMood,
+  readOwnedBookIdeaId,
   readString,
   readTags,
   withMobileUser,
@@ -14,6 +15,11 @@ import {
 export const dynamic = "force-dynamic";
 
 type ThoughtContext = { params: Promise<{ id: string }> };
+
+function revalidateJournal() {
+  revalidatePath("/dashboard");
+  revalidatePath("/");
+}
 
 // GET /api/v1/thoughts/:id -> { thought }
 export const GET = withMobileUser<ThoughtContext>(async (_request, user, { params }) => {
@@ -27,8 +33,8 @@ export const GET = withMobileUser<ThoughtContext>(async (_request, user, { param
   return Response.json({ thought });
 });
 
-// PATCH /api/v1/thoughts/:id -> { thought }. Only the fields sent are changed; the insight link
-// and reflection (edited on the web) are always kept as they are.
+// PATCH /api/v1/thoughts/:id -> { thought }. Only the fields sent are changed. `isHidden` alone
+// hides or unhides the thought (hidden thoughts leave the journal and AI search).
 export const PATCH = withMobileUser<ThoughtContext>(async (request, user, { params }) => {
   const id = parseIdParam((await params).id);
   const existing = id ? await getThoughtByIdForUser(id, user.id) : null;
@@ -43,31 +49,49 @@ export const PATCH = withMobileUser<ThoughtContext>(async (request, user, { para
     return apiError("Send the changes as a JSON object.", 400);
   }
 
-  const title = "title" in body ? readString(body.title, 200) : existing.title;
-  const category = "category" in body ? readString(body.category, 80) : existing.category;
-  const mood = "mood" in body ? readMood(body.mood) : existing.mood;
-  const summary = "summary" in body ? readString(body.summary, 2000) : existing.summary;
-
-  if (!title || !category || !mood || !summary) {
-    return apiError("A thought needs a title, category, mood (1-10) and summary.", 400);
+  if (typeof body.isHidden === "boolean") {
+    await setThoughtHiddenState({ id, userId: user.id, isHidden: body.isHidden });
   }
 
-  await updateThought({
-    id,
-    userId: user.id,
-    title,
-    category,
-    mood,
-    summary,
-    body: "body" in body ? readString(body.body) : existing.body,
-    tags: "tags" in body ? readTags(body.tags) : existing.tags,
-    conceptTags: "conceptTags" in body ? readTags(body.conceptTags) : existing.concept_tags,
-    linkedBookIdeaId: existing.linked_book_idea_id,
-    insightReflection: existing.insight_reflection ?? "",
-  });
+  const editsContent = ["title", "category", "mood", "summary", "body", "tags", "conceptTags", "linkedBookIdeaId", "insightReflection"].some(
+    (field) => field in body,
+  );
 
-  revalidatePath("/dashboard");
-  revalidatePath("/");
+  if (editsContent) {
+    const title = "title" in body ? readString(body.title, 200) : existing.title;
+    const category = "category" in body ? readString(body.category, 80) : existing.category;
+    const mood = "mood" in body ? readMood(body.mood) : existing.mood;
+    const summary = "summary" in body ? readString(body.summary, 2000) : existing.summary;
+
+    if (!title || !category || !mood || !summary) {
+      return apiError("A thought needs a title, category, mood (1-10) and summary.", 400);
+    }
+
+    const linkedBookIdeaId = await readOwnedBookIdeaId(body.linkedBookIdeaId, user.id);
+
+    if (linkedBookIdeaId === false) {
+      return apiError("That insight idea isn't in your library.", 400);
+    }
+
+    await updateThought({
+      id,
+      userId: user.id,
+      title,
+      category,
+      mood,
+      summary,
+      body: "body" in body ? readString(body.body) : existing.body,
+      tags: "tags" in body ? readTags(body.tags) : existing.tags,
+      conceptTags: "conceptTags" in body ? readTags(body.conceptTags) : existing.concept_tags,
+      linkedBookIdeaId: linkedBookIdeaId === undefined ? existing.linked_book_idea_id : linkedBookIdeaId,
+      insightReflection:
+        "insightReflection" in body
+          ? readString(body.insightReflection, 4000)
+          : (existing.insight_reflection ?? ""),
+    });
+  }
+
+  revalidateJournal();
 
   return Response.json({ thought: await getThoughtByIdForUser(id, user.id) });
 });
@@ -81,8 +105,7 @@ export const DELETE = withMobileUser<ThoughtContext>(async (_request, user, { pa
     return apiError("That thought doesn't exist.", 404);
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/");
+  revalidateJournal();
 
   return new Response(null, { status: 204 });
 });

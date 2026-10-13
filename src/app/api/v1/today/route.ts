@@ -1,9 +1,13 @@
 import {
   generateDailyTasksFromRecurring,
+  getAnchorNoteByDate,
+  getConversationSummariesByUserAndDate,
   getDailyCheckInsByUserAndDate,
   getDayRecordByUserAndDate,
   getOverdueOpenTasks,
   getTasksByUserAndDate,
+  getThoughtsByUserAndDate,
+  getWorryDataByUserAndDate,
 } from "@/lib/db";
 import { apiError, withMobileUser } from "@/lib/mobile-api";
 import { isValidTaskDate } from "@/lib/tasks/validation";
@@ -12,7 +16,7 @@ import { getCurrentColomboDate } from "@/lib/time";
 export const dynamic = "force-dynamic";
 
 // GET /api/v1/today?date=YYYY-MM-DD (defaults to today in Colombo)
-// -> { date, today, tasks, dayRecord, checkIns, overdueCount }
+// -> { date, today, tasks, dayRecord, checkIns, overdueCount, thoughts, conversations, anchorNote, worry }
 export const GET = withMobileUser(async (request, user) => {
   const today = getCurrentColomboDate();
   const date = new URL(request.url).searchParams.get("date") ?? today;
@@ -30,12 +34,17 @@ export const GET = withMobileUser(async (request, user) => {
     }
   }
 
-  const [tasks, dayRecord, overdueTasks, checkIns] = await Promise.all([
-    getTasksByUserAndDate(user.id, date),
-    getDayRecordByUserAndDate(user.id, date),
-    getOverdueOpenTasks(user.id, date),
-    getDailyCheckInsByUserAndDate(user.id, date),
-  ]);
+  const [tasks, dayRecord, overdueTasks, checkIns, thoughts, conversations, anchorNote, worry] =
+    await Promise.all([
+      getTasksByUserAndDate(user.id, date),
+      getDayRecordByUserAndDate(user.id, date),
+      getOverdueOpenTasks(user.id, date),
+      getDailyCheckInsByUserAndDate(user.id, date),
+      getThoughtsByUserAndDate(user.id, date),
+      getConversationSummariesByUserAndDate(user.id, date),
+      getAnchorNoteByDate(user.id, date),
+      getWorryDataByUserAndDate(user.id, date),
+    ]);
 
   return Response.json({
     date,
@@ -44,5 +53,10 @@ export const GET = withMobileUser(async (request, user) => {
     dayRecord,
     checkIns,
     overdueCount: overdueTasks.length,
+    // The rest of the day, for reviewing past days.
+    thoughts: thoughts.filter((thought) => !thought.is_hidden),
+    conversations,
+    anchorNote,
+    worry,
   });
 });

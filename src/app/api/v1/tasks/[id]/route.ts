@@ -20,7 +20,7 @@ function revalidateTaskPages() {
   revalidatePath("/dashboard/completion");
 }
 
-// PATCH /api/v1/tasks/:id { status?, title?, priority?, note?, date? } -> { task }
+// PATCH /api/v1/tasks/:id { status?, title?, priority?, note?, date? (null = Inbox) } -> { task }
 export const PATCH = withMobileUser<TaskContext>(async (request, user, { params }) => {
   const id = parseIdParam((await params).id);
 
@@ -50,8 +50,8 @@ export const PATCH = withMobileUser<TaskContext>(async (request, user, { params 
     return apiError("A task title can't be empty.", 400);
   }
 
-  if (body.date !== undefined && !isValidTaskDate(body.date)) {
-    return apiError("date must be a valid YYYY-MM-DD date.", 400);
+  if (body.date !== undefined && body.date !== null && !isValidTaskDate(body.date)) {
+    return apiError("date must be a valid YYYY-MM-DD date, or null for the Inbox.", 400);
   }
 
   const updated = await updateTask({
@@ -61,7 +61,7 @@ export const PATCH = withMobileUser<TaskContext>(async (request, user, { params 
     ...(priority ? { priority } : {}),
     ...(title ? { title } : {}),
     ...(body.note !== undefined ? { note: normalizeTaskNote(body.note) } : {}),
-    ...(body.date !== undefined ? { scheduledDate: body.date as string } : {}),
+    ...(body.date !== undefined ? { scheduledDate: body.date as string | null } : {}),
   });
 
   const task = await getTaskByIdForUser(id, user.id);
@@ -77,16 +77,17 @@ export const PATCH = withMobileUser<TaskContext>(async (request, user, { params 
   return Response.json({ task });
 });
 
-// DELETE /api/v1/tasks/:id -> 204 (a deleted routine task stays deleted for that day)
+// DELETE /api/v1/tasks/:id -> { deleted } (the task as it was, so the app can offer Undo through
+// POST /api/v1/tasks/restore). A deleted routine task stays deleted for that day.
 export const DELETE = withMobileUser<TaskContext>(async (_request, user, { params }) => {
   const id = parseIdParam((await params).id);
-  const deleted = id ? await deleteTask(id, user.id) : false;
+  const task = id ? await getTaskByIdForUser(id, user.id) : null;
 
-  if (!deleted) {
+  if (!id || !task || !(await deleteTask(id, user.id))) {
     return apiError("That task doesn't exist.", 404);
   }
 
   revalidateTaskPages();
 
-  return new Response(null, { status: 204 });
+  return Response.json({ deleted: task });
 });

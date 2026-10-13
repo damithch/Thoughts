@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { getUserById } from "@/lib/db";
 
@@ -153,13 +153,16 @@ async function resolveSessionUser(payload: SessionPayload, ttlSeconds: number) {
   return user;
 }
 
+// The browser's session cookie, or else the mobile app's bearer token. Accepting the bearer token
+// here lets the app use the existing JSON routes as they are; a header can't be sent cross-site by
+// a browser, so this doesn't open the routes to CSRF.
 export async function getCurrentUser() {
   try {
     const cookieStore = await cookies();
     const sessionValue = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
     if (!sessionValue) {
-      return null;
+      return await getUserFromBearerHeader((await headers()).get("authorization"));
     }
 
     const payload = decodeSession(sessionValue);
@@ -195,8 +198,11 @@ export function createMobileToken(userId: number) {
 }
 
 export async function getMobileUser(request: Request) {
-  const header = request.headers.get("authorization") ?? "";
-  const match = /^Bearer\s+(\S+)$/i.exec(header);
+  return getUserFromBearerHeader(request.headers.get("authorization"));
+}
+
+async function getUserFromBearerHeader(header: string | null) {
+  const match = /^Bearer\s+(\S+)$/i.exec(header ?? "");
 
   if (!match) {
     return null;

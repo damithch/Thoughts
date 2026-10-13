@@ -9,6 +9,7 @@ import ApiHealthCheck from "@/app/components/api-health-check";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserSettings, DEFAULT_USER_SETTINGS } from "@/lib/db/settings";
 import type { RagDocumentKind } from "@/lib/db/types";
+import { LLM_MODELS } from "@/lib/llm-models";
 
 export default async function SettingsPage({
   searchParams,
@@ -33,14 +34,6 @@ export default async function SettingsPage({
     { value: "ba_entry", label: "BA Worksheet Entries" },
     { value: "day_note", label: "Day Notes" },
     { value: "daily_rollup", label: "Daily Rollups" },
-  ];
-
-  const LLM_MODELS = [
-    { value: "gemini-3.6-flash", label: "Gemini 3.6 Flash (Recommended)" },
-    { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
-    { value: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
   ];
 
   return (
