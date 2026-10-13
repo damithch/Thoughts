@@ -1,0 +1,60 @@
+name: Android APK
+
+# Builds the mobile app (mobile/) into an installable APK. Download it from the run's
+# "Artifacts" section on the Actions page.
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # android/ is generated from app.json (Expo's Continuous Native Generation), never committed.
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
+
+      # The release build is signed with Expo's template debug key, which is the same on every
+      # build, so a new APK installs over the previous one.
+      - name: Build release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "thoughts-$(node -p "require('./app.json').expo.version")-${GITHUB_SHA::7}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thoughts-android-apk
+          path: mobile/thoughts-*.apk
+          if-no-files-found: error
+          retention-days: 30
