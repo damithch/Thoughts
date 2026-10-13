@@ -34,6 +34,18 @@ function RootNavigator() {
         <Stack.Screen name="thought/new" options={{ title: "New thought", presentation: "modal" }} />
         <Stack.Screen name="thought/[id]" options={{ title: "Thought" }} />
         <Stack.Screen name="check-in" options={{ title: "Check-in", presentation: "modal" }} />
+        <Stack.Screen name="task/[id]" options={{ title: "Task" }} />
+        <Stack.Screen name="routine/[id]" options={{ title: "Routine" }} />
+        <Stack.Screen name="agent" options={{ title: "Task assistant" }} />
+        <Stack.Screen name="ask" options={{ title: "Ask your journal" }} />
+        <Stack.Screen name="insights" options={{ title: "Insight library" }} />
+        <Stack.Screen name="conversations" options={{ title: "Conversation logs" }} />
+        <Stack.Screen name="anchors" options={{ title: "Anchor notes" }} />
+        <Stack.Screen name="worry" options={{ title: "Worry postponement" }} />
+        <Stack.Screen name="activation/index" options={{ title: "Behavioural activation" }} />
+        <Stack.Screen name="activation/[id]" options={{ title: "Activity" }} />
+        <Stack.Screen name="export" options={{ title: "Export reports" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

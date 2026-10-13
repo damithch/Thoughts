@@ -16,10 +16,11 @@ export default function ThoughtScreen() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [hiding, setHiding] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const result = await request<{ thought: Thought }>(`/thoughts/${id}`);
+      const result = await request<{ thought: Thought }>(`/v1/thoughts/${id}`);
       setThought(result.thought);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Couldn't load this thought.");
@@ -34,11 +35,28 @@ export default function ThoughtScreen() {
     setDeleting(true);
 
     try {
-      await request(`/thoughts/${id}`, { method: "DELETE" });
+      await request(`/v1/thoughts/${id}`, { method: "DELETE" });
       router.back();
     } catch (caught) {
       setDeleting(false);
       Alert.alert("Couldn't delete", caught instanceof ApiError ? caught.message : "Try again.");
+    }
+  }
+
+  async function toggleHidden() {
+    if (!thought) return;
+    setHiding(true);
+
+    try {
+      const result = await request<{ thought: Thought }>(`/v1/thoughts/${id}`, {
+        method: "PATCH",
+        body: { isHidden: !thought.is_hidden },
+      });
+      setThought(result.thought);
+    } catch (caught) {
+      Alert.alert("Couldn't change visibility", caught instanceof ApiError ? caught.message : "Try again.");
+    } finally {
+      setHiding(false);
     }
   }
 
@@ -58,7 +76,7 @@ export default function ThoughtScreen() {
           initial={thought}
           submitLabel="Save changes"
           onSubmit={async (input) => {
-            const result = await request<{ thought: Thought }>(`/thoughts/${id}`, { method: "PATCH", body: input });
+            const result = await request<{ thought: Thought }>(`/v1/thoughts/${id}`, { method: "PATCH", body: input });
             setThought(result.thought);
             setEditing(false);
           }}
@@ -100,7 +118,14 @@ export default function ThoughtScreen() {
         </Text>
       </Card>
 
+      {thought.is_hidden ? <Text style={styles.hiddenNote}>Hidden from your journal and AI search.</Text> : null}
       <Button title="Edit" onPress={() => setEditing(true)} />
+      <Button
+        title={thought.is_hidden ? "Unhide" : "Hide"}
+        variant="secondary"
+        busy={hiding}
+        onPress={toggleHidden}
+      />
       <Button
         title="Delete"
         variant="danger"
@@ -127,4 +152,5 @@ const styles = StyleSheet.create({
   linked: { backgroundColor: colors.cardSoft, borderRadius: 16, padding: 14, gap: 6 },
   reflection: { fontSize: 14, fontStyle: "italic", color: colors.inkSoft },
   date: { fontSize: 12, color: colors.inkFaint },
+  hiddenNote: { fontSize: 13, color: colors.inkSoft, textAlign: "center" },
 });

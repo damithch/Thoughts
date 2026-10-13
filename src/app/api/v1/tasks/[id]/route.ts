@@ -20,6 +20,14 @@ function revalidateTaskPages() {
   revalidatePath("/dashboard/completion");
 }
 
+// GET /api/v1/tasks/:id -> { task }
+export const GET = withMobileUser<TaskContext>(async (_request, user, { params }) => {
+  const id = parseIdParam((await params).id);
+  const task = id ? await getTaskByIdForUser(id, user.id) : null;
+
+  return task ? Response.json({ task }) : apiError("That task doesn't exist.", 404);
+});
+
 // PATCH /api/v1/tasks/:id { status?, title?, priority?, note?, date? (null = Inbox) } -> { task }
 export const PATCH = withMobileUser<TaskContext>(async (request, user, { params }) => {
   const id = parseIdParam((await params).id);

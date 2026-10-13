@@ -1,103 +1,135 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
+import { useState } from "react";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { Button, Centered, ErrorText, Tag } from "@/components/ui";
-import { ApiError, useAuth } from "@/lib/auth";
+import { Fab, LoadingState, Segmented, Tag } from "@/components/ui";
 import { formatTimestamp } from "@/lib/dates";
 import { colors, fonts, radius } from "@/lib/theme";
 import type { Thought } from "@/lib/types";
+import { useApi } from "@/lib/use-api";
+
+type Visibility = "active" | "hidden";
 
 export default function JournalScreen() {
-  const { request } = useAuth();
-  const [thoughts, setThoughts] = useState<Thought[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const result = await request<{ thoughts: Thought[] }>("/thoughts?limit=100");
-      setThoughts(result.thoughts);
-      setError(null);
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Couldn't load your journal.");
-    }
-  }, [request]);
-
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load]),
+  const [visibility, setVisibility] = useState<Visibility>("active");
+  const [tag, setTag] = useState<string | null>(null);
+  const { data, error, reload, refresh, refreshing } = useApi<{ thoughts: Thought[] }>(
+    `/v1/thoughts?limit=200&visibility=${visibility}`,
   );
 
-  async function refresh() {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }
-
-  if (!thoughts) {
-    return (
-      <Centered>
-        {error ? (
-          <>
-            <ErrorText message={error} />
-            <Button title="Try again" onPress={load} variant="secondary" />
-          </>
-        ) : (
-          <ActivityIndicator color={colors.action} size="large" />
-        )}
-      </Centered>
-    );
-  }
+  const thoughts = data?.thoughts ?? [];
+  const tags = Array.from(new Set(thoughts.flatMap((thought) => thought.tags))).sort();
+  const shown = tag ? thoughts.filter((thought) => thought.tags.includes(tag)) : thoughts;
 
   return (
     <View style={{ flex: 1 }}>
-      <FlatList
-        data={thoughts}
-        keyExtractor={(thought) => String(thought.id)}
-        contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.action]} />}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No thoughts yet. Tap + to capture your first card.</Text>
-        }
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => router.push({ pathname: "/thought/[id]", params: { id: String(item.id) } })}
-            style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}
-          >
-            <View style={styles.cardTop}>
-              <Text style={styles.category}>{item.category}</Text>
-              <Text style={styles.mood}>Mood {item.mood}/10</Text>
-            </View>
-            <Text style={styles.title}>{item.title}</Text>
-            <Text style={styles.summary} numberOfLines={3}>
-              {item.summary}
+      <View style={styles.header}>
+        <Pressable onPress={() => router.push("/ask")} style={styles.askButton}>
+          <Ionicons name="search-outline" size={18} color={colors.action} />
+          <Text style={styles.askText}>Ask your journal…</Text>
+        </Pressable>
+        <Segmented
+          options={[
+            { value: "active", label: "Journal" },
+            { value: "hidden", label: "Hidden" },
+          ]}
+          value={visibility}
+          onChange={(value) => {
+            setVisibility(value);
+            setTag(null);
+          }}
+        />
+        {tags.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagBar}>
+            {tags.map((value) => (
+              <Pressable
+                key={value}
+                onPress={() => setTag(tag === value ? null : value)}
+                style={[styles.tagChip, tag === value && styles.tagChipSelected]}
+              >
+                <Text style={[styles.tagChipText, tag === value && styles.tagChipTextSelected]}>#{value}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : null}
+      </View>
+
+      {!data ? (
+        <LoadingState error={error} onRetry={reload} />
+      ) : (
+        <FlatList
+          data={shown}
+          keyExtractor={(thought) => String(thought.id)}
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} colors={[colors.action]} />}
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {visibility === "hidden" ? "No hidden thoughts." : "No thoughts yet. Tap + to capture your first card."}
             </Text>
-            {item.tags.length > 0 ? (
-              <View style={styles.tags}>
-                {item.tags.slice(0, 4).map((tag) => (
-                  <Tag key={tag}>{tag}</Tag>
-                ))}
+          }
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => router.push({ pathname: "/thought/[id]", params: { id: String(item.id) } })}
+              style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}
+            >
+              <View style={styles.cardTop}>
+                <Text style={styles.category}>{item.category}</Text>
+                <Text style={styles.mood}>Mood {item.mood}/10</Text>
               </View>
-            ) : null}
-            <Text style={styles.date}>{formatTimestamp(item.created_at)}</Text>
-          </Pressable>
-        )}
-      />
-      <Pressable
-        onPress={() => router.push("/thought/new")}
-        style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
-        accessibilityLabel="New thought"
-      >
-        <Ionicons name="add" size={30} color={colors.actionText} />
-      </Pressable>
+              <Text style={styles.title}>{item.title}</Text>
+              <Text style={styles.summary} numberOfLines={3}>
+                {item.summary}
+              </Text>
+              {item.linked_idea_text ? (
+                <Text style={styles.linked} numberOfLines={1}>
+                  💡 {item.linked_idea_text}
+                </Text>
+              ) : null}
+              {item.tags.length > 0 ? (
+                <View style={styles.tags}>
+                  {item.tags.slice(0, 4).map((value) => (
+                    <Tag key={value}>{value}</Tag>
+                  ))}
+                </View>
+              ) : null}
+              <Text style={styles.date}>{formatTimestamp(item.created_at)}</Text>
+            </Pressable>
+          )}
+        />
+      )}
+
+      <Fab label="New thought" onPress={() => router.push("/thought/new")} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  header: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
+  askButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  askText: { color: colors.inkSoft, fontSize: 14 },
+  tagBar: { gap: 6, paddingVertical: 2 },
+  tagChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  tagChipSelected: { backgroundColor: colors.action, borderColor: colors.action },
+  tagChipText: { fontSize: 12, color: colors.action },
+  tagChipTextSelected: { color: colors.actionText },
   list: { padding: 16, gap: 12, paddingBottom: 100 },
   empty: { textAlign: "center", color: colors.inkSoft, marginTop: 60, fontSize: 15 },
   card: {
@@ -113,22 +145,7 @@ const styles = StyleSheet.create({
   mood: { fontSize: 12, color: colors.inkSoft },
   title: { fontFamily: fonts.display, fontSize: 21, color: colors.ink },
   summary: { fontSize: 14, lineHeight: 21, color: colors.inkSoft },
+  linked: { fontSize: 13, color: colors.accent },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   date: { fontSize: 12, color: colors.inkFaint },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: colors.action,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-  },
 });

@@ -14,7 +14,7 @@ export default function NewThoughtScreen() {
     <ThoughtForm
       submitLabel="Create card"
       onSubmit={async (input) => {
-        await request("/thoughts", { method: "POST", body: { ...input, requestId } });
+        await request("/v1/thoughts", { method: "POST", body: { ...input, requestId } });
         router.back();
       }}
     />

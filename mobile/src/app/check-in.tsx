@@ -38,7 +38,7 @@ export default function CheckInScreen() {
     setError(null);
 
     try {
-      await request("/check-ins", { method: "POST", body: { date, mood, energy, focus, note: note.trim() } });
+      await request("/v1/check-ins", { method: "POST", body: { date, mood, energy, focus, note: note.trim() } });
       router.back();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Couldn't save the check-in.");

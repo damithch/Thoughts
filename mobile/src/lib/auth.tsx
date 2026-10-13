@@ -12,8 +12,15 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    // Set by the AI routes (e.g. "rate_limit"); a 401 with an errorType is the AI provider
+    // refusing, not your sign-in expiring.
+    readonly errorType?: string,
   ) {
     super(message);
+  }
+
+  get isSignedOut() {
+    return this.status === 401 && !this.errorType;
   }
 }
 
@@ -30,11 +37,12 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+// `path` is relative to /api: "/v1/today" for mobile routes, "/anchor-notes" for shared web routes.
 async function send<T>(serverUrl: string, token: string | null, path: string, options: RequestOptions = {}) {
   let response: Response;
 
   try {
-    response = await fetch(`${serverUrl}/api/v1${path}`, {
+    response = await fetch(`${serverUrl}/api${path}`, {
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
@@ -51,10 +59,25 @@ async function send<T>(serverUrl: string, token: string | null, path: string, op
     return undefined as T;
   }
 
-  const data = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+  // Non-JSON answers (CSV reports) come back as text.
+  if (!(response.headers.get("content-type") ?? "").includes("json")) {
+    const text = await response.text();
+
+    if (!response.ok) {
+      throw new ApiError(text.slice(0, 200) || `The server answered with an error (${response.status}).`, response.status);
+    }
+
+    return text as T;
+  }
+
+  const data = (await response.json().catch(() => null)) as (T & { error?: string; errorType?: string }) | null;
 
   if (!response.ok) {
-    throw new ApiError(data?.error ?? `The server answered with an error (${response.status}).`, response.status);
+    throw new ApiError(
+      data?.error ?? `The server answered with an error (${response.status}).`,
+      response.status,
+      data?.errorType,
+    );
   }
 
   return data as T;
@@ -75,14 +98,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setServerUrl(savedServer);
 
         if (savedToken && savedServer) {
-          const { user: me } = await send<{ user: User }>(savedServer, savedToken, "/me");
+          const { user: me } = await send<{ user: User }>(savedServer, savedToken, "/v1/me");
           setToken(savedToken);
           setUser(me);
         }
       } catch (error) {
         // Only a rejected token signs you out; being offline keeps you on the sign-in screen
         // without deleting anything.
-        if (error instanceof ApiError && error.status === 401) {
+        if (error instanceof ApiError && error.isSignedOut) {
           await SecureStore.deleteItemAsync(TOKEN_KEY);
         }
       } finally {
@@ -99,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (server: string, email: string, password: string) => {
     const url = normalizeServerUrl(server);
-    const result = await send<{ token: string; user: User }>(url, null, "/auth/login", {
+    const result = await send<{ token: string; user: User }>(url, null, "/v1/auth/login", {
       method: "POST",
       body: { email, password },
     });
@@ -116,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         return await send<T>(serverUrl, token, path, options);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 401) {
+        if (error instanceof ApiError && error.isSignedOut) {
           await signOut();
         }
         throw error;

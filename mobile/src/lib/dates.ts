@@ -23,6 +23,33 @@ export function formatDayLabel(date: string, today: string) {
   });
 }
 
+export function formatLongDate(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function formatShortDate(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// Today's date in Colombo, the server's time zone (used before the server has said).
+export function colomboToday() {
+  return new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+}
+
 export function formatTimestamp(iso: string) {
   return new Date(iso).toLocaleString("en-GB", {
     day: "numeric",
