@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { InnerWeather } from "@/components/inner-weather";
 import { TaskList, TaskQuickAdd } from "@/components/tasks";
 import {
   Body,
@@ -14,7 +15,6 @@ import {
   LoadingState,
   MoodPicker,
   Muted,
-  ProgressBar,
   Tag,
 } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
@@ -63,7 +63,7 @@ export default function TodayScreen() {
         </Pressable>
       </View>
 
-      {counted.length > 0 ? <ProgressBar value={done / counted.length} /> : null}
+      <InnerWeather data={data} />
 
       {data.overdueCount > 0 && !isPast ? <OverdueBanner count={data.overdueCount} date={data.date} onMoved={reload} /> : null}
 
