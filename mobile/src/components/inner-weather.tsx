@@ -7,7 +7,8 @@ import type { CheckIn, TodayResponse } from "@/lib/types";
 
 // "Inner weather": a small sky that is your day.
 // - The sun climbs from dawn to midday as tasks get done.
-// - The latest check-in sets the weather (mood) and the wind (energy).
+// - The day's latest mood, from a check-in or a journal entry, sets the weather; a check-in's
+//   energy sets the wind.
 // - Writing the day's anchor note lights the lighthouse.
 // - Worries postponed today sit as little clouds in the "later" corner.
 
@@ -15,11 +16,13 @@ const HEIGHT = 180;
 
 type Weather = "clear" | "fair" | "cloudy" | "rain" | "unknown";
 
-function weatherFor(checkIn: CheckIn | null): Weather {
-  if (!checkIn) return "unknown";
-  if (checkIn.mood >= 8) return "clear";
-  if (checkIn.mood >= 6) return "fair";
-  if (checkIn.mood >= 4) return "cloudy";
+type MoodReading = { mood: number; created_at: string; energy?: CheckIn["energy"] };
+
+function weatherFor(reading: MoodReading | null): Weather {
+  if (!reading) return "unknown";
+  if (reading.mood >= 8) return "clear";
+  if (reading.mood >= 6) return "fair";
+  if (reading.mood >= 4) return "cloudy";
   return "rain";
 }
 
@@ -31,7 +34,7 @@ const WEATHER_TEXT: Record<Weather, string> = {
   fair: "A few clouds",
   cloudy: "Overcast",
   rain: "Rain",
-  unknown: "Check in to set the weather",
+  unknown: "Log how you feel to set the weather",
 };
 
 function timeOfDay(done: number, total: number) {
@@ -306,8 +309,13 @@ export function InnerWeather({ data }: { data: TodayResponse }) {
   const counted = data.tasks.filter((task) => task.status !== "skipped");
   const done = counted.filter((task) => task.status === "done").length;
   const progress = counted.length === 0 ? 0 : done / counted.length;
-  const latest = data.checkIns.reduce<CheckIn | null>(
-    (newest, checkIn) => (!newest || checkIn.created_at > newest.created_at ? checkIn : newest),
+  // Check-ins are rare; journal entries carry a mood too, so whichever is newest counts.
+  const readings: MoodReading[] = [
+    ...data.checkIns.map((checkIn) => ({ mood: checkIn.mood, created_at: checkIn.created_at, energy: checkIn.energy })),
+    ...data.thoughts.map((thought) => ({ mood: thought.mood, created_at: thought.created_at })),
+  ];
+  const latest = readings.reduce<MoodReading | null>(
+    (newest, reading) => (!newest || reading.created_at > newest.created_at ? reading : newest),
     null,
   );
   const weather = weatherFor(latest);
@@ -362,7 +370,7 @@ export function InnerWeather({ data }: { data: TodayResponse }) {
           "Your inner weather",
           [
             "☀️ The sun climbs from dawn to midday as you finish the day's tasks.",
-            "☁️ Your latest check-in sets the weather: high mood clears the sky, low mood brings cloud and rain. Energy sets the wind.",
+            "☁️ Your latest mood today, from a check-in or a journal entry, sets the weather: a good mood clears the sky, a low one brings cloud and rain. A check-in's energy sets the wind.",
             "🗼 Write the day's anchor note to light the lighthouse.",
             "🌥️ Worries you postpone wait in the “later” corner.",
           ].join("\n\n"),

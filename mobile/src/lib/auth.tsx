@@ -37,6 +37,22 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+// The phone's secure store. If it's unavailable (the web preview) or errors, sign-in still works
+// for the session; it just isn't remembered.
+async function quietly<T>(action: () => Promise<T>, fallback: T) {
+  try {
+    return await action();
+  } catch {
+    return fallback;
+  }
+}
+
+const storage = {
+  get: (key: string) => quietly(() => SecureStore.getItemAsync(key), null),
+  set: (key: string, value: string) => quietly(() => SecureStore.setItemAsync(key, value), undefined),
+  remove: (key: string) => quietly(() => SecureStore.deleteItemAsync(key), undefined),
+};
+
 // `path` is relative to /api: "/v1/today" for mobile routes, "/anchor-notes" for shared web routes.
 async function send<T>(serverUrl: string, token: string | null, path: string, options: RequestOptions = {}) {
   let response: Response;
@@ -93,8 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const savedServer = (await SecureStore.getItemAsync(SERVER_KEY)) ?? DEFAULT_SERVER_URL;
-        const savedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+        const savedServer = (await storage.get(SERVER_KEY)) ?? DEFAULT_SERVER_URL;
+        const savedToken = await storage.get(TOKEN_KEY);
         setServerUrl(savedServer);
 
         if (savedToken && savedServer) {
@@ -106,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Only a rejected token signs you out; being offline keeps you on the sign-in screen
         // without deleting anything.
         if (error instanceof ApiError && error.isSignedOut) {
-          await SecureStore.deleteItemAsync(TOKEN_KEY);
+          await storage.remove(TOKEN_KEY);
         }
       } finally {
         setReady(true);
@@ -115,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await storage.remove(TOKEN_KEY);
     setToken(null);
     setUser(null);
   }, []);
@@ -127,8 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: { email, password },
     });
 
-    await SecureStore.setItemAsync(SERVER_KEY, url);
-    await SecureStore.setItemAsync(TOKEN_KEY, result.token);
+    await storage.set(SERVER_KEY, url);
+    await storage.set(TOKEN_KEY, result.token);
     setServerUrl(url);
     setToken(result.token);
     setUser(result.user);
