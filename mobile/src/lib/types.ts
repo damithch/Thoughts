@@ -89,6 +89,7 @@ export type SupportContact = { name: string; phone: string };
 
 export type SupportOverview = {
   status: SupportStatus;
+  recent: { triggeredAt: string; lateNight: boolean } | null;
   today: {
     date: string;
     ate: boolean | null;
@@ -142,6 +143,7 @@ export type Routine = {
   days_of_week: Weekday[];
   start_date: string;
   end_date: string | null;
+  remind_at: string | null;
 };
 
 export type RoutineAdherence = { id: number; title: string; done: number; scheduled: number };
@@ -260,6 +262,17 @@ export type Settings = {
   smart_capture_temperature: number;
   rag_custom_prompt: string;
   agent_custom_prompt: string;
+  // Phone reminders and server push
+  reminders_evening_enabled: boolean;
+  reminders_evening_time: string;
+  reminders_thinking_enabled: boolean;
+  reminders_morning_enabled: boolean;
+  reminders_morning_time: string;
+  reminders_habits_enabled: boolean;
+  reminders_quiet_enabled: boolean;
+  reminders_quiet_start: string;
+  reminders_quiet_end: string;
+  push_support_alerts: boolean;
 };
 
 export type SettingsResponse = { settings: Settings; models: { value: string; label: string }[] };

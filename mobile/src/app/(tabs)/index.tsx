@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { InnerWeather } from "@/components/inner-weather";
+import { RemindersPrompt } from "@/components/reminders-prompt";
 import { SupportBanner } from "@/components/support-banner";
 import { TaskList, TaskQuickAdd } from "@/components/tasks";
 import {
@@ -79,6 +80,8 @@ export default function TodayScreen() {
       {data.support?.active ? (
         <SupportBanner status={data.support} onDismiss={() => dismissSupport()} />
       ) : null}
+
+      {isToday ? <RemindersPrompt /> : null}
 
       <InnerWeather data={data} />
 

@@ -288,6 +288,63 @@ export function DateStepper({
   );
 }
 
+// "21:30" -> "9:30 pm"
+export function formatClock(value: string) {
+  const [hour, minute] = value.split(":").map(Number);
+  const suffix = hour >= 12 ? "pm" : "am";
+
+  return `${hour % 12 === 0 ? 12 : hour % 12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function shiftClock(value: string, deltaMinutes: number) {
+  const [hour, minute] = value.split(":").map(Number);
+  const total = (((hour * 60 + minute + deltaMinutes) % 1440) + 1440) % 1440;
+
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+// Pick a time of day with ‹ › in 15-minute steps; with `allowNone`, the time can be turned off.
+export function TimeStepper({
+  label,
+  value,
+  onChange,
+  allowNone,
+  noneLabel = "No reminder",
+  fallback = "21:00",
+  hint,
+}: {
+  label?: string;
+  value: string | null;
+  onChange: (value: string | null) => void;
+  allowNone?: boolean;
+  noneLabel?: string;
+  fallback?: string;
+  hint?: string;
+}) {
+  const step = (delta: number) => onChange(shiftClock(value ?? fallback, value ? delta : 0));
+
+  return (
+    <View style={styles.fieldWrap}>
+      {label ? <Eyebrow>{label}</Eyebrow> : null}
+      <View style={styles.stepper}>
+        <Pressable onPress={() => step(-15)} hitSlop={10} style={styles.stepperButton} accessibilityLabel="Earlier">
+          <Ionicons name="chevron-back" size={20} color={colors.action} />
+        </Pressable>
+        <Text style={styles.stepperValue}>{value ? formatClock(value) : noneLabel}</Text>
+        <Pressable onPress={() => step(15)} hitSlop={10} style={styles.stepperButton} accessibilityLabel="Later">
+          <Ionicons name="chevron-forward" size={20} color={colors.action} />
+        </Pressable>
+      </View>
+      {allowNone && value ? (
+        <Pressable onPress={() => onChange(null)} hitSlop={6}>
+          <Text style={styles.link}>{noneLabel}</Text>
+        </Pressable>
+      ) : null}
+      {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
 export function SwitchRow({
   label,
   hint,

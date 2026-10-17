@@ -12,6 +12,7 @@ import {
   Field,
   LoadingState,
   SwitchRow,
+  TimeStepper,
 } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { colomboToday } from "@/lib/dates";
@@ -39,6 +40,7 @@ export default function RoutineScreen() {
   const [endDate, setEndDate] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [remindAt, setRemindAt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +61,7 @@ export default function RoutineScreen() {
       setEndDate(routine.end_date);
       setNote(routine.note);
       setIsActive(routine.is_active);
+      setRemindAt(routine.remind_at);
       setLoaded(true);
       setLoadError(null);
     } catch (caught) {
@@ -80,7 +83,7 @@ export default function RoutineScreen() {
     setSaving(true);
     setError(null);
 
-    const body = { title: title.trim(), priority, daysOfWeek: days, startDate, endDate, note: note.trim(), isActive };
+    const body = { title: title.trim(), priority, daysOfWeek: days, startDate, endDate, note: note.trim(), isActive, remindAt };
 
     try {
       await request(isNew ? "/v1/routines" : `/v1/routines/${id}`, { method: isNew ? "POST" : "PATCH", body });
@@ -147,6 +150,15 @@ export default function RoutineScreen() {
           allowNone
           noneLabel="No end date"
           fallback={startDate ?? colomboToday()}
+        />
+        <TimeStepper
+          label="Phone reminder"
+          value={remindAt}
+          onChange={setRemindAt}
+          allowNone
+          noneLabel="No reminder"
+          fallback="21:00"
+          hint="A notification on the days this routine runs (turn reminders on in More → Reminders)."
         />
         <Field label="Note" value={note} onChangeText={setNote} multiline />
         {!isNew ? (

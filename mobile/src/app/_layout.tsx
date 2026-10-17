@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { ReminderSync } from "@/components/reminder-sync";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { colors, fonts } from "@/lib/theme";
 
@@ -49,6 +50,7 @@ function RootNavigator() {
         <Stack.Screen name="support/index" options={{ title: "Support" }} />
         <Stack.Screen name="support/plan" options={{ title: "Your support plan" }} />
         <Stack.Screen name="breathe" options={{ title: "Breathe" }} />
+        <Stack.Screen name="reminders" options={{ title: "Reminders" }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -62,6 +64,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="dark" />
+        <ReminderSync />
         <RootNavigator />
       </AuthProvider>
     </SafeAreaProvider>

@@ -37,6 +37,16 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+// Called after every successful change sent to the server (e.g. to refresh scheduled reminders).
+const mutationListeners = new Set<(path: string) => void>();
+
+export function onServerChange(listener: (path: string) => void) {
+  mutationListeners.add(listener);
+  return () => {
+    mutationListeners.delete(listener);
+  };
+}
+
 // The phone's secure store. If it's unavailable (the web preview) or errors, sign-in still works
 // for the session; it just isn't remembered.
 async function quietly<T>(action: () => Promise<T>, fallback: T) {
@@ -153,7 +163,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const request = useCallback(
     async <T,>(path: string, options?: RequestOptions) => {
       try {
-        return await send<T>(serverUrl, token, path, options);
+        const result = await send<T>(serverUrl, token, path, options);
+
+        if (options?.method && options.method !== "GET") {
+          mutationListeners.forEach((listener) => listener(path));
+        }
+
+        return result;
       } catch (error) {
         if (error instanceof ApiError && error.isSignedOut) {
           await signOut();

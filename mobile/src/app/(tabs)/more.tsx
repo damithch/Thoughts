@@ -4,10 +4,11 @@ import { Alert, Linking, ScrollView, StyleSheet, Text, View } from "react-native
 
 import { Button, Card, Eyebrow, NavRow } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
+import { cancelAllReminders, unregisterPush } from "@/lib/notifications";
 import { colors, fonts } from "@/lib/theme";
 
 export default function MoreScreen() {
-  const { user, serverUrl, signOut } = useAuth();
+  const { user, serverUrl, signOut, request } = useAuth();
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -48,6 +49,7 @@ export default function MoreScreen() {
 
       <Eyebrow>Data</Eyebrow>
       <View style={styles.group}>
+        <NavRow icon="notifications-outline" title="Reminders" subtitle="Evening close, thinking time, habits, quiet hours" onPress={() => router.push("/reminders")} />
         <NavRow icon="share-outline" title="Export reports" subtitle="Daily and monthly JSON or CSV" onPress={() => router.push("/export")} />
         <NavRow icon="settings-outline" title="Settings" subtitle="AI model and assistant options" onPress={() => router.push("/settings")} />
       </View>
@@ -63,7 +65,16 @@ export default function MoreScreen() {
           onPress={() =>
             Alert.alert("Sign out?", "You'll need your password to sign in again.", [
               { text: "Cancel", style: "cancel" },
-              { text: "Sign out", style: "destructive", onPress: signOut },
+              {
+              text: "Sign out",
+              style: "destructive",
+              // Stop server alerts reaching this phone before the token is forgotten.
+              onPress: async () => {
+                await unregisterPush(request);
+                await cancelAllReminders();
+                await signOut();
+              },
+            },
             ])
           }
         />
