@@ -177,6 +177,8 @@ export type RecurringTask = {
   days_of_week: string[];
   start_date: string;
   end_date: string | null;
+  // Optional phone reminder time, "HH:MM".
+  remind_at: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -199,6 +201,7 @@ export type NewRecurringTask = {
   daysOfWeek: string[];
   startDate: string;
   endDate: string | null;
+  remindAt?: string | null;
   userId: number;
 };
 
@@ -212,6 +215,8 @@ export type UpdateRecurringTask = {
   daysOfWeek: string[];
   startDate: string;
   endDate: string | null;
+  // Leave out to keep the current reminder; null removes it.
+  remindAt?: string | null;
   userId: number;
 };
 
@@ -389,6 +394,21 @@ export type UserSettings = {
   support_contacts: SupportContact[]; // default: []
   support_helpline_name: string;   // default: "National Mental Health Helpline"
   support_helpline_phone: string;  // default: "1926" (Sri Lanka, free, 24 hours)
+
+  // Phone reminders (scheduled on the phone; times are "HH:MM" local time)
+  reminders_evening_enabled: boolean;  // default: true
+  reminders_evening_time: string;      // default: "21:30"
+  reminders_thinking_enabled: boolean; // default: true (worry thinking time, while a module is active)
+  reminders_morning_enabled: boolean;  // default: true (the morning after a rough patch)
+  reminders_morning_time: string;      // default: "09:00"
+  reminders_habits_enabled: boolean;   // default: true (routines that have a reminder time)
+  reminders_quiet_enabled: boolean;    // default: true
+  reminders_quiet_start: string;       // default: "23:00"
+  reminders_quiet_end: string;         // default: "07:00"
+
+  // Server push
+  push_support_alerts: boolean;        // default: true (very low entry written outside the app)
+  push_last_support_trigger: string;   // default: "" (newest rough patch already alerted, ISO time)
 };
 
 export type SupportContact = { name: string; phone: string };

@@ -74,7 +74,7 @@ function formatSchedule(task: RecurringTask) {
     ? `${task.start_date} to ${task.end_date}`
     : `From ${task.start_date}`;
 
-  return `${labels.join(", ")} | ${range}`;
+  return `${labels.join(", ")} | ${range}${task.remind_at ? ` | reminder ${task.remind_at}` : ""}`;
 }
 
 function RecurringTaskEditor({ task }: { task: RecurringTask }) {
@@ -205,6 +205,16 @@ function RecurringTaskEditor({ task }: { task: RecurringTask }) {
           </div>
 
           <label className="grid gap-2 text-sm text-stone-700">
+            <span className="font-medium text-emerald-900">Phone reminder (optional)</span>
+            <input
+              name="remindAt"
+              type="time"
+              defaultValue={task.remind_at ?? ""}
+              className="w-full rounded-xl border border-emerald-900/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm text-stone-700">
             <span className="font-medium text-emerald-900">Note</span>
             <textarea
               name="note"
@@ -324,6 +334,15 @@ export default async function RoutinesPage(props: TasksPageProps) {
                     />
                   </label>
                 </div>
+
+                <label className="grid gap-2 text-sm text-stone-700">
+                  <span className="font-medium text-emerald-900">Phone reminder (optional)</span>
+                  <input
+                    name="remindAt"
+                    type="time"
+                    className="w-full rounded-xl border border-emerald-900/10 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </label>
 
                 <label className="grid gap-2 text-sm text-stone-700">
                   <span className="font-medium text-emerald-900">Tags</span>

@@ -10,6 +10,7 @@ import {
   normalizeTaskNote,
   normalizeTaskTags,
   normalizeTaskTitle,
+  parseClockTime,
   parseTaskPriorityValue,
 } from "@/lib/tasks/validation";
 
@@ -96,6 +97,14 @@ export function readRoutineInput(body: Record<string, unknown>) {
     return { error: "The end date must be a valid date on or after the start date." };
   }
 
+  // Optional phone reminder: left out keeps the current one, null or "" removes it.
+  let remindAt: string | null | undefined;
+  if (body.remindAt === null || body.remindAt === "") remindAt = null;
+  else if (body.remindAt !== undefined) {
+    remindAt = parseClockTime(body.remindAt);
+    if (!remindAt) return { error: "The reminder time must look like 21:30." };
+  }
+
   return {
     title,
     priority,
@@ -104,6 +113,7 @@ export function readRoutineInput(body: Record<string, unknown>) {
     endDate,
     note: normalizeTaskNote(body.note),
     tags: normalizeTaskTags(body.tags),
+    remindAt,
   };
 }
 

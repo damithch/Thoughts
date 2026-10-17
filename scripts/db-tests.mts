@@ -191,6 +191,44 @@ await test("recent moods merge thoughts and check-ins, newest first", async () =
   assert.deepEqual(moods, [2, 3, 5]);
 });
 
+await test("routine reminder time: saved, kept when not sent, cleared with null", async () => {
+  const id = await db.createRecurringTask({
+    userId, title: "Remind me", priority: "low", tags: [], note: "", daysOfWeek: ["mon"],
+    startDate: weekAgo, endDate: null, remindAt: "21:00",
+  });
+  const find = async () => (await db.getRecurringTasksByUser(userId)).find((routine) => routine.id === Number(id))!;
+  assert.equal((await find()).remind_at, "21:00");
+  const base = { id: Number(id), userId, title: "Remind me", priority: "low" as const, tags: [], note: "", isActive: true, daysOfWeek: ["mon"], startDate: weekAgo, endDate: null };
+  await db.updateRecurringTask(base);
+  assert.equal((await find()).remind_at, "21:00");
+  await db.updateRecurringTask({ ...base, remindAt: "07:30" });
+  assert.equal((await find()).remind_at, "07:30");
+  await db.updateRecurringTask({ ...base, remindAt: null });
+  assert.equal((await find()).remind_at, null);
+});
+
+const push = await import("@/lib/db/push");
+
+await test("push devices: register, move to another account, remove", async () => {
+  const token = `test-token-${Date.now()}-abcdefghijklmnop`;
+  await push.registerPushDevice(userId, token, "android");
+  await push.registerPushDevice(userId, token, "android");
+  assert.deepEqual(await push.getPushTokens(userId), [token]);
+
+  const { rows: other } = await pool.query<{ id: number }>(
+    `INSERT INTO users (name, email, password_hash) VALUES ('Other', $1, 'x:y') RETURNING id`,
+    [`db-test-other-${Date.now()}@example.test`],
+  );
+  await push.registerPushDevice(other[0].id, token, "android");
+  assert.deepEqual(await push.getPushTokens(userId), []);
+  assert.deepEqual(await push.getPushTokens(other[0].id), [token]);
+
+  assert.equal(await push.removePushDevice(userId, token), false);
+  await push.forgetPushToken(token);
+  assert.deepEqual(await push.getPushTokens(other[0].id), []);
+  await pool.query(`DELETE FROM users WHERE id = $1`, [other[0].id]);
+});
+
 await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 await pool.end();
 

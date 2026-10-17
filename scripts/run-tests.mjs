@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { createVerify, generateKeyPairSync, scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { appendRagFilterClauses, parseRagQueryFilters } from "../src/lib/rag-filters.ts";
 import { rankHybridResults, selectDiverseResults } from "../src/lib/rag-retrieval.ts";
@@ -9,6 +9,7 @@ import {
   isValidTaskDate,
   normalizeTaskTags,
   normalizeTaskTitle,
+  parseClockTime,
   parseTaskId,
   parseTaskPriorityValue,
   parseTaskStatusValue,
@@ -18,6 +19,8 @@ import { describeUpcomingDays, resolveRelativeDate } from "../src/lib/tasks/date
 import { buildAgentPlan } from "../src/lib/tasks/agent-plan.ts";
 import { computeDayStreak, routineAdherence } from "../src/lib/tasks/stats.ts";
 import { colomboHour, detectRoughPatch, isLateNight } from "../src/lib/rough-patch.ts";
+import { isQuietTime, parseClock, planReminders } from "../mobile/src/lib/reminder-plan.ts";
+import { buildServiceJwt, isStaleTokenResponse, parseServiceAccount } from "../src/lib/push-auth.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -668,6 +671,139 @@ test("rough patch: 'I'm okay for now' hides it until a newer low entry", () => {
   const now = new Date("2026-10-08T09:00:00Z");
   assert.equal(detectRoughPatch(run, now, "2026-10-08T07:00:00Z").active, false);
   assert.equal(detectRoughPatch([{ mood: 1, created_at: "2026-10-08T08:00:00Z" }, ...run], now, "2026-10-08T07:00:00Z").active, true);
+});
+
+// Reminder planning (mobile/src/lib/reminder-plan.ts). Dates are built in local time so the
+// tests pass in any time zone.
+const reminderSettings = {
+  reminders_evening_enabled: true,
+  reminders_evening_time: "21:30",
+  reminders_thinking_enabled: true,
+  reminders_morning_enabled: true,
+  reminders_morning_time: "09:00",
+  reminders_habits_enabled: true,
+  reminders_quiet_enabled: true,
+  reminders_quiet_start: "23:00",
+  reminders_quiet_end: "07:00",
+};
+const planBase = (overrides = {}) => ({
+  now: new Date(2026, 9, 20, 12, 0), // Tue 20 Oct 2026, 12:00
+  settings: reminderSettings,
+  dayClosed: false,
+  doneRoutineIdsToday: [],
+  worry: null,
+  routines: [],
+  roughPatchAt: null,
+  days: 3,
+  ...overrides,
+});
+const kinds = (plan) => plan.map((r) => `${r.kind}@${r.at.getDate()} ${r.at.getHours()}:${String(r.at.getMinutes()).padStart(2, "0")}`);
+
+test("reminders: quiet hours wrap past midnight", () => {
+  const at = (h, m) => new Date(2026, 9, 20, h, m);
+  assert.equal(isQuietTime(at(23, 30), reminderSettings), true);
+  assert.equal(isQuietTime(at(6, 59), reminderSettings), true);
+  assert.equal(isQuietTime(at(7, 0), reminderSettings), false);
+  assert.equal(isQuietTime(at(22, 59), reminderSettings), false);
+  assert.equal(isQuietTime(at(23, 30), { ...reminderSettings, reminders_quiet_enabled: false }), false);
+  assert.equal(isQuietTime(at(12, 0), { ...reminderSettings, reminders_quiet_start: "12:00", reminders_quiet_end: "13:00" }), true);
+  assert.equal(parseClock("9:05")?.hour, 9);
+  assert.equal(parseClock("24:00"), null);
+});
+
+test("reminders: evening close each day, skipped tonight once the day is closed", () => {
+  assert.deepEqual(kinds(planReminders(planBase())), ["evening@20 21:30", "evening@21 21:30", "evening@22 21:30"]);
+  assert.deepEqual(kinds(planReminders(planBase({ dayClosed: true }))), ["evening@21 21:30", "evening@22 21:30"]);
+  // Already past today's time: starts tomorrow.
+  assert.deepEqual(kinds(planReminders(planBase({ now: new Date(2026, 9, 20, 22, 0) }))), ["evening@21 21:30", "evening@22 21:30"]);
+  // A time inside quiet hours never notifies.
+  const late = { ...reminderSettings, reminders_evening_time: "23:30" };
+  assert.deepEqual(planReminders(planBase({ settings: late })), []);
+});
+
+test("reminders: thinking time only while the worry module is active, without worry text", () => {
+  const off = { ...reminderSettings, reminders_evening_enabled: false };
+  assert.deepEqual(planReminders(planBase({ settings: off, worry: { active: false, start: "18:00", minutes: 15, place: "Desk" } })), []);
+  const plan = planReminders(planBase({ settings: off, worry: { active: true, start: "18:00", minutes: 15, place: "Desk" } }));
+  assert.deepEqual(kinds(plan), ["thinking@20 18:00", "thinking@21 18:00", "thinking@22 18:00"]);
+  assert.equal(plan[0].body, "15 minutes · Desk. Your parked worries are waiting.");
+  assert.equal(plan[0].url, "/worry");
+});
+
+test("reminders: habits on their days only, not once done today; breathing opens the exercise", () => {
+  const off = { ...reminderSettings, reminders_evening_enabled: false };
+  const routines = [
+    { id: 1, title: "Breathing exercises", remind_at: "21:00", is_active: true, days_of_week: ["tue", "wed"], start_date: "2026-01-01", end_date: null },
+    { id: 2, title: "Gym", remind_at: "17:00", is_active: true, days_of_week: ["thu"], start_date: "2026-01-01", end_date: null },
+    { id: 3, title: "Paused", remind_at: "10:00", is_active: false, days_of_week: ["tue"], start_date: "2026-01-01", end_date: null },
+    { id: 4, title: "No time", remind_at: null, is_active: true, days_of_week: ["tue"], start_date: "2026-01-01", end_date: null },
+  ];
+  const plan = planReminders(planBase({ settings: off, routines }));
+  assert.deepEqual(kinds(plan), ["habit@20 21:00", "habit@21 21:00", "habit@22 17:00"]);
+  assert.equal(plan[0].url, "/breathe?minutes=2");
+  assert.equal(plan[2].url, "/");
+  assert.deepEqual(kinds(planReminders(planBase({ settings: off, routines, doneRoutineIdsToday: [1] }))), ["habit@21 21:00", "habit@22 17:00"]);
+  assert.deepEqual(planReminders(planBase({ settings: { ...off, reminders_habits_enabled: false }, routines })), []);
+});
+
+test("reminders: a morning check after a rough patch, only once and only soon after", () => {
+  const off = { ...reminderSettings, reminders_evening_enabled: false };
+  const night = new Date(2026, 9, 19, 23, 30).toISOString(); // Mon 23:30
+  // Monday night -> Tuesday 09:00 (already past at noon, so nothing).
+  assert.deepEqual(planReminders(planBase({ settings: off, roughPatchAt: night })), []);
+  const early = planReminders(planBase({ settings: off, roughPatchAt: night, now: new Date(2026, 9, 20, 6, 0) }));
+  assert.deepEqual(kinds(early), ["morning@20 9:00"]);
+  assert.equal(early[0].url, "/support");
+  assert.equal(early[0].channelId, "care");
+  // A low run at 02:00 -> the same morning; a daytime one -> the next morning.
+  assert.deepEqual(kinds(planReminders(planBase({ settings: off, roughPatchAt: new Date(2026, 9, 20, 2, 0).toISOString(), now: new Date(2026, 9, 20, 3, 0) }))), ["morning@20 9:00"]);
+  assert.deepEqual(kinds(planReminders(planBase({ settings: off, roughPatchAt: new Date(2026, 9, 20, 11, 0).toISOString() }))), ["morning@21 9:00"]);
+  // Days old: no check.
+  assert.deepEqual(planReminders(planBase({ settings: off, roughPatchAt: new Date(2026, 9, 17, 23, 0).toISOString() })), []);
+});
+
+test("routine reminder times: 24-hour HH:MM only", () => {
+  assert.equal(parseClockTime("21:30"), "21:30");
+  assert.equal(parseClockTime("7:05"), "07:05");
+  assert.equal(parseClockTime(" 09:00 "), "09:00");
+  assert.equal(parseClockTime("24:00"), null);
+  assert.equal(parseClockTime("9pm"), null);
+  assert.equal(parseClockTime(""), null);
+});
+
+test("push: service account JWT is RS256-signed with the FCM scope", () => {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const account = {
+    project_id: "demo-project",
+    client_email: "push@demo-project.iam.gserviceaccount.com",
+    private_key: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  };
+  const jwt = buildServiceJwt(account, 1_800_000_000);
+  const [header, claims, signature] = jwt.split(".");
+  const decode = (part) => JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+
+  assert.deepEqual(decode(header), { alg: "RS256", typ: "JWT" });
+  assert.deepEqual(decode(claims), {
+    iss: account.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: 1_800_000_000,
+    exp: 1_800_003_600,
+  });
+  assert.equal(createVerify("RSA-SHA256").update(`${header}.${claims}`).verify(publicKey, signature, "base64url"), true);
+
+  assert.deepEqual(parseServiceAccount(JSON.stringify(account)), account);
+  assert.equal(parseServiceAccount("{not json"), null);
+  assert.equal(parseServiceAccount(JSON.stringify({ project_id: "x" })), null);
+  assert.equal(parseServiceAccount(undefined), null);
+});
+
+test("push: dead device tokens are recognised", () => {
+  assert.equal(isStaleTokenResponse(404, ""), true);
+  assert.equal(isStaleTokenResponse(400, '{"error":{"details":[{"errorCode":"UNREGISTERED"}]}}'), true);
+  assert.equal(isStaleTokenResponse(400, "The registration token is not a valid FCM registration token"), true);
+  assert.equal(isStaleTokenResponse(500, "internal"), false);
+  assert.equal(isStaleTokenResponse(401, "auth"), false);
 });
 
 

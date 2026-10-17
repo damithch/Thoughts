@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { randomUUID } from "node:crypto";
 
 import { clearSession, createSession, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
@@ -37,11 +38,13 @@ import {
   upsertUserSettings,
 } from "@/lib/db";
 import { isValidPassword } from "@/lib/password-reset";
+import { alertSupportByPush } from "@/lib/support";
 import {
   isValidTaskDate,
   normalizeTaskNote,
   normalizeTaskTags,
   normalizeTaskTitle,
+  parseClockTime,
   parseTaskId,
   parseTaskPriorityValue,
   parseTaskStatusValue,
@@ -215,6 +218,11 @@ export async function createThoughtAction(formData: FormData) {
 
   if (failed) {
     redirect("/dashboard?toast=save_failed&type=error");
+  }
+
+  // A very low entry may start a rough patch: tell the phone (after the response is sent).
+  if (mood <= 2) {
+    after(() => alertSupportByPush(currentUser.id));
   }
 
   revalidatePath("/dashboard");
@@ -692,6 +700,10 @@ export async function createDailyCheckInAction(formData: FormData) {
     redirect(`/dashboard/tasks?date=${date}&toast=checkin_save_failed&type=error`);
   }
 
+  if (mood <= 2) {
+    after(() => alertSupportByPush(currentUser.id));
+  }
+
   revalidatePath("/dashboard/tasks", "layout");
   redirect(`/dashboard/tasks?date=${date}&toast=checkin_saved&type=success`);
 }
@@ -724,6 +736,7 @@ export async function createRecurringTaskAction(formData: FormData) {
       daysOfWeek,
       startDate,
       endDate,
+      remindAt: parseClockTime(formData.get("remindAt")),
       userId: currentUser.id,
     });
   } catch {
@@ -777,6 +790,7 @@ export async function updateRecurringTaskAction(formData: FormData) {
       daysOfWeek,
       startDate,
       endDate,
+      remindAt: parseClockTime(formData.get("remindAt")),
       userId: currentUser.id,
     });
     updated = Boolean(result);

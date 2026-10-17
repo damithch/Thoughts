@@ -500,7 +500,7 @@ export async function getRecurringTasksByUser(userId: number) {
              days_of_week,
              TO_CHAR(start_date, 'YYYY-MM-DD') AS start_date,
              TO_CHAR(end_date, 'YYYY-MM-DD') AS end_date,
-             created_at, updated_at
+             remind_at, created_at, updated_at
       FROM recurring_tasks
       WHERE user_id = $1
       ORDER BY
@@ -524,9 +524,9 @@ export async function createRecurringTask(input: NewRecurringTask) {
   const { rows } = await pool.query<{ id: number }>(
     `
       INSERT INTO recurring_tasks (
-        user_id, title, priority, tags, note, days_of_week, start_date, end_date
+        user_id, title, priority, tags, note, days_of_week, start_date, end_date, remind_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::date, $9)
       RETURNING id
     `,
     [
@@ -538,6 +538,7 @@ export async function createRecurringTask(input: NewRecurringTask) {
       input.daysOfWeek,
       input.startDate,
       input.endDate,
+      input.remindAt ?? null,
     ],
   );
 
@@ -558,6 +559,7 @@ export async function updateRecurringTask(input: UpdateRecurringTask) {
           days_of_week = $6,
           start_date = $7::date,
           end_date = $8::date,
+          remind_at = CASE WHEN $11 THEN $12 ELSE remind_at END,
           updated_at = NOW()
       WHERE id = $9
         AND user_id = $10
@@ -573,6 +575,8 @@ export async function updateRecurringTask(input: UpdateRecurringTask) {
       input.endDate,
       input.id,
       input.userId,
+      input.remindAt !== undefined,
+      input.remindAt ?? null,
     ],
   );
 

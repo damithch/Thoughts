@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 
 import {
@@ -31,6 +31,7 @@ import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskIt
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import { embedTexts } from "@/lib/gemini";
+import { alertSupportByPush } from "@/lib/support";
 import { getCurrentColomboDate } from "@/lib/time";
 
 const MCP_API_KEY_HEADER = "x-api-key";
@@ -929,6 +930,11 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
     }
 
     await createThought(input);
+
+    // A very low entry may start a rough patch: tell the phone (after the response is sent).
+    if (input.mood <= 2) {
+      after(() => alertSupportByPush(input.userId));
+    }
 
     return formatToolResult({
       created: true,

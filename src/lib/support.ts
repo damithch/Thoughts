@@ -7,8 +7,10 @@ import {
   getUserSettings,
   normalizePhone,
   SUPPORT_LIMITS,
+  upsertUserSettings,
 } from "@/lib/db";
 import type { SupportContact, SupportDay, UserSettings } from "@/lib/db";
+import { sendPushToUser } from "@/lib/push";
 import { detectRoughPatch, RUN_LENGTH, type RoughPatchStatus } from "@/lib/rough-patch";
 import { getCurrentColomboDate } from "@/lib/time";
 
@@ -30,7 +32,14 @@ export type SupportToday = {
   breathingSeconds: number;
 };
 
-export type SupportOverview = { status: RoughPatchStatus; today: SupportToday; plan: SupportPlan };
+export type SupportOverview = {
+  status: RoughPatchStatus;
+  // The latest rough patch even if "I'm okay for now" was tapped (used to plan a gentle
+  // check-in the next morning).
+  recent: { triggeredAt: string; lateNight: boolean } | null;
+  today: SupportToday;
+  plan: SupportPlan;
+};
 
 export function toSupportPlan(settings: UserSettings): SupportPlan {
   return {
@@ -52,24 +61,67 @@ export function toSupportToday(day: SupportDay): SupportToday {
   };
 }
 
-export async function getSupportStatus(userId: number, settings?: UserSettings): Promise<RoughPatchStatus> {
-  const resolved = settings ?? (await getUserSettings(userId));
+async function evaluate(userId: number, settings: UserSettings) {
   const today = getCurrentColomboDate();
   const [entries, dismissedAt] = await Promise.all([
     getRecentMoodEntries(userId, RUN_LENGTH + 3),
     getLatestSupportDismissal(userId, today),
   ]);
-  const status = detectRoughPatch(entries, new Date(), dismissedAt);
+  const now = new Date();
+  const status = detectRoughPatch(entries, now, dismissedAt);
+  const undismissed = detectRoughPatch(entries, now, null);
 
-  return resolved.support_enabled ? status : { ...status, active: false };
+  return {
+    status: settings.support_enabled ? status : { ...status, active: false },
+    recent:
+      settings.support_enabled && undismissed.active && undismissed.triggeredAt
+        ? { triggeredAt: undismissed.triggeredAt, lateNight: undismissed.lateNight }
+        : null,
+  };
+}
+
+export async function getSupportStatus(userId: number, settings?: UserSettings): Promise<RoughPatchStatus> {
+  return (await evaluate(userId, settings ?? (await getUserSettings(userId)))).status;
 }
 
 export async function getSupportOverview(userId: number): Promise<SupportOverview> {
   const settings = await getUserSettings(userId);
   const today = getCurrentColomboDate();
-  const [status, day] = await Promise.all([getSupportStatus(userId, settings), getSupportDay(userId, today)]);
+  const [{ status, recent }, day] = await Promise.all([evaluate(userId, settings), getSupportDay(userId, today)]);
 
-  return { status, today: toSupportToday(day), plan: toSupportPlan(settings) };
+  return { status, recent, today: toSupportToday(day), plan: toSupportPlan(settings) };
+}
+
+const SUPPORT_PUSH_GAP_HOURS = 12;
+
+// After a mood entry made outside the app (website, Claude), let the phone know support is
+// there — at most once per rough patch (12 hours apart). The app itself opens the support
+// screen directly, so it doesn't call this. Never includes anything the user wrote.
+export async function alertSupportByPush(userId: number) {
+  try {
+    const settings = await getUserSettings(userId);
+
+    if (!settings.push_support_alerts) return;
+
+    const { status } = await evaluate(userId, settings);
+
+    if (!status.active || !status.triggeredAt) return;
+
+    const last = Date.parse(settings.push_last_support_trigger);
+
+    if (Number.isFinite(last) && Date.parse(status.triggeredAt) - last < SUPPORT_PUSH_GAP_HOURS * 3_600_000) return;
+
+    // Record first, so two quick entries can't both send.
+    await upsertUserSettings(userId, { push_last_support_trigger: status.triggeredAt });
+    await sendPushToUser(userId, {
+      title: "Go gently",
+      message: "Things look heavy right now. Your support plan is in Thoughts whenever you want it.",
+      url: "/support",
+      channelId: "care",
+    });
+  } catch (error) {
+    console.error("Support push failed.", error);
+  }
 }
 
 // Validates an edit to the plan. Only the parts sent are changed.

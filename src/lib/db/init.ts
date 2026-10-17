@@ -227,6 +227,12 @@ export async function ensureInitialized() {
         ADD COLUMN IF NOT EXISTS days_of_week TEXT[] NOT NULL DEFAULT ARRAY['mon','tue','wed','thu','fri','sat','sun']::TEXT[]
       `);
 
+      // Optional phone reminder time for a routine, "HH:MM" in the user's local time.
+      await pool.query(`
+        ALTER TABLE recurring_tasks
+        ADD COLUMN IF NOT EXISTS remind_at TEXT
+      `);
+
       await pool.query(`
         ALTER TABLE recurring_tasks
         ADD COLUMN IF NOT EXISTS start_date DATE NOT NULL DEFAULT CURRENT_DATE
@@ -833,6 +839,18 @@ export async function ensureInitialized() {
       await pool.query(`
         CREATE INDEX IF NOT EXISTS anchor_notes_user_date_idx
         ON anchor_notes (user_id, date DESC)
+      `);
+
+      // Phones registered for push alerts (Firebase Cloud Messaging device tokens).
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS push_devices (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token TEXT NOT NULL UNIQUE,
+          platform TEXT NOT NULL DEFAULT 'android',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
       `);
 
       // Support on hard days: the basics check, coping steps tried, guided breathing time, and

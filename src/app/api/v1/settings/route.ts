@@ -3,6 +3,16 @@ import { revalidatePath } from "next/cache";
 import { DEFAULT_USER_SETTINGS, getUserSettings, upsertUserSettings } from "@/lib/db/settings";
 import { LLM_MODELS } from "@/lib/llm-models";
 import { apiError, readJsonObject, withMobileUser } from "@/lib/mobile-api";
+import { parseClockTime } from "@/lib/tasks/validation";
+
+const CLOCK_KEYS = new Set([
+  "reminders_evening_time",
+  "reminders_morning_time",
+  "reminders_quiet_start",
+  "reminders_quiet_end",
+]);
+
+const INTERNAL_KEYS = new Set(["push_last_support_trigger"]);
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +35,16 @@ export const PATCH = withMobileUser(async (request, user) => {
   for (const [key, value] of Object.entries(body)) {
     const defaultValue = DEFAULT_USER_SETTINGS[key as keyof typeof DEFAULT_USER_SETTINGS];
 
-    if (defaultValue === undefined) continue;
+    // Server-managed bookkeeping, not a user setting.
+    if (defaultValue === undefined || INTERNAL_KEYS.has(key)) continue;
+
+    if (CLOCK_KEYS.has(key)) {
+      const time = parseClockTime(value);
+
+      if (!time) return apiError(`${key} must be a time like 21:30.`, 400);
+      patch[key] = time;
+      continue;
+    }
 
     if (Array.isArray(defaultValue)) {
       if (Array.isArray(value) && value.every((item) => typeof item === "string")) patch[key] = value;

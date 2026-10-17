@@ -1,6 +1,7 @@
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import type { RagDocumentKind, SupportContact, UserSettings } from "@/lib/db/types";
+import { parseClockTime } from "@/lib/tasks/validation";
 
 const ALL_RAG_KINDS: RagDocumentKind[] = [
   "thought",
@@ -58,6 +59,21 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   support_contacts: [],
   support_helpline_name: "National Mental Health Helpline",
   support_helpline_phone: "1926",
+
+  // Phone reminders
+  reminders_evening_enabled: true,
+  reminders_evening_time: "21:30",
+  reminders_thinking_enabled: true,
+  reminders_morning_enabled: true,
+  reminders_morning_time: "09:00",
+  reminders_habits_enabled: true,
+  reminders_quiet_enabled: true,
+  reminders_quiet_start: "23:00",
+  reminders_quiet_end: "07:00",
+
+  // Server push
+  push_support_alerts: true,
+  push_last_support_trigger: "",
 };
 
 export async function getUserSettings(userId: number): Promise<UserSettings> {
@@ -118,6 +134,19 @@ export async function getUserSettings(userId: number): Promise<UserSettings> {
     support_contacts: parseSupportContacts(stored.support_contacts),
     support_helpline_name: safeString(stored.support_helpline_name, DEFAULT_USER_SETTINGS.support_helpline_name),
     support_helpline_phone: normalizePhone(stored.support_helpline_phone) ?? DEFAULT_USER_SETTINGS.support_helpline_phone,
+
+    reminders_evening_enabled: safeBool(stored.reminders_evening_enabled, DEFAULT_USER_SETTINGS.reminders_evening_enabled),
+    reminders_evening_time: parseClockTime(stored.reminders_evening_time) ?? DEFAULT_USER_SETTINGS.reminders_evening_time,
+    reminders_thinking_enabled: safeBool(stored.reminders_thinking_enabled, DEFAULT_USER_SETTINGS.reminders_thinking_enabled),
+    reminders_morning_enabled: safeBool(stored.reminders_morning_enabled, DEFAULT_USER_SETTINGS.reminders_morning_enabled),
+    reminders_morning_time: parseClockTime(stored.reminders_morning_time) ?? DEFAULT_USER_SETTINGS.reminders_morning_time,
+    reminders_habits_enabled: safeBool(stored.reminders_habits_enabled, DEFAULT_USER_SETTINGS.reminders_habits_enabled),
+    reminders_quiet_enabled: safeBool(stored.reminders_quiet_enabled, DEFAULT_USER_SETTINGS.reminders_quiet_enabled),
+    reminders_quiet_start: parseClockTime(stored.reminders_quiet_start) ?? DEFAULT_USER_SETTINGS.reminders_quiet_start,
+    reminders_quiet_end: parseClockTime(stored.reminders_quiet_end) ?? DEFAULT_USER_SETTINGS.reminders_quiet_end,
+
+    push_support_alerts: safeBool(stored.push_support_alerts, DEFAULT_USER_SETTINGS.push_support_alerts),
+    push_last_support_trigger: safeString(stored.push_last_support_trigger, DEFAULT_USER_SETTINGS.push_last_support_trigger),
   };
 }
 
