@@ -167,6 +167,16 @@ function TaskRow({
           </Text>
         ) : null}
       </View>
+      {/breath/i.test(task.title) && !finished ? (
+        <Pressable
+          onPress={() => router.push({ pathname: "/breathe", params: { minutes: "2" } })}
+          hitSlop={8}
+          style={styles.play}
+          accessibilityLabel="Start a guided breathing session"
+        >
+          <Ionicons name="play" size={14} color={colors.actionText} />
+        </Pressable>
+      ) : null}
       <View style={[styles.priority, { backgroundColor: priorityColors.bg }]}>
         <Text style={[styles.priorityText, { color: priorityColors.fg }]}>{task.priority}</Text>
       </View>
@@ -249,6 +259,14 @@ const styles = StyleSheet.create({
   strike: { textDecorationLine: "line-through" },
   taskMeta: { fontSize: 12, color: colors.inkSoft },
   priority: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
+  play: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   priorityText: { fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: "600" },
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   addInput: {

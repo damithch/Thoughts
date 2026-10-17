@@ -77,9 +77,39 @@ export type AnchorStreak = {
   hasToday: boolean;
 };
 
+export type SupportStatus = {
+  active: boolean;
+  reason: "low_run" | "late_night" | null;
+  lateNight: boolean;
+  lowStreak: number;
+  triggeredAt: string | null;
+};
+
+export type SupportContact = { name: string; phone: string };
+
+export type SupportOverview = {
+  status: SupportStatus;
+  today: {
+    date: string;
+    ate: boolean | null;
+    slept: boolean | null;
+    connected: boolean | null;
+    stepsTried: string[];
+    breathingSeconds: number;
+  };
+  plan: {
+    enabled: boolean;
+    copingSteps: string[];
+    contacts: SupportContact[];
+    helpline: SupportContact;
+  };
+};
+
 export type TodayResponse = {
   date: string;
   today: string;
+  // Only when viewing today.
+  support: SupportStatus | null;
   tasks: Task[];
   dayRecord: DayRecord | null;
   checkIns: CheckIn[];

@@ -27,6 +27,12 @@ export default function MoreScreen() {
       <Eyebrow>Wellbeing tools</Eyebrow>
       <View style={styles.group}>
         <NavRow
+          icon="heart-outline"
+          title="Support & breathing"
+          subtitle="Your plan for hard moments, and guided breathing"
+          onPress={() => router.push("/support")}
+        />
+        <NavRow
           icon="cloud-outline"
           title="Worry postponement"
           subtitle="Test a worry belief over a week"

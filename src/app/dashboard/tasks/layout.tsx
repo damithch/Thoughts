@@ -5,9 +5,11 @@ import { redirect } from "next/navigation";
 import { logoutAction } from "@/app/actions";
 import { TaskCommandBar } from "@/app/dashboard/tasks/_components/task-command-bar";
 import { TasksTabs } from "@/app/dashboard/tasks/_components/tasks-tabs";
+import { SupportCard } from "@/app/components/support-card";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureTodaysRoutines } from "@/app/dashboard/tasks/_lib/ensure-todays-routines";
 import { getInboxOpenTaskCount } from "@/lib/db";
+import { getSupportStatus } from "@/lib/support";
 import { getCurrentColomboDate } from "@/lib/time";
 
 // One Tasks area: Today, Upcoming, Inbox and Routines share this header, the tabs and the
@@ -25,7 +27,10 @@ export default async function TasksLayout({ children }: { children: React.ReactN
   // Idempotent, and occurrences the user deleted stay deleted.
   await ensureTodaysRoutines(currentUser.id, today);
 
-  const inboxCount = await getInboxOpenTaskCount(currentUser.id);
+  const [inboxCount, supportStatus] = await Promise.all([
+    getInboxOpenTaskCount(currentUser.id),
+    getSupportStatus(currentUser.id),
+  ]);
 
   return (
     <main className="min-h-screen thought-network-bg px-4 py-6 text-stone-900 sm:px-6 sm:py-8">
@@ -55,6 +60,8 @@ export default async function TasksLayout({ children }: { children: React.ReactN
             </form>
           </nav>
         </header>
+
+        <SupportCard status={supportStatus} back="/dashboard/tasks" />
 
         <TasksTabs inboxCount={inboxCount} />
 

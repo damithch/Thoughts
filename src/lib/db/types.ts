@@ -382,6 +382,25 @@ export type UserSettings = {
 
   // Model Selection
   llm_model: string;               // default: "gemini-flash-latest"
+
+  // Support on hard days (the user's own plan; contacts never leave their database)
+  support_enabled: boolean;        // default: true
+  support_coping_steps: string[];  // default: a short generic list
+  support_contacts: SupportContact[]; // default: []
+  support_helpline_name: string;   // default: "National Mental Health Helpline"
+  support_helpline_phone: string;  // default: "1926" (Sri Lanka, free, 24 hours)
+};
+
+export type SupportContact = { name: string; phone: string };
+
+export type SupportDay = {
+  entry_date: string;
+  ate: boolean | null;
+  slept: boolean | null;
+  connected: boolean | null;
+  steps_tried: string[];
+  breathing_seconds: number;
+  dismissed_at: Date | null;
 };
 
 // ── Worry Postponement Module ──────────────────────────────

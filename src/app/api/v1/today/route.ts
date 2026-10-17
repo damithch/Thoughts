@@ -10,13 +10,15 @@ import {
   getWorryDataByUserAndDate,
 } from "@/lib/db";
 import { apiError, withMobileUser } from "@/lib/mobile-api";
+import { getSupportStatus } from "@/lib/support";
 import { isValidTaskDate } from "@/lib/tasks/validation";
 import { getCurrentColomboDate } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/v1/today?date=YYYY-MM-DD (defaults to today in Colombo)
-// -> { date, today, tasks, dayRecord, checkIns, overdueCount, thoughts, conversations, anchorNote, worry }
+// -> { date, today, tasks, dayRecord, checkIns, overdueCount, thoughts, conversations, anchorNote, worry,
+//      support (rough-patch status, today only) }
 export const GET = withMobileUser(async (request, user) => {
   const today = getCurrentColomboDate();
   const date = new URL(request.url).searchParams.get("date") ?? today;
@@ -34,7 +36,7 @@ export const GET = withMobileUser(async (request, user) => {
     }
   }
 
-  const [tasks, dayRecord, overdueTasks, checkIns, thoughts, conversations, anchorNote, worry] =
+  const [tasks, dayRecord, overdueTasks, checkIns, thoughts, conversations, anchorNote, worry, support] =
     await Promise.all([
       getTasksByUserAndDate(user.id, date),
       getDayRecordByUserAndDate(user.id, date),
@@ -44,6 +46,8 @@ export const GET = withMobileUser(async (request, user) => {
       getConversationSummariesByUserAndDate(user.id, date),
       getAnchorNoteByDate(user.id, date),
       getWorryDataByUserAndDate(user.id, date),
+      // The support card is about right now, so it's only checked when viewing today.
+      date === today ? getSupportStatus(user.id) : null,
     ]);
 
   return Response.json({
@@ -58,5 +62,6 @@ export const GET = withMobileUser(async (request, user) => {
     conversations,
     anchorNote,
     worry,
+    support,
   });
 });

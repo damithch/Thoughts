@@ -835,6 +835,23 @@ export async function ensureInitialized() {
         ON anchor_notes (user_id, date DESC)
       `);
 
+      // Support on hard days: the basics check, coping steps tried, guided breathing time, and
+      // when "I'm okay for now" was tapped, one row per user per day.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS support_days (
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          entry_date DATE NOT NULL,
+          ate BOOLEAN,
+          slept BOOLEAN,
+          connected BOOLEAN,
+          steps_tried TEXT[] NOT NULL DEFAULT '{}',
+          breathing_seconds INTEGER NOT NULL DEFAULT 0,
+          dismissed_at TIMESTAMPTZ,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, entry_date)
+        )
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );

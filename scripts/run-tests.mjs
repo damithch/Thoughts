@@ -17,6 +17,7 @@ import { getWeekdayCode, isRoutineScheduledOn } from "../src/lib/tasks/recurrenc
 import { describeUpcomingDays, resolveRelativeDate } from "../src/lib/tasks/dates.ts";
 import { buildAgentPlan } from "../src/lib/tasks/agent-plan.ts";
 import { computeDayStreak, routineAdherence } from "../src/lib/tasks/stats.ts";
+import { colomboHour, detectRoughPatch, isLateNight } from "../src/lib/rough-patch.ts";
 
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
@@ -598,6 +599,75 @@ test("stats: routine adherence counts missed days but not skips or today", () =>
     { id: 1, title: "Gym", done: 1, scheduled: 3 },
   ]);
   assert.deepEqual(routineAdherence(routines, tasks, new Set(["1:2026-10-04"]), days, "2026-10-06")[0].scheduled, 2);
+});
+
+// Times below are UTC; Colombo is UTC+05:30 (16:30Z = 22:00 in Colombo).
+test("rough patch: Colombo hours and the late-night window", () => {
+  assert.equal(colomboHour("2026-10-08T16:30:00Z"), 22);
+  assert.equal(colomboHour("2026-10-08T23:29:00Z"), 4);
+  assert.equal(isLateNight("2026-10-08T16:29:00Z"), false); // 21:59
+  assert.equal(isLateNight("2026-10-08T16:30:00Z"), true); // 22:00
+  assert.equal(isLateNight("2026-10-08T23:29:00Z"), true); // 04:59
+  assert.equal(isLateNight("2026-10-08T23:30:00Z"), false); // 05:00
+});
+
+test("rough patch: three low entries in a row within a day", () => {
+  const now = new Date("2026-10-09T08:00:00Z"); // 13:30 Colombo
+  const entries = [
+    { mood: 2, created_at: "2026-10-09T06:00:00Z" },
+    { mood: 1, created_at: "2026-10-09T03:00:00Z" },
+    { mood: 2, created_at: "2026-10-08T12:00:00Z" },
+    { mood: 6, created_at: "2026-10-07T12:00:00Z" },
+  ];
+  const status = detectRoughPatch(entries, now);
+  assert.equal(status.active, true);
+  assert.equal(status.reason, "low_run");
+  assert.equal(status.lowStreak, 3);
+  assert.equal(status.triggeredAt, "2026-10-09T06:00:00.000Z");
+});
+
+test("rough patch: a 3 breaks the run, and two daytime lows are not enough", () => {
+  const now = new Date("2026-10-09T08:00:00Z");
+  assert.equal(detectRoughPatch([
+    { mood: 2, created_at: "2026-10-09T06:00:00Z" },
+    { mood: 3, created_at: "2026-10-09T03:00:00Z" },
+    { mood: 1, created_at: "2026-10-08T12:00:00Z" },
+  ], now).active, false);
+  assert.equal(detectRoughPatch([
+    { mood: 2, created_at: "2026-10-09T06:00:00Z" },
+    { mood: 1, created_at: "2026-10-09T03:00:00Z" },
+  ], now).active, false);
+});
+
+test("rough patch: a single low entry late at night, but not by day or hours later", () => {
+  const lateEntry = [{ mood: 2, created_at: "2026-10-08T18:00:00Z" }]; // 23:30 Colombo
+  const late = detectRoughPatch(lateEntry, new Date("2026-10-08T18:30:00Z"));
+  assert.equal(late.active, true);
+  assert.equal(late.reason, "late_night");
+  assert.equal(late.lateNight, true);
+  assert.equal(detectRoughPatch(lateEntry, new Date("2026-10-09T04:00:00Z")).active, false); // 10 h later
+  assert.equal(detectRoughPatch([{ mood: 2, created_at: "2026-10-08T08:00:00Z" }], new Date("2026-10-08T08:30:00Z")).active, false);
+});
+
+test("rough patch: an old run expires; the latest entry being better clears it", () => {
+  const run = [
+    { mood: 2, created_at: "2026-10-08T06:00:00Z" },
+    { mood: 1, created_at: "2026-10-08T05:00:00Z" },
+    { mood: 2, created_at: "2026-10-08T04:00:00Z" },
+  ];
+  assert.equal(detectRoughPatch(run, new Date("2026-10-09T07:00:00Z")).active, false); // 25 h later
+  assert.equal(detectRoughPatch([{ mood: 5, created_at: "2026-10-08T07:00:00Z" }, ...run], new Date("2026-10-08T08:00:00Z")).active, false);
+});
+
+test("rough patch: 'I'm okay for now' hides it until a newer low entry", () => {
+  const run = [
+    { mood: 2, created_at: "2026-10-08T06:00:00Z" },
+    { mood: 1, created_at: "2026-10-08T05:00:00Z" },
+    { mood: 2, created_at: "2026-10-08T04:00:00Z" },
+  ];
+  const now = new Date("2026-10-08T09:00:00Z");
+  assert.equal(detectRoughPatch(run, now, "2026-10-08T07:00:00Z").active, false);
+  assert.equal(detectRoughPatch([{ mood: 1, created_at: "2026-10-08T08:00:00Z" }, ...run], now, "2026-10-08T07:00:00Z").active, true);
 });
 
 

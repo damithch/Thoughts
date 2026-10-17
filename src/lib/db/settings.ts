@@ -1,6 +1,6 @@
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
-import type { RagDocumentKind, UserSettings } from "@/lib/db/types";
+import type { RagDocumentKind, SupportContact, UserSettings } from "@/lib/db/types";
 
 const ALL_RAG_KINDS: RagDocumentKind[] = [
   "thought",
@@ -10,6 +10,17 @@ const ALL_RAG_KINDS: RagDocumentKind[] = [
   "day_note",
   "daily_rollup",
 ];
+
+// Starting coping steps for the support plan; the user edits them to their own.
+export const DEFAULT_COPING_STEPS = [
+  "Eat something small, even if you're not hungry",
+  "Message or call someone you trust",
+  "Breathe slowly for two minutes",
+  "Step outside or into daylight for a few minutes",
+  "Decide nothing tonight. Look at it again in daylight, after food and rest",
+];
+
+export const SUPPORT_LIMITS = { steps: 8, stepLength: 140, contacts: 3, nameLength: 60 };
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
   // RAG Retrieval
@@ -40,6 +51,13 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
 
   // Model Selection
   llm_model: "gemini-3.6-flash",
+
+  // Support on hard days
+  support_enabled: true,
+  support_coping_steps: DEFAULT_COPING_STEPS,
+  support_contacts: [],
+  support_helpline_name: "National Mental Health Helpline",
+  support_helpline_phone: "1926",
 };
 
 export async function getUserSettings(userId: number): Promise<UserSettings> {
@@ -94,6 +112,12 @@ export async function getUserSettings(userId: number): Promise<UserSettings> {
     live_context_k: clampInt(stored.live_context_k, 1, 10, DEFAULT_USER_SETTINGS.live_context_k),
 
     llm_model: safeString(stored.llm_model, DEFAULT_USER_SETTINGS.llm_model),
+
+    support_enabled: safeBool(stored.support_enabled, DEFAULT_USER_SETTINGS.support_enabled),
+    support_coping_steps: parseCopingSteps(stored.support_coping_steps),
+    support_contacts: parseSupportContacts(stored.support_contacts),
+    support_helpline_name: safeString(stored.support_helpline_name, DEFAULT_USER_SETTINGS.support_helpline_name),
+    support_helpline_phone: normalizePhone(stored.support_helpline_phone) ?? DEFAULT_USER_SETTINGS.support_helpline_phone,
   };
 }
 
@@ -147,6 +171,40 @@ function safeString(value: unknown, fallback: string): string {
 function safeBool(value: unknown, fallback: boolean): boolean {
   if (typeof value !== "boolean") return fallback;
   return value;
+}
+
+export function parseCopingSteps(value: unknown): string[] {
+  if (!Array.isArray(value)) return DEFAULT_COPING_STEPS;
+
+  return value
+    .filter((step): step is string => typeof step === "string")
+    .map((step) => step.trim().slice(0, SUPPORT_LIMITS.stepLength))
+    .filter(Boolean)
+    .slice(0, SUPPORT_LIMITS.steps);
+}
+
+// Digits with an optional leading +, keeping spaces, dashes and brackets for readability.
+export function normalizePhone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const phone = value.trim();
+
+  return /^\+?[0-9][0-9 ()-]{1,18}$/.test(phone) ? phone : null;
+}
+
+export function parseSupportContacts(value: unknown): SupportContact[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((contact) => {
+      if (!contact || typeof contact !== "object") return null;
+      const { name, phone } = contact as Record<string, unknown>;
+      const cleanName = typeof name === "string" ? name.trim().slice(0, SUPPORT_LIMITS.nameLength) : "";
+      const cleanPhone = normalizePhone(phone);
+
+      return cleanName && cleanPhone ? { name: cleanName, phone: cleanPhone } : null;
+    })
+    .filter((contact): contact is SupportContact => contact !== null)
+    .slice(0, SUPPORT_LIMITS.contacts);
 }
 
 function parseRagKinds(value: unknown): RagDocumentKind[] {

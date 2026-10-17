@@ -46,6 +46,9 @@ function RootNavigator() {
         <Stack.Screen name="activation/[id]" options={{ title: "Activity" }} />
         <Stack.Screen name="export" options={{ title: "Export reports" }} />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
+        <Stack.Screen name="support/index" options={{ title: "Support" }} />
+        <Stack.Screen name="support/plan" options={{ title: "Your support plan" }} />
+        <Stack.Screen name="breathe" options={{ title: "Breathe" }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

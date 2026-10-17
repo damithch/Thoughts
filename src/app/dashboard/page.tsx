@@ -30,6 +30,8 @@ import {
 import RagSearch from "@/app/components/rag-search";
 import { ThoughtFormSection } from "@/app/components/thought-form-section";
 import { AnchorNoteCard } from "@/app/components/anchor-note-card";
+import { SupportCard } from "@/app/components/support-card";
+import { getSupportStatus } from "@/lib/support";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +145,7 @@ export default async function DashboardPage({
   }
 
   const params = await searchParams;
+  const supportStatus = await getSupportStatus(currentUser.id);
   const visibility =
     params?.vis === "hidden" || params?.vis === "all" ? params.vis : "active";
   const toastMessage = params?.toast
@@ -259,6 +262,7 @@ export default async function DashboardPage({
     <main className="thought-network-bg min-h-screen overflow-hidden px-4 py-6 text-stone-900 sm:px-6 sm:py-10">
       {toastMessage ? <Toast message={toastMessage} tone={params?.type} /> : null}
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8">
+        <SupportCard status={supportStatus} back="/dashboard" />
         <header className="rounded-[2rem] border border-emerald-950/10 bg-white/45 p-5 shadow-[0_26px_80px_rgba(48,84,53,0.12)] backdrop-blur-md sm:rounded-[2.5rem] sm:p-6 md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
@@ -303,6 +307,12 @@ export default async function DashboardPage({
                 className="rounded-full border border-teal-950/10 px-4 py-3 text-center text-teal-950 transition-colors hover:bg-teal-50"
               >
                 Worry Postponement
+              </Link>
+              <Link
+                href="/dashboard/support"
+                className="rounded-full border border-amber-950/10 px-4 py-3 text-center text-amber-950 transition-colors hover:bg-amber-50"
+              >
+                Support &amp; breathing
               </Link>
               <Link
                 href="/dashboard/conversations"

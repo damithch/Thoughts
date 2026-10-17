@@ -149,6 +149,48 @@ await test("completion stats leave skipped tasks out", async () => {
   assert.deepEqual([stats.total_tasks, stats.completed_tasks, stats.skipped_tasks, stats.completion_rate], [1, 1, 1, 100]);
 });
 
+const support = await import("@/lib/db/support");
+
+await test("support day: partial updates keep other fields; dismissal is remembered", async () => {
+  await support.updateSupportDay(userId, today, { ate: true });
+  await support.updateSupportDay(userId, today, { connected: false, stepsTried: ["Breathe"] });
+  const day = await support.getSupportDay(userId, today);
+  assert.deepEqual([day.ate, day.slept, day.connected, day.steps_tried], [true, null, false, ["Breathe"]]);
+  assert.equal(await support.getLatestSupportDismissal(userId, today), null);
+  await support.updateSupportDay(userId, today, { dismiss: true });
+  assert.ok((await support.getLatestSupportDismissal(userId, today)) instanceof Date);
+  assert.equal((await support.getSupportDay(userId, today)).ate, true);
+});
+
+await test("breathing: sessions add up, and a minute or more ticks off the breathing routine", async () => {
+  const routineId = await makeRoutine("Breathing exercises");
+  const short = await support.recordBreathingSession(userId, today, 40, true);
+  assert.equal(short.completedTask, null);
+  const full = await support.recordBreathingSession(userId, today, 120, true);
+  assert.equal(full.totalSeconds, 160);
+  assert.equal(full.completedTask, "Breathing exercises");
+  const [instance] = (await tasksOn(today)).filter((t) => t.recurring_task_id === routineId);
+  assert.equal(instance.status, "done");
+  const again = await support.recordBreathingSession(userId, today, 90, true);
+  assert.equal(again.completedTask, null);
+});
+
+await test("recent moods merge thoughts and check-ins, newest first", async () => {
+  await pool.query(
+    `INSERT INTO thoughts (title, category, mood, tags, excerpt, body, user_id, created_at)
+     VALUES ('Older', 'test', 5, '{}', 'x', '', $1, NOW() - INTERVAL '2 hours'),
+            ('Newest', 'test', 2, '{}', 'x', '', $1, NOW() - INTERVAL '10 minutes')`,
+    [userId],
+  );
+  await pool.query(
+    `INSERT INTO daily_check_ins (user_id, entry_date, mood, energy, focus, note, created_at)
+     VALUES ($1, $2::date, 3, 'low', 'okay', '', NOW() - INTERVAL '1 hour')`,
+    [userId, today],
+  );
+  const moods = (await support.getRecentMoodEntries(userId, 3)).map((entry) => entry.mood);
+  assert.deepEqual(moods, [2, 3, 5]);
+});
+
 await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 await pool.end();
 

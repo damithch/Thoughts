@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { InnerWeather } from "@/components/inner-weather";
+import { SupportBanner } from "@/components/support-banner";
 import { TaskList, TaskQuickAdd } from "@/components/tasks";
 import {
   Body,
@@ -27,6 +28,7 @@ const ENERGY_LABEL = { low: "Low energy", steady: "Steady", high: "High energy" 
 const FOCUS_LABEL = { scattered: "Scattered", okay: "Okay focus", locked_in: "Locked in" };
 
 export default function TodayScreen() {
+  const { request } = useAuth();
   // null = "today" as the server sees it (Colombo time).
   const [date, setDate] = useState<string | null>(null);
   const { data, setData, error, reload, refresh, refreshing } = useApi<TodayResponse>(
@@ -41,6 +43,17 @@ export default function TodayScreen() {
   const done = counted.filter((task) => task.status === "done").length;
   const isToday = data.date === data.today;
   const isPast = data.date < data.today;
+  async function dismissSupport() {
+    setData((current) => (current?.support ? { ...current, support: { ...current.support, active: false } } : current));
+
+    try {
+      await request("/v1/support/today", { method: "PUT", body: { dismiss: true } });
+    } catch (caught) {
+      Alert.alert("Couldn't save that", errorMessage(caught));
+      reload();
+    }
+  }
+
   const setTasks = (update: (tasks: Task[]) => Task[]) =>
     setData((current) => (current ? { ...current, tasks: update(current.tasks) } : current));
 
@@ -62,6 +75,10 @@ export default function TodayScreen() {
           <Ionicons name="chevron-forward" size={26} color={colors.action} />
         </Pressable>
       </View>
+
+      {data.support?.active ? (
+        <SupportBanner status={data.support} onDismiss={() => dismissSupport()} />
+      ) : null}
 
       <InnerWeather data={data} />
 
