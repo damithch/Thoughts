@@ -452,14 +452,27 @@ export function ProgressBar({ value }: { value: number }) {
   );
 }
 
-export function Fab({ onPress, label, icon = "add" }: { onPress: () => void; label: string; icon?: React.ComponentProps<typeof Ionicons>["name"] }) {
+export function Fab({
+  onPress,
+  label,
+  icon = "add",
+  secondary,
+  style,
+}: {
+  onPress: () => void;
+  label: string;
+  icon?: React.ComponentProps<typeof Ionicons>["name"];
+  // A lighter button, stacked above the main one.
+  secondary?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.fab, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [styles.fab, secondary && styles.fabSecondary, style, pressed && { opacity: 0.85 }]}
       accessibilityLabel={label}
     >
-      <Ionicons name={icon} size={30} color={colors.actionText} />
+      <Ionicons name={icon} size={secondary ? 26 : 30} color={secondary ? colors.action : colors.actionText} />
     </Pressable>
   );
 }
@@ -618,6 +631,16 @@ const styles = StyleSheet.create({
   statValue: { fontFamily: fonts.display, fontSize: 28, color: colors.ink },
   progressTrack: { height: 6, borderRadius: 3, backgroundColor: "rgba(2,44,34,0.08)", overflow: "hidden" },
   progressFill: { height: 6, backgroundColor: colors.accent },
+  fabSecondary: {
+    bottom: 92,
+    right: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   fab: {
     position: "absolute",
     right: 20,

@@ -99,6 +99,7 @@ export default function JournalScreen() {
         />
       )}
 
+      <Fab label="Speak a thought" icon="mic" secondary onPress={() => router.push("/voice")} />
       <Fab label="New thought" onPress={() => router.push("/thought/new")} />
     </View>
   );
@@ -130,7 +131,7 @@ const styles = StyleSheet.create({
   tagChipSelected: { backgroundColor: colors.action, borderColor: colors.action },
   tagChipText: { fontSize: 12, color: colors.action },
   tagChipTextSelected: { color: colors.actionText },
-  list: { padding: 16, gap: 12, paddingBottom: 100 },
+  list: { padding: 16, gap: 12, paddingBottom: 160 },
   empty: { textAlign: "center", color: colors.inkSoft, marginTop: 60, fontSize: 15 },
   card: {
     backgroundColor: colors.card,

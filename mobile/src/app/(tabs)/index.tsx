@@ -85,6 +85,23 @@ export default function TodayScreen() {
 
       <InnerWeather data={data} />
 
+      {isToday ? (
+        <Pressable
+          onPress={() => router.push("/voice")}
+          style={({ pressed }) => [styles.speakRow, pressed && { opacity: 0.8 }]}
+          accessibilityRole="button"
+        >
+          <View style={styles.speakIcon}>
+            <Ionicons name="mic" size={22} color={colors.actionText} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.speakTitle}>Speak a thought</Text>
+            <Text style={styles.speakHint}>Say it out loud. The AI makes the card, tasks and worries for you to check.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.inkFaint} />
+        </Pressable>
+      ) : null}
+
       {data.overdueCount > 0 && !isPast ? <OverdueBanner count={data.overdueCount} date={data.date} onMoved={reload} /> : null}
 
       <Card>
@@ -353,6 +370,26 @@ function DayReviewCard({ data }: { data: TodayResponse }) {
 }
 
 const styles = StyleSheet.create({
+  speakRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 14,
+    backgroundColor: colors.card,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  speakIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.action,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  speakTitle: { fontFamily: fonts.display, fontSize: 18, color: colors.ink },
+  speakHint: { fontSize: 12, color: colors.inkSoft, marginTop: 2, lineHeight: 17 },
   content: { padding: 16, gap: 16, paddingBottom: 40 },
   dayNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4 },
   dayLabel: { fontFamily: fonts.display, fontSize: 28, color: colors.ink },

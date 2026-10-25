@@ -33,6 +33,7 @@ function RootNavigator() {
       <Stack.Protected guard={signedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="thought/new" options={{ title: "New thought", presentation: "modal" }} />
+        <Stack.Screen name="voice" options={{ title: "Speak a thought", presentation: "modal" }} />
         <Stack.Screen name="thought/[id]" options={{ title: "Thought" }} />
         <Stack.Screen name="check-in" options={{ title: "Check-in", presentation: "modal" }} />
         <Stack.Screen name="task/[id]" options={{ title: "Task" }} />

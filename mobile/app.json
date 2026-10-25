@@ -2,7 +2,7 @@
   "expo": {
     "name": "Thoughts",
     "slug": "thoughts",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.damithch.thoughts",
-      "versionCode": 6,
+      "versionCode": 7,
       "permissions": [
         "SCHEDULE_EXACT_ALARM"
       ]
@@ -36,6 +36,16 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#0C2433"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Thoughts to use the microphone so you can speak a thought.",
+          "speechRecognitionPermission": "Allow Thoughts to turn your speech into text.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
       ]
     ],

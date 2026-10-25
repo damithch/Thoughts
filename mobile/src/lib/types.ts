@@ -276,3 +276,33 @@ export type Settings = {
 };
 
 export type SettingsResponse = { settings: Settings; models: { value: string; label: string }[] };
+
+// Voice capture (POST /v1/voice/capture, then /v1/voice/save after review).
+export type VoiceTaskDraft = { title: string; date: string | null; priority: "low" | "medium" | "high" };
+
+export type VoiceCaptureResponse = {
+  draft: {
+    thought: {
+      title: string;
+      category: string;
+      mood: number;
+      tags: string[];
+      summary: string;
+      body: string;
+      linkedBookIdeaId: number | null;
+      insightReflection: string;
+    };
+    tasks: VoiceTaskDraft[];
+    worries: string[];
+  };
+  // Present only while a worry-postponement module is running.
+  worryParking: { thinkingTime: string | null } | null;
+  modelUsed: string;
+};
+
+export type VoiceSaveResponse = {
+  thought: Thought | null;
+  tasksCreated: number;
+  worriesParked: number;
+  repeated?: boolean;
+};
