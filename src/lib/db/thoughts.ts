@@ -159,6 +159,18 @@ export async function getThoughts(): Promise<ThoughtsResult> {
   }
 }
 
+// The thought already saved for this request id, if any (lets a retried save skip its extras).
+export async function getThoughtIdByRequestId(userId: number, requestId: string) {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<{ id: number }>(
+    `SELECT id FROM thoughts WHERE user_id = $1 AND request_id = $2 LIMIT 1`,
+    [userId, requestId],
+  );
+
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
 export async function createThought(input: NewThought) {
   await ensureInitialized();
   const client = await pool.connect();
