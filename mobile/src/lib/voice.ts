@@ -1,43 +1,36 @@
 // Pure helpers for the voice capture screen (kept apart so they can be unit tested).
 
-// Speech recognition delivers the words in pieces (one per pause). Joins a finished piece onto
-// what's already there, with one space and the first letter capitalised.
-export function appendSegment(text: string, segment: string) {
-  const piece = segment.replace(/\s+/g, " ").trim();
+// Gemini hears the recording itself. Ten minutes keeps the upload under the server's body limit
+// (16 kHz mono AAC is about 240 KB a minute).
+export const VOICE_MAX_MS = 10 * 60 * 1000;
+export const VOICE_WARN_MS = VOICE_MAX_MS - 60 * 1000;
 
-  if (!piece) return text;
+// The recorder writes AAC in an ADTS stream, a format Gemini reads directly.
+export const VOICE_AUDIO_MIME_TYPE = "audio/aac";
 
-  const capitalised = piece.charAt(0).toUpperCase() + piece.slice(1);
-  const base = text.trimEnd();
+// Recorder metering is in dBFS (about -160 silent to 0 loudest). Speech sits roughly between
+// -50 and -10, so map -60..0 onto 0..1 for the level ring.
+export function meteringToLevel(metering: number | undefined) {
+  if (typeof metering !== "number" || !Number.isFinite(metering)) return 0;
 
-  return base ? `${base} ${capitalised}` : capitalised;
+  return Math.max(0, Math.min(1, (metering + 60) / 60));
 }
 
-// Errors that just mean "nothing heard yet". While the person is still talking we quietly start
-// listening again instead of stopping.
-const QUIET_ERRORS = new Set(["no-speech", "speech-timeout"]);
+// 0:07, 3:42, 10:00
+export function formatElapsed(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
 
-export function isQuietSpeechError(code: string) {
-  return QUIET_ERRORS.has(code);
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-// A friendly message for the errors that do stop listening.
-export function speechErrorMessage(code: string) {
-  switch (code) {
-    case "not-allowed":
-      return "Thoughts needs microphone permission to listen. You can allow it in the phone's settings, or type below.";
-    case "service-not-allowed":
-    case "language-not-supported":
-      return "Speech recognition isn't available on this phone. Make sure the Google app is installed and up to date, or type below.";
-    case "network":
-      return "Speech recognition needs an internet connection right now. Your words so far are kept.";
-    case "audio-capture":
-      return "The microphone couldn't be used. Another app may be using it.";
-    case "busy":
-      return "The speech service is busy. Tap the mic again in a moment.";
-    default:
-      return "Listening stopped unexpectedly. Your words so far are kept; tap the mic to carry on.";
-  }
+export function recordingHint(state: { started: boolean; recording: boolean; elapsedMs: number }) {
+  if (!state.started) return "Tap the mic and talk. Any language, as long as you like (up to 10 minutes).";
+  if (!state.recording) return "Paused. Tap the mic to carry on, or Done when you're finished.";
+  if (state.elapsedMs >= VOICE_WARN_MS) return `About a minute left. It stops by itself at ${formatElapsed(VOICE_MAX_MS)}.`;
+
+  return "Listening. Pauses are fine, take your time.";
 }
 
 // The Save button's label, so it's clear what one tap will create.

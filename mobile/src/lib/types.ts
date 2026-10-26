@@ -277,7 +277,7 @@ export type Settings = {
 
 export type SettingsResponse = { settings: Settings; models: { value: string; label: string }[] };
 
-// Voice capture (POST /v1/voice/capture, then /v1/voice/save after review).
+// Voice capture (POST /v1/voice/capture-audio or /v1/voice/capture, then /v1/voice/save after review).
 export type VoiceTaskDraft = { title: string; date: string | null; priority: "low" | "medium" | "high" };
 
 export type VoiceCaptureResponse = {
@@ -299,6 +299,9 @@ export type VoiceCaptureResponse = {
   worryParking: { thinkingTime: string | null } | null;
   modelUsed: string;
 };
+
+// POST /v1/voice/capture-audio: Gemini hears the recording and also returns what it heard.
+export type VoiceAudioCaptureResponse = VoiceCaptureResponse & { transcript: string };
 
 export type VoiceSaveResponse = {
   thought: Thought | null;

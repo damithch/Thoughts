@@ -1,8 +1,16 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { randomUUID } from "expo-crypto";
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+  type RecordingOptions,
+} from "expo-audio";
+import { File } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { router } from "expo-router";
-import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -20,18 +28,48 @@ import { Button, Card, CardTitle, ErrorText, Eyebrow, Field, MoodPicker, Muted, 
 import { useAuth } from "@/lib/auth";
 import { colomboToday, formatShortDate, shiftDate } from "@/lib/dates";
 import { colors, fonts, radius } from "@/lib/theme";
-import type { SupportOverview, VoiceCaptureResponse, VoiceSaveResponse, VoiceTaskDraft } from "@/lib/types";
+import type {
+  SupportOverview,
+  VoiceAudioCaptureResponse,
+  VoiceCaptureResponse,
+  VoiceSaveResponse,
+  VoiceTaskDraft,
+} from "@/lib/types";
 import { errorMessage } from "@/lib/use-api";
-import { appendSegment, isQuietSpeechError, saveLabel, speechErrorMessage } from "@/lib/voice";
+import {
+  VOICE_AUDIO_MIME_TYPE,
+  VOICE_MAX_MS,
+  formatElapsed,
+  meteringToLevel,
+  recordingHint,
+  saveLabel,
+} from "@/lib/voice";
 
-// Speak a thought: the phone turns speech into text (nothing is recorded or kept), the server's
-// AI turns the text into a draft card plus any tasks and worries, and nothing is saved until the
-// person reviews it and taps Save.
+// Speak a thought: the phone records what you say, Gemini (via your server) hears the recording
+// and returns what it heard plus a draft card, tasks and worries, and nothing is saved until the
+// person reviews it and taps Save. The recording stays on the phone until it has been read, so a
+// failed upload never loses anything; then it is deleted. The server never stores audio.
 
 const KEEP_AWAKE_TAG = "voice-capture";
 const MAX_LENGTH = 10_000;
 
-// Keep the screen on while listening. Releasing a lock that was never taken throws, so track it.
+// AAC (ADTS) at 16 kHz mono: what Gemini hears anyway, and about 240 KB a minute.
+const RECORDING_OPTIONS: RecordingOptions = {
+  ...RecordingPresets.LOW_QUALITY,
+  extension: ".aac",
+  sampleRate: 16_000,
+  numberOfChannels: 1,
+  bitRate: 32_000,
+  isMeteringEnabled: true,
+  android: {
+    extension: ".aac",
+    sampleRate: 16_000,
+    outputFormat: "aac_adts",
+    audioEncoder: "aac",
+  },
+};
+
+// Keep the screen on while recording. Releasing a lock that was never taken throws, so track it.
 let screenKeptOn = false;
 
 function keepScreenOn() {
@@ -52,261 +90,388 @@ function releaseScreen() {
   }
 }
 
-type Phase = "speak" | "reading" | "review";
+function deleteRecording(uri: string | null) {
+  if (!uri) return;
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    // Already gone, or the cache was cleared.
+  }
+}
+
+type Recording = { uri: string; durationMs: number };
+type Phase = "record" | "type" | "sending" | "review";
 
 export default function VoiceCaptureScreen() {
   const { request } = useAuth();
-  const [phase, setPhase] = useState<Phase>("speak");
+  const [phase, setPhase] = useState<Phase>("record");
   const [text, setText] = useState("");
   const [capture, setCapture] = useState<VoiceCaptureResponse | null>(null);
+  const [heard, setHeard] = useState<string | null>(null);
+  // A recording that hasn't been read yet (kept for Try again after a failure).
+  const [pending, setPending] = useState<Recording | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function read() {
+  // Leaving the screen with an unread recording deletes it.
+  const pendingRef = useRef<Recording | null>(null);
+  pendingRef.current = pending;
+  useEffect(() => () => deleteRecording(pendingRef.current?.uri ?? null), []);
+
+  async function sendRecording(recording: Recording) {
+    setPending(recording);
+    setPhase("sending");
+    setError(null);
+
+    let audio: string;
+
+    try {
+      audio = await new File(recording.uri).base64();
+    } catch {
+      setError("Couldn't read the recording on this phone. Try recording again.");
+      setPending(null);
+      setPhase("record");
+      return;
+    }
+
+    try {
+      const result = await request<VoiceAudioCaptureResponse>("/v1/voice/capture-audio", {
+        method: "POST",
+        body: { audio, mimeType: VOICE_AUDIO_MIME_TYPE, durationMs: recording.durationMs },
+      });
+      deleteRecording(recording.uri);
+      setPending(null);
+      setHeard(result.transcript);
+      setText(result.transcript.slice(0, MAX_LENGTH));
+      setCapture(result);
+      setPhase("review");
+    } catch (caught) {
+      setError(errorMessage(caught, "Couldn't read that right now. Your recording is kept, so try again."));
+      setPhase("record");
+    }
+  }
+
+  function discardPending() {
+    deleteRecording(pending?.uri ?? null);
+    setPending(null);
+    setError(null);
+  }
+
+  async function sendText() {
     const transcript = text.trim();
 
     if (!transcript) return;
 
-    setPhase("reading");
+    setPhase("sending");
     setError(null);
 
     try {
       setCapture(await request<VoiceCaptureResponse>("/v1/voice/capture", { method: "POST", body: { transcript } }));
+      setHeard(null);
       setPhase("review");
     } catch (caught) {
       setError(errorMessage(caught, "Couldn't read that right now. Your words are kept, so try again."));
-      setPhase("speak");
+      setPhase("type");
     }
   }
 
   if (phase === "review" && capture) {
-    return <Review capture={capture} onBack={() => setPhase("speak")} />;
+    return (
+      <Review
+        capture={capture}
+        heard={heard}
+        onFixWords={() => {
+          setError(null);
+          setPhase("type");
+        }}
+        onStartOver={() => {
+          setCapture(null);
+          setHeard(null);
+          setText("");
+          setError(null);
+          setPhase("record");
+        }}
+      />
+    );
+  }
+
+  if (phase === "type") {
+    return (
+      <TypeWords
+        text={text}
+        setText={setText}
+        error={error}
+        onSend={sendText}
+        onRecordInstead={() => {
+          setError(null);
+          setPhase("record");
+        }}
+      />
+    );
   }
 
   return (
-    <Speak
-      text={text}
-      setText={setText}
-      reading={phase === "reading"}
+    <Record
+      sending={phase === "sending"}
       error={error}
-      onDone={read}
+      pending={pending}
+      onRecorded={sendRecording}
+      onRetry={() => pending && sendRecording(pending)}
+      onDiscardPending={discardPending}
+      onTypeInstead={() => {
+        setError(null);
+        setPhase("type");
+      }}
     />
   );
 }
 
-// ── Speaking ─────────────────────────────────────────────────────────────────
+// ── Recording ────────────────────────────────────────────────────────────────
 
-function Speak({
-  text,
-  setText,
-  reading,
+function Record({
+  sending,
   error,
-  onDone,
+  pending,
+  onRecorded,
+  onRetry,
+  onDiscardPending,
+  onTypeInstead,
 }: {
-  text: string;
-  setText: (update: string | ((current: string) => string)) => void;
-  reading: boolean;
+  sending: boolean;
   error: string | null;
-  onDone: () => void;
+  pending: Recording | null;
+  onRecorded: (recording: Recording) => void;
+  onRetry: () => void;
+  onDiscardPending: () => void;
+  onTypeInstead: () => void;
 }) {
-  const [listening, setListening] = useState(false);
-  const [interim, setInterim] = useState("");
-  const [speechError, setSpeechError] = useState<string | null>(null);
-  // What the person wants: keep listening until they tap pause or Done. Android stops after
-  // pauses, so on "end" we start again while this is true.
-  const wantListening = useRef(false);
-  const restarts = useRef<number[]>([]);
-  const interimRef = useRef("");
+  const recorder = useAudioRecorder(RECORDING_OPTIONS);
+  const state = useAudioRecorderState(recorder, 150);
+  const [started, setStarted] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const stopping = useRef(false);
   const level = useRef(new Animated.Value(0)).current;
+  const recording = state.isRecording;
 
-  function commitInterim() {
-    const pending = interimRef.current;
-    interimRef.current = "";
-    setInterim("");
-    if (pending) setText((current) => appendSegment(current, pending).slice(0, MAX_LENGTH));
-  }
-
-  useSpeechRecognitionEvent("start", () => setListening(true));
-
-  useSpeechRecognitionEvent("result", (event) => {
-    const transcript = event.results[0]?.transcript ?? "";
-
-    if (event.isFinal) {
-      interimRef.current = "";
-      setInterim("");
-      setText((current) => appendSegment(current, transcript).slice(0, MAX_LENGTH));
-      restarts.current = [];
-    } else {
-      interimRef.current = transcript;
-      setInterim(transcript);
-    }
-  });
-
-  useSpeechRecognitionEvent("volumechange", (event) => {
+  useEffect(() => {
     Animated.timing(level, {
-      toValue: Math.max(0, Math.min(1, event.value / 10)),
-      duration: 120,
+      toValue: recording ? meteringToLevel(state.metering) : 0,
+      duration: 140,
       useNativeDriver: true,
     }).start();
-  });
+  }, [level, recording, state.metering]);
 
-  useSpeechRecognitionEvent("error", (event) => {
-    if (event.error === "aborted" || isQuietSpeechError(event.error)) return;
+  // Stop by itself at the limit, keeping everything said so far.
+  useEffect(() => {
+    if (recording && state.durationMillis >= VOICE_MAX_MS) void finish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, state.durationMillis]);
 
-    wantListening.current = false;
-    setSpeechError(speechErrorMessage(event.error));
-  });
-
-  useSpeechRecognitionEvent("end", () => {
-    setListening(false);
-    level.setValue(0);
-    commitInterim();
-
-    if (!wantListening.current) {
-      releaseScreen();
-      return;
-    }
-
-    // Guard against a start/stop loop (e.g. the recogniser ending straight away every time).
-    const now = Date.now();
-    restarts.current = [...restarts.current.filter((time) => now - time < 10_000), now];
-
-    if (restarts.current.length > 5) {
-      wantListening.current = false;
-      releaseScreen();
-      setSpeechError("Listening keeps stopping. Tap the mic to try again, or type below.");
-      return;
-    }
-
-    setTimeout(() => {
-      if (wantListening.current) beginRecognition();
-    }, 250);
-  });
-
+  // Leaving the screen mid-recording throws the unfinished clip away. (A finished clip has
+  // already been handed to the parent, which owns and deletes it.)
+  const inProgress = useRef(false);
+  inProgress.current = started;
   useEffect(
     () => () => {
-      wantListening.current = false;
-      ExpoSpeechRecognitionModule.abort();
       releaseScreen();
+      if (!inProgress.current || stopping.current) return;
+      const uri = recorder.uri;
+      recorder
+        .stop()
+        .then(() => deleteRecording(recorder.uri ?? uri))
+        .catch(() => deleteRecording(uri));
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
-  function beginRecognition() {
-    ExpoSpeechRecognitionModule.start({
-      lang: "en-US",
-      interimResults: true,
-      maxAlternatives: 1,
-      continuous: true,
-      // No audio file is ever written.
-      recordingOptions: { persist: false },
-      volumeChangeEventOptions: { enabled: true, intervalMillis: 150 },
-      androidIntentOptions: { EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 4000 },
-    });
+  async function start() {
+    setMicError(null);
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+
+      if (!permission.granted) {
+        setMicError("Thoughts needs microphone permission to listen. You can allow it in the phone's settings, or type instead.");
+        return;
+      }
+
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setStarted(true);
+      keepScreenOn();
+    } catch {
+      setMicError("The microphone couldn't be started. Another app may be using it. Try again, or type instead.");
+    }
   }
 
-  async function startListening() {
-    setSpeechError(null);
+  function togglePause() {
+    if (recording) {
+      recorder.pause();
+      releaseScreen();
+    } else {
+      recorder.record();
+      keepScreenOn();
+    }
+  }
 
-    if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
-      setSpeechError(speechErrorMessage("service-not-allowed"));
+  async function finish() {
+    if (stopping.current) return;
+    stopping.current = true;
+
+    const durationMs = recorder.getStatus().durationMillis;
+
+    try {
+      await recorder.stop();
+    } catch {
+      // Stopping an already-stopped recorder is fine; the file is what matters.
+    }
+
+    releaseScreen();
+    setAudioModeAsync({ allowsRecording: false }).catch(() => {});
+    setStarted(false);
+    stopping.current = false;
+
+    if (!recorder.uri || durationMs < 1000) {
+      deleteRecording(recorder.uri);
+      setMicError("That was too short to hear anything. Tap the mic and try again.");
       return;
     }
 
-    const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-
-    if (!permission.granted) {
-      setSpeechError(speechErrorMessage("not-allowed"));
-      return;
-    }
-
-    wantListening.current = true;
-    restarts.current = [];
-    keepScreenOn();
-    beginRecognition();
+    onRecorded({ uri: recorder.uri, durationMs });
   }
 
-  function stopListening() {
-    wantListening.current = false;
-    // stop() (not abort) so the last words still come through as a final result.
-    ExpoSpeechRecognitionModule.stop();
+  function discard() {
+    Alert.alert("Throw this recording away?", "Nothing has been sent yet.", [
+      { text: "Keep recording", style: "cancel" },
+      {
+        text: "Discard",
+        style: "destructive",
+        onPress: async () => {
+          stopping.current = true;
+          await recorder.stop().catch(() => {});
+          deleteRecording(recorder.uri);
+          releaseScreen();
+          setStarted(false);
+          stopping.current = false;
+        },
+      },
+    ]);
   }
 
-  function finish() {
-    if (listening || wantListening.current) {
-      stopListening();
-      // Give the recogniser a moment to deliver the final words before reading.
-      setTimeout(onDone, 700);
-      return;
-    }
-    onDone();
+  const ringScale = level.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
+
+  if (sending) {
+    return (
+      <View style={[styles.content, styles.centered]}>
+        <View style={[styles.mic, styles.micActive]}>
+          <Ionicons name="sparkles" size={36} color={colors.action} />
+        </View>
+        <Text style={styles.micLabel}>Gemini is listening to your recording…</Text>
+        <Muted>A few seconds for a short entry, up to about half a minute for a long one.</Muted>
+      </View>
+    );
   }
 
-  const active = listening || wantListening.current;
-  const hasWords = Boolean(text.trim() || interim.trim());
-  const ringScale = level.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] });
+  if (pending) {
+    return (
+      <ScrollView contentContainerStyle={styles.content}>
+        <ErrorText message={error} />
+        <Card>
+          <Eyebrow>Your recording ({formatElapsed(pending.durationMs)})</Eyebrow>
+          <Muted>It's still on your phone, so nothing is lost.</Muted>
+        </Card>
+        <Button title="Try again" onPress={onRetry} />
+        <Button
+          title="Discard and record again"
+          variant="secondary"
+          onPress={() =>
+            Alert.alert("Discard this recording?", "It hasn't been read yet.", [
+              { text: "Keep", style: "cancel" },
+              { text: "Discard", style: "destructive", onPress: onDiscardPending },
+            ])
+          }
+        />
+      </ScrollView>
+    );
+  }
 
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.micArea}>
+        <Animated.View style={[styles.micRing, recording && { opacity: 1, transform: [{ scale: ringScale }] }]} />
+        <Pressable
+          onPress={started ? togglePause : start}
+          accessibilityRole="button"
+          accessibilityLabel={!started ? "Start recording" : recording ? "Pause recording" : "Resume recording"}
+          style={({ pressed }) => [styles.mic, recording && styles.micActive, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons
+            name={recording ? "pause" : "mic"}
+            size={40}
+            color={recording ? colors.action : colors.actionText}
+          />
+        </Pressable>
+        {started ? <Text style={styles.timer}>{formatElapsed(state.durationMillis)}</Text> : null}
+        <Text style={styles.micLabel}>
+          {recordingHint({ started, recording, elapsedMs: state.durationMillis })}
+        </Text>
+      </View>
+
+      <ErrorText message={micError ?? error} />
+
+      {started ? (
+        <>
+          <Button title="Done, make my card" onPress={() => void finish()} />
+          <Button title="Discard" variant="secondary" onPress={discard} />
+        </>
+      ) : (
+        <Button title="Type instead" variant="secondary" onPress={onTypeInstead} />
+      )}
+
+      <Muted>
+        Gemini hears your recording through your Thoughts server and writes out what you said, in
+        whatever language you speak. The audio is deleted from your phone once it's read and is never
+        stored on the server.
+      </Muted>
+    </ScrollView>
+  );
+}
+
+// ── Typing (or fixing what Gemini heard) ─────────────────────────────────────
+
+function TypeWords({
+  text,
+  setText,
+  error,
+  onSend,
+  onRecordInstead,
+}: {
+  text: string;
+  setText: (value: string) => void;
+  error: string | null;
+  onSend: () => void;
+  onRecordInstead: () => void;
+}) {
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }} keyboardVerticalOffset={90}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.micArea}>
-          <Animated.View style={[styles.micRing, active && { opacity: 1, transform: [{ scale: ringScale }] }]} />
-          <Pressable
-            onPress={active ? stopListening : startListening}
-            disabled={reading}
-            accessibilityRole="button"
-            accessibilityLabel={active ? "Pause listening" : "Start listening"}
-            style={({ pressed }) => [styles.mic, active && styles.micActive, pressed && { opacity: 0.85 }]}
-          >
-            <Ionicons name={active ? "pause" : "mic"} size={40} color={active ? colors.action : colors.actionText} />
-          </Pressable>
-          <Text style={styles.micLabel}>
-            {reading
-              ? "Reading your words…"
-              : active
-                ? "Listening. Talk as long as you like."
-                : hasWords
-                  ? "Paused. Tap the mic to carry on."
-                  : "Tap the mic and say what's on your mind."}
-          </Text>
-        </View>
-
-        <ErrorText message={speechError ?? error} />
-
+        <ErrorText message={error} />
         <Card>
           <Eyebrow>Your words</Eyebrow>
-          {active ? (
-            <Text style={styles.transcript}>
-              {text}
-              {interim ? <Text style={styles.interim}>{text ? " " : ""}{interim}</Text> : null}
-              {!text && !interim ? <Text style={styles.interim}>Listening…</Text> : null}
-            </Text>
-          ) : (
-            <TextInput
-              value={text}
-              onChangeText={(value) => setText(value.slice(0, MAX_LENGTH))}
-              multiline
-              editable={!reading}
-              placeholder="Your words appear here. You can also type, or fix anything it misheard."
-              placeholderTextColor={colors.inkFaint}
-              style={styles.transcriptInput}
-            />
-          )}
-          <Muted>Only the text is sent to your server's AI. No audio is recorded or kept.</Muted>
-        </Card>
-
-        <Button title={reading ? "Reading…" : "Done, make my card"} onPress={finish} busy={reading} disabled={!hasWords} />
-        {text && !active && !reading ? (
-          <Button
-            title="Clear and start over"
-            variant="secondary"
-            onPress={() =>
-              Alert.alert("Clear your words?", "This removes what you've said so far.", [
-                { text: "Keep", style: "cancel" },
-                { text: "Clear", style: "destructive", onPress: () => setText("") },
-              ])
-            }
+          <TextInput
+            value={text}
+            onChangeText={(value) => setText(value.slice(0, MAX_LENGTH))}
+            multiline
+            autoFocus
+            placeholder="Type what's on your mind, or fix anything that was misheard."
+            placeholderTextColor={colors.inkFaint}
+            style={styles.transcriptInput}
           />
-        ) : null}
+        </Card>
+        <Button title="Make my card" onPress={onSend} disabled={!text.trim()} />
+        <Button title="Record instead" variant="secondary" onPress={onRecordInstead} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -316,7 +481,18 @@ function Speak({
 
 type TaskChoice = VoiceTaskDraft & { keep: boolean };
 
-function Review({ capture, onBack }: { capture: VoiceCaptureResponse; onBack: () => void }) {
+function Review({
+  capture,
+  heard,
+  onFixWords,
+  onStartOver,
+}: {
+  capture: VoiceCaptureResponse;
+  // What Gemini heard in the recording (null when the words were typed).
+  heard: string | null;
+  onFixWords: () => void;
+  onStartOver: () => void;
+}) {
   const { request } = useAuth();
   const { draft, worryParking } = capture;
   const today = colomboToday();
@@ -400,6 +576,14 @@ function Review({ capture, onBack }: { capture: VoiceCaptureResponse; onBack: ()
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Muted>Here's what the AI made of it. Change anything, then save. Nothing is saved yet.</Muted>
 
+        {heard ? (
+          <Card>
+            <Eyebrow>What Gemini heard</Eyebrow>
+            <Text style={styles.heard}>{heard}</Text>
+            <Muted>If it misheard something important, tap "Fix the words" to correct it and redo the card.</Muted>
+          </Card>
+        ) : null}
+
         <Card>
           <CardTitle eyebrow="Thought" title="Your card" />
           <Field label="Title" value={title} onChangeText={setTitle} />
@@ -455,7 +639,8 @@ function Review({ capture, onBack }: { capture: VoiceCaptureResponse; onBack: ()
 
         <ErrorText message={error} />
         <Button title={saveLabel(keptTasks.length, keptWorries.length)} onPress={save} busy={busy} />
-        <Button title="Back to my words" variant="secondary" onPress={onBack} disabled={busy} />
+        <Button title="Fix the words" variant="secondary" onPress={onFixWords} disabled={busy} />
+        <Button title="Start over" variant="secondary" onPress={onStartOver} disabled={busy} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -541,8 +726,9 @@ const styles = StyleSheet.create({
   },
   micActive: { backgroundColor: colors.card, borderWidth: 3, borderColor: colors.accent },
   micLabel: { color: colors.inkSoft, fontSize: 15, textAlign: "center" },
-  transcript: { fontFamily: fonts.display, fontSize: 18, lineHeight: 28, color: colors.ink, minHeight: 120 },
-  interim: { color: colors.inkFaint },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  timer: { fontFamily: fonts.display, fontSize: 28, color: colors.ink, fontVariant: ["tabular-nums"] },
+  heard: { fontFamily: fonts.display, fontSize: 17, lineHeight: 26, color: colors.ink },
   transcriptInput: {
     fontFamily: fonts.display,
     fontSize: 18,

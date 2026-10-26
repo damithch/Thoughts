@@ -221,6 +221,9 @@ export async function embedTexts(texts: string[], taskType: EmbeddingTaskType) {
   return embeddings;
 }
 
+// A prompt part: plain text, or inline media (e.g. a recorded audio clip, base64-encoded).
+export type PromptPart = string | { inlineData: { mimeType: string; data: string } };
+
 export type GenerateOptions = {
   // Sent as systemInstruction, so instructions are kept apart from user-supplied text.
   systemInstruction?: string;
@@ -229,7 +232,7 @@ export type GenerateOptions = {
 };
 
 export async function generateFromPrompt(
-  promptOrParts: string | string[],
+  promptOrParts: string | PromptPart[],
   maxOutputTokens = 2048,
   temperature = 0.0,
   modelOverride?: string,
@@ -244,7 +247,7 @@ export async function generateFromPrompt(
   const body = {
     contents: [
       {
-        parts: parts.map((p) => ({ text: p })),
+        parts: parts.map((p) => (typeof p === "string" ? { text: p } : p)),
       },
     ],
     generationConfig: {
@@ -294,7 +297,7 @@ export async function generateFromPrompt(
  * Non-retriable errors (auth_error, token_exceeded) are thrown immediately.
  */
 export async function generateWithFallback(
-  promptOrParts: string | string[],
+  promptOrParts: string | PromptPart[],
   maxOutputTokens = 2048,
   temperature = 0.0,
   primaryModel?: string,
@@ -303,7 +306,11 @@ export async function generateWithFallback(
   const primary = primaryModel || GEMINI_LLM_MODEL;
 
   // Build the full ordered model list: primary first, then fallbacks (deduped)
-  const modelChain = [primary, ...GEMINI_FALLBACK_MODELS.filter((m) => m !== primary)];
+  // Gemma models take text only, so prompts carrying media skip them.
+  const hasMedia = Array.isArray(promptOrParts) && promptOrParts.some((part) => typeof part !== "string");
+  const modelChain = [primary, ...GEMINI_FALLBACK_MODELS.filter((m) => m !== primary)].filter(
+    (m) => !hasMedia || !m.startsWith("gemma"),
+  );
 
   let lastError: GeminiApiError | Error | null = null;
 
