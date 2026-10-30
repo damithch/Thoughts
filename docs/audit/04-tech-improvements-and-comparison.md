@@ -30,6 +30,35 @@ Re-checked against the code on `master` (4b8120b). Report 3 (`03-code-issues.md`
 9. **Observability.** No error tracking or LLM cost logging. Add Sentry (or OpenTelemetry via Vercel) and log tokens/model per AI call; the multi-model fallback hides failures today.
 10. **AI provider abstraction.** Gemini is hard-wired. A thin provider interface (or Vercel AI SDK) allows swapping models, structured output with schemas, and streaming responses in the UI.
 
+## 2b. Database queries & caching (Redis)
+
+### Query problems found
+
+| Priority | Issue | Where | Fix |
+|---|---|---|---|
+| High | Keyword search computes `to_tsvector(title || content)` for every row on every search — no stored column, no index, so it scans all RAG documents each time | `api/retrieval`, `api/rag/generate` | Add a generated `tsvector` column + GIN index; switch to `websearch_to_tsquery` |
+| High | Vector search has no ANN index (IVFFlat dropped); exact scan of all user vectors | same + `api/mcp` | HNSW index with `hnsw.iterative_scan` (pgvector ≥0.8) |
+| Med | No index on `thoughts (user_id, created_at)`; the only one is the partial `(user_id, request_id)` index, so archive/list pages sort in memory | `db/init.ts` | `CREATE INDEX thoughts_user_created_idx ON thoughts (user_id, created_at DESC)` |
+| Med | Behavioural activation: loads **all** entries, then filters date/status in JavaScript | `api/mcp/route.ts` ~L660, `api/activation` | Push filters into SQL `WHERE` + `LIMIT` |
+| Med | Same vector + keyword SQL copy-pasted in 3 routes | retrieval, rag/generate, mcp | One `searchArchive()` function in `lib/db/rag.ts` |
+| Med | `pg` Pool has no `max`, `idleTimeoutMillis` or `statement_timeout`; on serverless each instance opens its own pool and can exhaust Postgres connections | `db/client.ts` | Use the provider's pooler (Neon/Supabase pgBouncer URL), set `max: 5`, timeouts |
+| Low | `ensureInitialized()` is awaited at the top of ~100 query functions | `lib/db/*` | Goes away with real migrations |
+| Low | `getThoughts()` has no `WHERE user_id` (returns any user's latest 12). Currently unused — delete it before someone calls it | `db/thoughts.ts:135` | Remove |
+| Low | Every request re-reads the user row (`getUserById`) to validate the session | `lib/auth.ts:138` | Cache briefly (see below) |
+
+Good already: all SQL is parameterised, queries are scoped by `user_id`, task/check-in/worry tables have sensible composite indexes, batch updates use `ANY($n::bigint[])`.
+
+### Should you add Redis?
+
+For a single-user app, **Postgres can do almost everything Redis would**, and adding a second datastore means more cost and more to run. Redis (e.g. Upstash, serverless-friendly) is worth it only for:
+
+1. **Rate limiting** — the current limiter is an in-memory `Map` (`lib/reset-rate-limit.ts`), which resets on every cold start and isn't shared across serverless instances, so it barely works on Vercel. Needed for login, password reset, MCP and AI endpoints. *Postgres alternative:* a small `rate_limits` table with `INSERT … ON CONFLICT` — fine at this traffic.
+2. **Caching AI results** — query embeddings (same question → same vector) and `/api/health` LLM checks. Saves Gemini cost/latency.
+3. **Session store** — enables real logout/revocation. *Postgres alternative:* a `sessions` table.
+4. **Job queue** for background embedding — *Postgres alternative:* pg-boss or Vercel Cron.
+
+**Recommendation:** fix the indexes and pool first (biggest win, no new infra). Then either use Upstash Redis for rate limiting + embedding cache, or keep everything in Postgres with a `rate_limits` table and an `embedding_cache` table. For one user, Postgres-only is the simpler choice.
+
 ## 3. Comparison with similar platforms
 
 | Capability | Thoughts | Rosebud | Day One | Reflect | Obsidian (+ plugins) |
