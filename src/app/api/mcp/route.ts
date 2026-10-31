@@ -28,15 +28,29 @@ import {
   getUserById,
   getAttentionSessions,
   getAttentionStats,
+  deleteAttentionSession,
+  getWorryDataByUserAndDate,
+  getTaskCompletionStats,
+  getOverdueOpenTasks,
+  getInboxOpenTaskCount,
+  getSlippingOpenTasks,
 } from "@/lib/db";
-import { ATTENTION_SESSION_TYPES, parseStatsRange } from "@/lib/attention/rules";
-import { saveAttentionSession } from "@/lib/attention/service";
+import {
+  ATTENTION_SESSION_TYPES,
+  computeAttentionInsights,
+  parseDateRange,
+  parseStatsRange,
+} from "@/lib/attention/rules";
+import { editAttentionSession, saveAttentionSession } from "@/lib/attention/service";
+import { getTherapyReportData, parseSections } from "@/lib/reports/therapy-data";
+import { computeDayStreak } from "@/lib/tasks/stats";
+import { parseClockTime } from "@/lib/tasks/validation";
 import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskItem, Thought } from "@/lib/db";
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import { embedTexts } from "@/lib/gemini";
 import { alertSupportByPush } from "@/lib/support";
-import { getCurrentColomboDate } from "@/lib/time";
+import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 const MCP_API_KEY_HEADER = "x-api-key";
 const MCP_API_KEY_QUERY_PARAM = "api_key";
@@ -217,7 +231,8 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "get_tasks",
-    description: "Fetch tasks and their status, optionally filtered by date or status.",
+    description:
+      "Fetch tasks and their status. Filter by one date, or a from/to date range, by status, or by words in the title. Returns up to 100 tasks (or `limit`).",
     inputSchema: {
       type: "object",
       properties: {
@@ -226,10 +241,14 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
           description: "Optional scheduled date in YYYY-MM-DD format.",
           pattern: "^\\d{4}-\\d{2}-\\d{2}$",
         },
+        from: { type: "string", description: "Range start (YYYY-MM-DD), inclusive.", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        to: { type: "string", description: "Range end (YYYY-MM-DD), inclusive.", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
         status: {
           type: "string",
           enum: ["todo", "in_progress", "done", "skipped"],
         },
+        query: { type: "string", description: "Words that must appear in the task title (case-insensitive)." },
+        limit: { type: "integer", minimum: 1, maximum: 500 },
       },
       additionalProperties: false,
     },
@@ -462,6 +481,108 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "update_attention_session",
+    description:
+      "Change fields of an attention-training session (only the fields you send change). Same rules as create_attention_session; task focus is always 100 minus self focus.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", minimum: 1 },
+        sessionType: { type: "string", enum: ["mundane_task", "meditation"] },
+        taskName: { type: "string" },
+        durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
+        selfFocusBefore: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+        selfFocusAfter: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+        anchorsUsed: { type: ["array", "null"], items: { type: "string", enum: ["touch", "sight", "hearing", "smell", "taste"] } },
+        moodBefore: { type: ["integer", "null"], minimum: 1, maximum: 10 },
+        moodAfter: { type: ["integer", "null"], minimum: 1, maximum: 10 },
+        comments: { type: "string" },
+        entryDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_attention_session",
+    description: "Delete an attention-training session by id.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "integer", minimum: 1 } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_attention_insights",
+    description:
+      "Analyse attention training over a date range (default last 30 days, max 92): average task focus before/after and its change, earlier vs later sessions, per everyday task, which senses helped most, meditation minutes and mood change, practice by weekday, and recent notes. Wandering is part of the practice; describe results supportively.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_therapy_report",
+    description:
+      "The therapy homework report as data for a date range (default last 7 days, max 92): attention training (insights + every session) and worry postponement (belief, evidence, experiment days, postponed worries). The same content as the PDF at /api/reports/therapy.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        sections: { type: "array", items: { type: "string", enum: ["attention", "worry"] } },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_recurring_task",
+    description:
+      "Change a recurring task (routine). Only the fields you send change. Set isActive false to pause it; remindAt \"HH:MM\" sets the phone reminder, null removes it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "integer", minimum: 1 },
+        title: { type: "string" },
+        priority: { type: "string", enum: ["low", "medium", "high"] },
+        tags: { type: "array", items: { type: "string" } },
+        note: { type: "string" },
+        isActive: { type: "boolean" },
+        daysOfWeek: { type: "array", items: { type: "string", enum: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] } },
+        startDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        endDate: { type: ["string", "null"], pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        remindAt: { type: ["string", "null"], pattern: "^([01]?\\d|2[0-3]):[0-5]\\d$" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_recurring_task",
+    description: "Delete a recurring task (routine). Tasks it already created stay as one-off tasks.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "integer", minimum: 1 } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_task_stats",
+    description:
+      "Task progress for the last N days (default 14, max 90): completion % per day (skipped tasks left out), overall rate, current and best streak of fully completed days, overdue open tasks, Inbox size and tasks that keep getting pushed back.",
+    inputSchema: {
+      type: "object",
+      properties: { days: { type: "integer", minimum: 1, maximum: 90 } },
+      additionalProperties: false,
+    },
+  },
 ];
 
 function jsonRpcResult(id: JsonRpcRequest["id"], result: JsonObject) {
@@ -670,7 +791,10 @@ async function listThoughtsForUser(userId: number, filters: { date?: string | nu
   return rows;
 }
 
-async function listTasksForUser(userId: number, filters: { date?: string | null; status?: string | null }) {
+async function listTasksForUser(
+  userId: number,
+  filters: { date?: string | null; from?: string | null; to?: string | null; status?: string | null; query?: string | null; limit?: number },
+) {
   await ensureInitialized();
 
   const clauses = ["user_id = $1"];
@@ -679,6 +803,21 @@ async function listTasksForUser(userId: number, filters: { date?: string | null;
   if (filters.date) {
     values.push(filters.date);
     clauses.push(`scheduled_date = $${values.length}::date`);
+  }
+
+  if (filters.from) {
+    values.push(filters.from);
+    clauses.push(`scheduled_date >= $${values.length}::date`);
+  }
+
+  if (filters.to) {
+    values.push(filters.to);
+    clauses.push(`scheduled_date <= $${values.length}::date`);
+  }
+
+  if (filters.query) {
+    values.push(`%${filters.query.replace(/[\\%_]/g, (char) => `\\${char}`)}%`);
+    clauses.push(`title ILIKE $${values.length}`);
   }
 
   if (filters.status) {
@@ -702,7 +841,7 @@ async function listTasksForUser(userId: number, filters: { date?: string | null;
         END,
         created_at ASC,
         id ASC
-      LIMIT 100
+      LIMIT ${Math.min(Math.max(1, filters.limit ?? 100), 500)}
     `,
     values,
   );
@@ -829,12 +968,15 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       throw new Error("get_daily_summary requires a valid date in YYYY-MM-DD format.");
     }
 
-    const [thoughts, tasks, dayRecord, checkIns] = await Promise.all([
+    const [thoughts, tasks, dayRecord, checkIns, attentionSessions, worry] = await Promise.all([
       getThoughtsByUserAndDate(userId, date),
       getTasksByUserAndDate(userId, date),
       getDayRecordByUserAndDate(userId, date),
       getDailyCheckInsByUserAndDate(userId, date),
+      getAttentionSessions(userId, { from: date, to: date }),
+      getWorryDataByUserAndDate(userId, date),
     ]);
+    const attentionInsights = computeAttentionInsights(attentionSessions, date, date);
 
     const taskCounts = tasks.reduce(
       (acc, task) => {
@@ -852,11 +994,21 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
         checkInCount: checkIns.length,
         averageMood: averageMood(thoughts, checkIns, dayRecord?.end_of_day_mood ?? null),
         taskCounts,
+        attention: {
+          sessions: attentionInsights.sessionCount,
+          taskSessions: attentionInsights.mundaneCount,
+          meditations: attentionInsights.meditationCount,
+          minutes: attentionInsights.totalMinutes,
+          avgTaskFocusChange: attentionInsights.focus.avgChange,
+        },
+        worryPostponedCount: worry.postponed_items.length,
       },
       dayRecord,
       thoughts,
       tasks,
       checkIns,
+      attentionSessions,
+      worryPostponement: worry.module ? worry : null,
     });
   }
 
@@ -1017,10 +1169,18 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       throw new Error("get_tasks status must be one of todo, in_progress, done, or skipped.");
     }
 
-    const tasks = await listTasksForUser(userId, { date, status });
+    const from = args.from === undefined ? null : normalizeDate(args.from);
+    const to = args.to === undefined ? null : normalizeDate(args.to);
+    if ((args.from !== undefined && !from) || (args.to !== undefined && !to)) {
+      throw new McpInvalidParamsError("get_tasks from/to must be in YYYY-MM-DD format.");
+    }
+    const query = normalizeOptionalString(args.query).slice(0, 100) || null;
+    const limit = typeof args.limit === "number" && Number.isInteger(args.limit) ? args.limit : undefined;
+
+    const tasks = await listTasksForUser(userId, { date, from, to, status, query, limit });
 
     return formatToolResult({
-      filters: { date, status },
+      filters: { date, from, to, status, query },
       count: tasks.length,
       tasks,
     });
@@ -1291,6 +1451,113 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
   if (name === "get_attention_stats") {
     const stats = await getAttentionStats(userId, getCurrentColomboDate(), parseStatsRange(args.range));
     return formatToolResult({ stats });
+  }
+
+  if (name === "update_attention_session") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (!id) throw new McpInvalidParamsError("update_attention_session requires a positive integer id.");
+    const changes = { ...args };
+    delete changes.id;
+    const result = await editAttentionSession(userId, id, changes);
+    if (!result.ok) throw new McpInvalidParamsError(`update_attention_session: ${result.error}`);
+    return formatToolResult({ updated: true, session: result.session });
+  }
+
+  if (name === "delete_attention_session") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (!id) throw new McpInvalidParamsError("delete_attention_session requires a positive integer id.");
+    return formatToolResult({ deleted: await deleteAttentionSession(id, userId), id });
+  }
+
+  if (name === "get_attention_insights") {
+    const today = getCurrentColomboDate();
+    const range = parseDateRange(args.from ?? shiftColomboDate(args.to && typeof args.to === "string" ? args.to : today, -29), args.to, today);
+    if (!range.ok) throw new McpInvalidParamsError(`get_attention_insights: ${range.error}`);
+    const sessions = await getAttentionSessions(userId, { from: range.from, to: range.to, limit: 500 });
+    return formatToolResult({ insights: computeAttentionInsights(sessions, range.from, range.to) });
+  }
+
+  if (name === "get_therapy_report") {
+    const range = parseDateRange(args.from, args.to, getCurrentColomboDate());
+    if (!range.ok) throw new McpInvalidParamsError(`get_therapy_report: ${range.error}`);
+    const user = await getUserById(userId);
+    const sections = parseSections(Array.isArray(args.sections) ? args.sections.join(",") : null);
+    const report = await getTherapyReportData({ id: userId, name: user?.name ?? "" }, range.from, range.to, sections);
+    return formatToolResult({ report, pdfPath: `/api/reports/therapy?from=${range.from}&to=${range.to}&sections=${sections.join(",")}` });
+  }
+
+  if (name === "update_recurring_task") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (!id) throw new McpInvalidParamsError("update_recurring_task requires a positive integer id.");
+    const current = (await getRecurringTasksByUser(userId)).find((routine) => routine.id === id);
+    if (!current) throw new McpInvalidParamsError("That recurring task doesn't exist.");
+
+    const days = Array.isArray(args.daysOfWeek)
+      ? ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].filter((day) => (args.daysOfWeek as unknown[]).includes(day))
+      : current.days_of_week;
+    const startDate = args.startDate === undefined ? current.start_date : normalizeDate(args.startDate);
+    const endDate = args.endDate === undefined ? current.end_date : args.endDate === null ? null : normalizeDate(args.endDate);
+    let remindAt: string | null | undefined;
+    if (args.remindAt === null) remindAt = null;
+    else if (args.remindAt !== undefined) {
+      remindAt = parseClockTime(args.remindAt);
+      if (!remindAt) throw new McpInvalidParamsError("remindAt must look like 07:30, or be null.");
+    }
+
+    if (days.length === 0) throw new McpInvalidParamsError("A routine needs at least one day of the week.");
+    if (!startDate) throw new McpInvalidParamsError("startDate must be in YYYY-MM-DD format.");
+    if (args.endDate !== undefined && args.endDate !== null && !endDate) throw new McpInvalidParamsError("endDate must be in YYYY-MM-DD format.");
+    if (endDate && endDate < startDate) throw new McpInvalidParamsError("endDate can't be before startDate.");
+    const title = args.title === undefined ? current.title : normalizeOptionalString(args.title);
+    if (!title) throw new McpInvalidParamsError("title can't be empty.");
+
+    const input: UpdateRecurringTask = {
+      id,
+      userId,
+      title,
+      priority: args.priority === undefined ? current.priority : normalizePriority(args.priority),
+      tags: args.tags === undefined ? current.tags : normalizeStringArray(args.tags),
+      note: args.note === undefined ? current.note : normalizeOptionalString(args.note),
+      isActive: typeof args.isActive === "boolean" ? args.isActive : current.is_active,
+      daysOfWeek: days,
+      startDate,
+      endDate,
+      ...(remindAt === undefined ? {} : { remindAt }),
+    };
+    await updateRecurringTask(input);
+    const routine = (await getRecurringTasksByUser(userId)).find((item) => item.id === id);
+    return formatToolResult({ updated: true, routine });
+  }
+
+  if (name === "delete_recurring_task") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (!id) throw new McpInvalidParamsError("delete_recurring_task requires a positive integer id.");
+    return formatToolResult({ deleted: await deleteRecurringTask(id, userId), id });
+  }
+
+  if (name === "get_task_stats") {
+    const days = typeof args.days === "number" && Number.isInteger(args.days) ? Math.min(90, Math.max(1, args.days)) : 14;
+    const today = getCurrentColomboDate();
+    const [daily, overdue, inboxCount, slipping] = await Promise.all([
+      getTaskCompletionStats(userId, days),
+      getOverdueOpenTasks(userId, today),
+      getInboxOpenTaskCount(userId),
+      getSlippingOpenTasks(userId, 2),
+    ]);
+    const totals = daily.reduce((acc, day) => ({ total: acc.total + day.total_tasks, done: acc.done + day.completed_tasks }), { total: 0, done: 0 });
+    const streak = computeDayStreak(daily.map((day) => ({ date: day.date, total: day.total_tasks, done: day.completed_tasks })), today);
+    return formatToolResult({
+      days,
+      completionRate: totals.total === 0 ? null : Math.round((totals.done / totals.total) * 100),
+      tasksCounted: totals.total,
+      tasksDone: totals.done,
+      currentStreak: streak.current,
+      bestStreak: streak.best,
+      daily,
+      overdueOpenTasks: overdue.map((task) => ({ id: task.id, title: task.title, scheduled_date: task.scheduled_date, priority: task.priority })),
+      inboxCount,
+      slippingTasks: slipping.map((task) => ({ id: task.id, title: task.title, scheduled_date: task.scheduled_date, rollover_count: task.rollover_count })),
+    });
   }
 
   throw new Error(`Unknown tool: ${name}`);

@@ -9,7 +9,9 @@ import {
   getTasksByUserMonth,
   getThoughtsByUserMonth,
   getWorryDataByUserAndMonth,
+  getAttentionSessions,
 } from "@/lib/db";
+import { ATTENTION_LIMITS, computeAttentionInsights } from "@/lib/attention/rules";
 import { toColomboExportParts } from "@/lib/time";
 
 type MonthlyThought = Awaited<ReturnType<typeof getThoughtsByUserMonth>>[number];
@@ -63,7 +65,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [thoughts, tasks, checkIns, dayNotes, completionStats, conversationLogs, worryData] = await Promise.all([
+    const monthStart = `${month}-01`;
+    const [year, monthNumber] = month.split("-").map(Number);
+    const monthEnd = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+    const [thoughts, tasks, checkIns, dayNotes, completionStats, conversationLogs, worryData, attentionSessions] = await Promise.all([
       getThoughtsByUserMonth(currentUser.id, month),
       getTasksByUserMonth(currentUser.id, month),
       getDailyCheckInsByUserMonth(currentUser.id, month),
@@ -71,7 +76,9 @@ export async function GET(request: Request) {
       getTaskCompletionStatsForMonth(currentUser.id, month),
       getConversationSummariesByUserMonth(currentUser.id, month),
       getWorryDataByUserAndMonth(currentUser.id, month),
+      getAttentionSessions(currentUser.id, { from: monthStart, to: monthEnd, limit: ATTENTION_LIMITS.listMax }),
     ]);
+    const attentionInsights = computeAttentionInsights(attentionSessions, monthStart, monthEnd);
 
     const thoughtsPayload = thoughts.map((thought: MonthlyThought) => {
       const createdAt = toColomboExportParts(thought.created_at);
@@ -289,6 +296,15 @@ export async function GET(request: Request) {
         tasks: tasksPayload,
         check_ins: checkInsPayload,
         day_notes: dayNotesPayload,
+        attention_training: {
+          insights: attentionInsights,
+          sessions: [...attentionSessions].reverse().map((session) => ({
+            ...session,
+            started_at: toColomboExportParts(session.started_at).localIso,
+            created_at: toColomboExportParts(session.created_at).localIso,
+            updated_at: toColomboExportParts(session.updated_at).localIso,
+          })),
+        },
         worry_postponement: worryData.module
           ? {
               belief: worryData.module.belief_text,
