@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
-import { getAllThoughtsByUser, getTasksByUser, getRecurringTasksByUser, getBookIdeasByUser } from "@/lib/db";
+import {
+  getAllThoughtsByUser,
+  getAttentionSessions,
+  getAttentionTaskIdeas,
+  getBookIdeasByUser,
+  getRecurringTasksByUser,
+  getTasksByUser,
+} from "@/lib/db";
+import { ATTENTION_LIMITS } from "@/lib/attention/rules";
 
 export async function GET() {
   const currentUser = await getCurrentUser();
@@ -14,11 +22,13 @@ export async function GET() {
   try {
     await ensureInitialized();
 
-    const [thoughts, tasks, recurringTasks, bookIdeas] = await Promise.all([
+    const [thoughts, tasks, recurringTasks, bookIdeas, attentionSessions, attentionTaskIdeas] = await Promise.all([
       getAllThoughtsByUser(currentUser.id),
       getTasksByUser(currentUser.id),
       getRecurringTasksByUser(currentUser.id),
       getBookIdeasByUser(currentUser.id),
+      getAttentionSessions(currentUser.id, { limit: ATTENTION_LIMITS.listMax }),
+      getAttentionTaskIdeas(currentUser.id),
     ]);
 
     const backupPayload = {
@@ -34,6 +44,8 @@ export async function GET() {
         tasks,
         recurringTasks,
         bookIdeas,
+        attentionSessions,
+        attentionTaskIdeas,
       },
     };
 

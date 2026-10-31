@@ -26,7 +26,11 @@ import {
   getTasksByUserAndDate,
   getThoughtsByUserAndDate,
   getUserById,
+  getAttentionSessions,
+  getAttentionStats,
 } from "@/lib/db";
+import { ATTENTION_SESSION_TYPES, parseStatsRange } from "@/lib/attention/rules";
+import { saveAttentionSession } from "@/lib/attention/service";
 import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskItem, Thought } from "@/lib/db";
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
@@ -402,6 +406,59 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         },
       },
       required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_attention_session",
+    description:
+      "Log an attention-training session (CCI What? Me Worry!?! module 4). Two kinds: 'mundane_task' (an everyday task done with full attention; rate how much attention was on yourself/your thoughts before and after, 0-100 — task focus is computed as 100 minus that) and 'meditation' (observe, belly breathing, whole-body breathing). Mind-wandering is an expected part of the practice, never a failure: the skill is noticing and gently returning. Set completeTask to tick off today's matching attention/breathing task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionType: { type: "string", enum: ["mundane_task", "meditation"] },
+        taskName: { type: "string", description: "The everyday task, e.g. 'Walking to campus'. Defaults to 'Breathing meditation' for meditation." },
+        durationMinutes: { type: "integer", minimum: 1, maximum: 120 },
+        selfFocusBefore: { type: "integer", minimum: 0, maximum: 100, description: "Mundane task only: % of attention on self/thoughts before." },
+        selfFocusAfter: { type: "integer", minimum: 0, maximum: 100, description: "Mundane task only: % of attention on self/thoughts after." },
+        anchorsUsed: {
+          type: "array",
+          items: { type: "string", enum: ["touch", "sight", "hearing", "smell", "taste"] },
+          description: "Mundane task only: senses used to bring attention back.",
+        },
+        moodBefore: { type: "integer", minimum: 1, maximum: 10 },
+        moodAfter: { type: "integer", minimum: 1, maximum: 10 },
+        comments: { type: "string", description: "What was noticed; whether the wander was caught and attention redirected." },
+        entryDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Defaults to today (Asia/Colombo). Not in the future." },
+        completeTask: { type: "boolean", description: "Also mark the matching open daily task as done." },
+      },
+      required: ["sessionType", "durationMinutes"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_attention_sessions",
+    description: "Fetch attention-training sessions, newest first, optionally filtered by date range and type.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
+        type: { type: "string", enum: ["mundane_task", "meditation"] },
+        limit: { type: "integer", minimum: 1, maximum: 500 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_attention_stats",
+    description:
+      "Attention-training progress for the last 7 or 30 days: sessions per day, total minutes, average task-focus change, days with both kinds of practice, and the current streak. Describe progress supportively; quiet days are rest days.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        range: { type: "string", enum: ["7d", "30d"] },
+      },
       additionalProperties: false,
     },
   },
@@ -1209,6 +1266,31 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
         text: r.chunk_text,
       })),
     });
+  }
+
+  if (name === "create_attention_session") {
+    const result = await saveAttentionSession(userId, args);
+    if (!result.ok) {
+      throw new McpInvalidParamsError(`create_attention_session: ${result.error}`);
+    }
+    return formatToolResult({ session: result.session, completedTask: result.completedTask });
+  }
+
+  if (name === "get_attention_sessions") {
+    const from = args.from === undefined ? null : normalizeDate(args.from);
+    const to = args.to === undefined ? null : normalizeDate(args.to);
+    if ((args.from !== undefined && !from) || (args.to !== undefined && !to)) {
+      throw new McpInvalidParamsError("get_attention_sessions from/to must be in YYYY-MM-DD format.");
+    }
+    const type = ATTENTION_SESSION_TYPES.find((value) => value === args.type) ?? null;
+    const limit = typeof args.limit === "number" && Number.isInteger(args.limit) ? args.limit : 50;
+    const sessions = await getAttentionSessions(userId, { from, to, type, limit });
+    return formatToolResult({ count: sessions.length, sessions });
+  }
+
+  if (name === "get_attention_stats") {
+    const stats = await getAttentionStats(userId, getCurrentColomboDate(), parseStatsRange(args.range));
+    return formatToolResult({ stats });
   }
 
   throw new Error(`Unknown tool: ${name}`);

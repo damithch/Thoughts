@@ -8,6 +8,7 @@ import {
   getTasksByUserAndDate,
   getThoughtsByUserAndDate,
   getWorryDataByUserAndDate,
+  getAttentionSessions,
 } from "@/lib/db";
 import { toColomboExportParts } from "@/lib/time";
 
@@ -102,13 +103,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [thoughts, tasks, dayRecord, checkIns, conversationLogs, worryData] = await Promise.all([
+    const [thoughts, tasks, dayRecord, checkIns, conversationLogs, worryData, attentionSessions] = await Promise.all([
       getThoughtsByUserAndDate(currentUser.id, date),
       getTasksByUserAndDate(currentUser.id, date),
       getDayRecordByUserAndDate(currentUser.id, date),
       getDailyCheckInsByUserAndDate(currentUser.id, date),
       getConversationSummariesByUserAndDate(currentUser.id, date),
       getWorryDataByUserAndDate(currentUser.id, date),
+      getAttentionSessions(currentUser.id, { from: date, to: date }),
     ]);
     const taskProgress = buildTaskProgress(tasks);
     const dayThoughtSummary = buildDayThoughtSummary(thoughts, tasks);
@@ -200,6 +202,21 @@ export async function GET(request: Request) {
               created_time: createdAt.time,
             };
           }),
+          attention_sessions: attentionSessions.map((session) => ({
+            id: session.id,
+            session_type: session.session_type,
+            task_name: session.task_name,
+            started_at: toColomboExportParts(session.started_at).localIso,
+            duration_minutes: session.duration_minutes,
+            self_focus_before: session.self_focus_before,
+            self_focus_after: session.self_focus_after,
+            task_focus_before: session.task_focus_before,
+            task_focus_after: session.task_focus_after,
+            anchors_used: session.anchors_used ?? [],
+            mood_before: session.mood_before,
+            mood_after: session.mood_after,
+            comments: session.comments,
+          })),
           worry_postponement: worryData.module
             ? {
                 belief: worryData.module.belief_text,
