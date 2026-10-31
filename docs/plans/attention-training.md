@@ -1,5 +1,11 @@
 # Plan — Attention Training tracker
 
+> **Status (2026-10-31): implemented.** Built as planned, with these differences:
+> - Web meditation finishes with a one-tap Save (the phone saves automatically, as in AC 3).
+> - No Home-screen card on the phone yet; the entry point is More → Attention training.
+> - Backup includes attention data in the export; restoring it from a backup is not wired up yet.
+> - The optional twice-daily target and a RAG document kind are left for later.
+
 Source: the "Attention Training Tracker – Implementation Spec" and CCI *What? Me Worry!?!* Module 4 (My Attention Workout, Attention Training Diary).
 Approach: build it the same way as the existing Behavioural Activation and Worry Postponement modules, and reuse existing pieces wherever they fit.
 

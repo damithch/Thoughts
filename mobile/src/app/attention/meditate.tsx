@@ -248,7 +248,8 @@ export default function MeditateScreen() {
         {steps.map((step, index) => (
           <View key={step.key} style={{ gap: 2 }}>
             <Text style={styles.listTitle}>
-              {index + 1}. {step.title} · {Math.round((step.seconds / 60) * 10) / 10} min
+              {index + 1}. {step.title} ·{" "}
+              {step.seconds % 60 === 0 ? `${step.seconds / 60} min` : `${Math.floor(step.seconds / 60)}:${String(step.seconds % 60).padStart(2, "0")}`}
             </Text>
             <Muted>{step.prompt}</Muted>
           </View>
