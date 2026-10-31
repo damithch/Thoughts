@@ -81,7 +81,9 @@ Thoughts includes a JSON-RPC MCP server at `/api/mcp`, secured with an API key a
 - `get_behavioural_activation_entries`
 - `delete_conversation_log`
 - `search_journal` for semantic search across the indexed archive
-- `create_attention_session`, `get_attention_sessions` and `get_attention_stats` for attention training
+- `create_attention_session`, `get_attention_sessions`, `update_attention_session`, `delete_attention_session`, `get_attention_stats` and `get_attention_insights` for attention training
+- `update_recurring_task`, `delete_recurring_task` and `get_task_stats` for routines and task progress (`get_tasks` also takes a date range and title search)
+- `get_therapy_report` for attention training and worry postponement over a date range
 
 The server implements MCP protocol version `2024-11-05`, exposes `initialize`, `tools/list`, and `tools/call`, and keeps MCP data scoped to the configured user.
 
@@ -135,6 +137,7 @@ External assistants can save structured conversation summaries containing a date
 - `GET|POST /api/backup` - Export or restore a full JSON backup.
 - `GET /api/reports/daily` - Generate a daily report.
 - `GET /api/reports/monthly` - Generate a monthly report.
+- `GET /api/reports/therapy?from=&to=&sections=attention,worry&format=pdf|json` - Therapy homework report (attention training and worry postponement) as a PDF, up to 92 days.
 - `GET /api/health` - Check service configuration and database health.
 
 ## Tech stack

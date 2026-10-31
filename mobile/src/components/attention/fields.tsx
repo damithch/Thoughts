@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Eyebrow } from "@/components/ui";
@@ -17,26 +17,37 @@ const STEP = 5;
 
 // One slider: how much attention is on me/my thoughts; the task side is shown as the rest.
 // Starts unrated (null) so an untouched slider never saves a made-up 50%.
+// The finger position is read as a screen coordinate (pageX) against where the track started,
+// which stays correct while dragging (locationX jumps around on Android). `onDragChange` lets the
+// screen pause scrolling during a drag so the scroll view can't steal the gesture.
 export function FocusSlider({
   label,
   value,
   onChange,
+  onDragChange,
 }: {
   label: string;
   value: number | null;
   onChange: (value: number | null) => void;
+  onDragChange?: (dragging: boolean) => void;
 }) {
   const [width, setWidth] = useState(0);
+  const trackLeft = useRef(0);
   const split = value === null ? null : splitAttention(value);
 
   function setFromX(x: number) {
     if (width <= 0) return;
     const ratio = Math.min(1, Math.max(0, x / width));
-    onChange(Math.round((ratio * 100) / STEP) * STEP);
+    const next = Math.round((ratio * 100) / STEP) * STEP;
+    if (next !== value) onChange(next);
   }
 
   function nudge(delta: number) {
     onChange(Math.min(100, Math.max(0, (value ?? 50) + delta)));
+  }
+
+  function end() {
+    onDragChange?.(false);
   }
 
   return (
@@ -46,25 +57,50 @@ export function FocusSlider({
         <Text style={styles.endText}>Me / my thoughts</Text>
         <Text style={styles.endText}>The task</Text>
       </View>
-      <View
-        style={styles.track}
-        onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderTerminationRequest={() => false}
-        onResponderGrant={(event) => setFromX(event.nativeEvent.locationX)}
-        onResponderMove={(event) => setFromX(event.nativeEvent.locationX)}
-        accessible
-        accessibilityRole="adjustable"
-        accessibilityLabel={`${label}. Percent of attention on yourself and your thoughts.`}
-        accessibilityValue={{ min: 0, max: 100, now: value ?? undefined, text: split ? `${split.self}% on me, ${split.task}% on the task` : "Not rated yet" }}
-        accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
-        onAccessibilityAction={(event) => nudge(event.nativeEvent.actionName === "increment" ? STEP : -STEP)}
-      >
-        {/* A balance bar: the grey part (left of the thumb) is attention on me, the green part is the task. */}
-        <View pointerEvents="none" style={[styles.selfFill, { width: `${split ? split.self : 0}%` }]} />
-        <View pointerEvents="none" style={[styles.taskFill, { width: `${split ? split.task : 0}%` }]} />
-        {split ? <View pointerEvents="none" style={[styles.thumb, { left: `${split.self}%` }]} /> : null}
+      <View style={styles.sliderRow}>
+        <Pressable
+          onPress={() => nudge(-STEP)}
+          hitSlop={8}
+          style={styles.nudge}
+          accessibilityLabel="Less attention on me (5%)"
+        >
+          <Ionicons name="remove" size={18} color={colors.action} />
+        </Pressable>
+        <View
+          style={styles.track}
+          onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => false}
+          onResponderGrant={(event) => {
+            // At touch-down the touch is on the track itself, so locationX is reliable here.
+            trackLeft.current = event.nativeEvent.pageX - event.nativeEvent.locationX;
+            onDragChange?.(true);
+            setFromX(event.nativeEvent.locationX);
+          }}
+          onResponderMove={(event) => setFromX(event.nativeEvent.pageX - trackLeft.current)}
+          onResponderRelease={end}
+          onResponderTerminate={end}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={`${label}. Percent of attention on yourself and your thoughts.`}
+          accessibilityValue={{ min: 0, max: 100, now: value ?? undefined, text: split ? `${split.self}% on me, ${split.task}% on the task` : "Not rated yet" }}
+          accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+          onAccessibilityAction={(event) => nudge(event.nativeEvent.actionName === "increment" ? STEP : -STEP)}
+        >
+          {/* A balance bar: the grey part (left of the thumb) is attention on me, the green part is the task. */}
+          <View pointerEvents="none" style={[styles.selfFill, { width: `${split ? split.self : 0}%` }]} />
+          <View pointerEvents="none" style={[styles.taskFill, { width: `${split ? split.task : 0}%` }]} />
+          {split ? <View pointerEvents="none" style={[styles.thumb, { left: `${split.self}%` }]} /> : null}
+        </View>
+        <Pressable
+          onPress={() => nudge(STEP)}
+          hitSlop={8}
+          style={styles.nudge}
+          accessibilityLabel="More attention on me (5%)"
+        >
+          <Ionicons name="add" size={18} color={colors.action} />
+        </Pressable>
       </View>
       <View style={styles.readout}>
         {split ? (
@@ -213,7 +249,19 @@ const styles = StyleSheet.create({
   link: { fontSize: 13, color: colors.accent },
   ends: { flexDirection: "row", justifyContent: "space-between" },
   endText: { fontSize: 11, color: colors.inkSoft },
+  sliderRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  nudge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.cardSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   track: {
+    flex: 1,
     height: 36,
     borderRadius: radius.pill,
     backgroundColor: colors.field,

@@ -187,11 +187,27 @@ function MinutesInput({ value, onChange }: { value: number; onChange: (value: nu
   );
 }
 
-// A soft bell made with the Web Audio API (no sound file needed).
-function playChime() {
+// A soft bell made with the Web Audio API (no sound file needed). Browsers only allow sound that
+// started from a tap, so one shared context is created (or resumed) when "Begin" is pressed and
+// reused for the chimes between steps.
+let chimeContext: AudioContext | null = null;
+
+function unlockChime() {
   try {
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const context = new AudioCtx();
+    if (!chimeContext) {
+      const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      chimeContext = new AudioCtx();
+    }
+    if (chimeContext.state === "suspended") chimeContext.resume().catch(() => {});
+  } catch {
+    chimeContext = null;
+  }
+}
+
+function playChime() {
+  const context = chimeContext;
+  if (!context) return;
+  try {
     for (const [frequency, gain] of [
       [528, 0.18],
       [792, 0.08],
@@ -205,7 +221,6 @@ function playChime() {
       oscillator.start();
       oscillator.stop(context.currentTime + 2);
     }
-    setTimeout(() => context.close().catch(() => {}), 2500);
   } catch {
     // No audio available: the on-screen step change still shows.
   }
@@ -462,6 +477,7 @@ function MeditationPanel({
     setRun(current);
     setNow(time);
     setStoppedAt(null);
+    unlockChime();
     playChime();
   }
 
@@ -526,16 +542,16 @@ function MeditationPanel({
         ))}
       </ol>
       {stoppedAt !== null ? (
-        <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-          {stoppedAt >= total - 1 ? ATTENTION_COPY.meditationDone : ATTENTION_COPY.meditationEarly}
+        <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-950" aria-live="polite">
+          {stoppedAt >= total - 1 ? ATTENTION_COPY.meditationDone : ATTENTION_COPY.meditationEarly} The minutes below are
+          filled in; add anything you noticed and save.
         </p>
-      ) : (
-        <div>
-          <button type="button" className={secondaryButton} onClick={begin}>
-            Begin guided meditation · {Math.round(total / 60)} min
-          </button>
-        </div>
-      )}
+      ) : null}
+      <div>
+        <button type="button" className={secondaryButton} onClick={begin}>
+          {stoppedAt !== null ? "Start again" : `Begin guided meditation · ${formatStepLength(total)}`}
+        </button>
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <MinutesInput value={minutes} onChange={setMinutes} />
         <MoodSelect label="Mood before" value={moodBefore} onChange={setMoodBefore} />
@@ -786,6 +802,96 @@ function ProgressPanel({ week, month, today }: { week: AttentionStats; month: At
         <p className={eyebrow}>Last 30 days</p>
         <h2 className="mt-2 font-[family:var(--font-display)] text-2xl">Attention on the task</h2>
         <TrendChart trend={month.trend} />
+      </div>
+
+      <ReportDownload today={today} />
+    </div>
+  );
+}
+
+function shiftDay(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+// A PDF of attention training and worry postponement for a date range, to share with a therapist.
+function ReportDownload({ today }: { today: string }) {
+  const [from, setFrom] = useState(shiftDay(today, -6));
+  const [to, setTo] = useState(today);
+  const [attention, setAttention] = useState(true);
+  const [worry, setWorry] = useState(true);
+  const sections = [attention ? "attention" : null, worry ? "worry" : null].filter(Boolean).join(",");
+  const spanDays = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+  const problem =
+    !from || !to
+      ? "Pick both dates."
+      : from > to
+        ? "The start date must be on or before the end date."
+        : spanDays > 92
+          ? "A report can cover at most 92 days."
+          : !sections
+            ? "Pick at least one section."
+            : null;
+  const href = `/api/reports/therapy?from=${from}&to=${to}&sections=${sections}`;
+
+  return (
+    <div className={`${card} flex flex-col gap-4`}>
+      <div>
+        <p className={eyebrow}>Share with your therapist</p>
+        <h2 className="mt-2 font-[family:var(--font-display)] text-2xl">Homework report (PDF)</h2>
+        <p className="mt-2 text-sm text-stone-600">
+          Attention training and worry postponement for the days you pick: totals, a focus chart, every session and your notes.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2 text-sm">
+        {[7, 14, 30].map((days) => (
+          <button
+            key={days}
+            type="button"
+            onClick={() => {
+              setFrom(shiftDay(today, -(days - 1)));
+              setTo(today);
+            }}
+            className="rounded-full border border-emerald-950/15 px-4 py-2 text-emerald-950 hover:bg-white"
+          >
+            Last {days} days
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-2">
+          <span className={eyebrow}>From</span>
+          <input type="date" value={from} max={today} onChange={(event) => setFrom(event.target.value)} className={input} />
+        </label>
+        <label className="flex flex-col gap-2">
+          <span className={eyebrow}>To</span>
+          <input type="date" value={to} max={today} onChange={(event) => setTo(event.target.value)} className={input} />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-5 text-sm text-stone-700">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={attention} onChange={(event) => setAttention(event.target.checked)} className="accent-emerald-800" />
+          Attention training
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={worry} onChange={(event) => setWorry(event.target.checked)} className="accent-emerald-800" />
+          Worry postponement
+        </label>
+      </div>
+      {problem ? <p className="text-sm text-rose-800">{problem}</p> : null}
+      <div className="flex flex-wrap gap-3">
+        {problem ? (
+          <span className={`${primaryButton} cursor-not-allowed opacity-60`}>Download PDF</span>
+        ) : (
+          <a href={href} className={primaryButton}>
+            Download PDF
+          </a>
+        )}
+        {problem ? null : (
+          <a href={`${href}&format=json`} className={secondaryButton}>
+            Download as JSON
+          </a>
+        )}
       </div>
     </div>
   );

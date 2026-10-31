@@ -3,9 +3,10 @@ import * as Sharing from "expo-sharing";
 import { useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 
-import { Button, Card, CardTitle, ChoiceRow, DateStepper, ErrorText, Muted } from "@/components/ui";
+import { Button, Card, CardTitle, ChoiceRow, DateStepper, ErrorText, Muted, SwitchRow } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
-import { colomboToday } from "@/lib/dates";
+import { colomboToday, shiftDate } from "@/lib/dates";
+import { checkReportRange } from "@/lib/report-range";
 import { errorMessage } from "@/lib/use-api";
 
 type Format = "json" | "csv";
@@ -26,12 +27,40 @@ function formatMonth(month: string) {
 // Downloads a report from the server into a file and opens Android's share sheet (save to Files,
 // send to Drive, an AI chat, etc.) — the web's report downloads.
 export default function ExportScreen() {
-  const { serverUrl, request } = useAuth();
+  const { serverUrl, request, download } = useAuth();
   const [date, setDate] = useState<string | null>(colomboToday());
   const [format, setFormat] = useState<Format>("json");
   const [month, setMonth] = useState(colomboToday().slice(0, 7));
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const today = colomboToday();
+  const [reportFrom, setReportFrom] = useState<string | null>(shiftDate(today, -6));
+  const [reportTo, setReportTo] = useState<string | null>(today);
+  const [withAttention, setWithAttention] = useState(true);
+  const [withWorry, setWithWorry] = useState(true);
+  const reportProblem = checkReportRange(reportFrom, reportTo, today, withAttention || withWorry);
+
+  async function exportReportPdf() {
+    if (reportProblem || !reportFrom || !reportTo) return;
+    setBusy("report");
+    setError(null);
+
+    try {
+      const sections = [withAttention ? "attention" : null, withWorry ? "worry" : null].filter(Boolean).join(",");
+      const fileName = `thoughts-therapy-report-${reportFrom}-to-${reportTo}.pdf`;
+      const file = await download(`/reports/therapy?from=${reportFrom}&to=${reportTo}&sections=${sections}`, fileName);
+
+      if (!(await Sharing.isAvailableAsync())) {
+        throw new Error("Sharing isn't available on this phone.");
+      }
+
+      await Sharing.shareAsync(file.uri, { mimeType: "application/pdf", dialogTitle: fileName, UTI: "com.adobe.pdf" });
+    } catch (caught) {
+      setError(errorMessage(caught, "The report couldn't be created."));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function exportFile(kind: string, path: string, fileName: string, mimeType: string) {
     setBusy(kind);
@@ -63,7 +92,10 @@ export default function ExportScreen() {
     <ScrollView contentContainerStyle={styles.content}>
       <Card>
         <CardTitle eyebrow="Daily report" title="Review a specific day" />
-        <Muted>Thoughts, tasks, check-ins, the day note and conversation logs for one day. JSON is best for AI analysis.</Muted>
+        <Muted>
+          Thoughts, tasks (with overdue and pushed-back ones), check-ins, the day note, attention training and conversation logs
+          for one day. JSON is best for AI analysis.
+        </Muted>
         <DateStepper label="Day" value={date} onChange={(value) => setDate(value)} fallback={colomboToday()} />
         <ChoiceRow
           label="Format"
@@ -107,6 +139,34 @@ export default function ExportScreen() {
           busy={busy === "month"}
           disabled={busy !== null}
           onPress={() => exportFile("month", `/reports/monthly?month=${month}`, `thoughts-${month}.json`, "application/json")}
+        />
+      </Card>
+
+      <Card>
+        <CardTitle eyebrow="Therapy homework" title="Report as PDF" />
+        <Muted>
+          Attention training and worry postponement for the days you pick: totals, a focus chart, every session and your notes.
+          Share it with your therapist from the share sheet.
+        </Muted>
+        <ChoiceRow
+          label="Quick pick"
+          options={[7, 14, 30].map((days) => ({ value: days, label: `Last ${days} days` }))}
+          value={reportFrom === shiftDate(today, -6) && reportTo === today ? 7 : reportFrom === shiftDate(today, -13) && reportTo === today ? 14 : reportFrom === shiftDate(today, -29) && reportTo === today ? 30 : null}
+          onChange={(days) => {
+            setReportFrom(shiftDate(today, -(days - 1)));
+            setReportTo(today);
+          }}
+        />
+        <DateStepper label="From" value={reportFrom} onChange={setReportFrom} fallback={today} />
+        <DateStepper label="To" value={reportTo} onChange={(value) => setReportTo(value && value > today ? today : value)} fallback={today} />
+        <SwitchRow label="Attention training" value={withAttention} onChange={setWithAttention} />
+        <SwitchRow label="Worry postponement" value={withWorry} onChange={setWithWorry} />
+        {reportProblem ? <Muted>{reportProblem}</Muted> : null}
+        <Button
+          title="Create PDF"
+          busy={busy === "report"}
+          disabled={reportProblem !== null || busy !== null}
+          onPress={exportReportPdf}
         />
       </Card>
 

@@ -46,6 +46,7 @@ export default function AttentionSessionScreen() {
   const [reflectText, setReflectText] = useState("");
   const [reflecting, setReflecting] = useState(false);
   const [reflectResult, setReflectResult] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   function fill(value: AttentionSession) {
     setSession(value);
@@ -169,7 +170,7 @@ export default function AttentionSessionScreen() {
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }} keyboardVerticalOffset={90}>
       <Stack.Screen options={{ title: sessionTypeLabel(session.session_type) }} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" scrollEnabled={!dragging}>
         {params.reflect === "1" ? reflectionCard : null}
 
         <Card>
@@ -180,15 +181,21 @@ export default function AttentionSessionScreen() {
           {isMundane ? (
             <Field label="Everyday task" value={taskName} onChangeText={setTaskName} maxLength={120} />
           ) : null}
-          <DateStepper label="Day" value={date} onChange={(value) => setDate(value)} fallback={colomboToday()} />
+          <DateStepper
+            label="Day"
+            value={date}
+            // Sessions can't be in the future: stepping past today stays on today.
+            onChange={(value) => setDate(value && value > colomboToday() ? colomboToday() : value)}
+            fallback={colomboToday()}
+          />
           <MinutesStepper value={minutes} onChange={setMinutes} />
         </Card>
 
         {isMundane ? (
           <Card>
-            <FocusSlider label={ATTENTION_COPY.beforeQuestion} value={before} onChange={setBefore} />
+            <FocusSlider label={ATTENTION_COPY.beforeQuestion} value={before} onChange={setBefore} onDragChange={setDragging} />
             <AnchorPicker value={anchors} onChange={setAnchors} />
-            <FocusSlider label={ATTENTION_COPY.afterQuestion} value={after} onChange={setAfter} />
+            <FocusSlider label={ATTENTION_COPY.afterQuestion} value={after} onChange={setAfter} onDragChange={setDragging} />
           </Card>
         ) : (
           <Card>
