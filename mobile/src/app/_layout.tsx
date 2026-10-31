@@ -46,6 +46,10 @@ function RootNavigator() {
         <Stack.Screen name="worry" options={{ title: "Worry postponement" }} />
         <Stack.Screen name="activation/index" options={{ title: "Behavioural activation" }} />
         <Stack.Screen name="activation/[id]" options={{ title: "Activity" }} />
+        <Stack.Screen name="attention/index" options={{ title: "Attention training" }} />
+        <Stack.Screen name="attention/meditate" options={{ title: "Meditation" }} />
+        <Stack.Screen name="attention/[id]" options={{ title: "Session" }} />
+        <Stack.Screen name="attention/settings" options={{ title: "Attention settings" }} />
         <Stack.Screen name="export" options={{ title: "Export reports" }} />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
         <Stack.Screen name="support/index" options={{ title: "Support" }} />

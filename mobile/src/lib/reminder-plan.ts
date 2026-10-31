@@ -149,13 +149,18 @@ export function planReminders(input: PlanInput): PlannedReminder[] {
         if (isToday && input.doneRoutineIdsToday.includes(routine.id)) continue;
 
         const breathing = /breath/i.test(routine.title);
+        const attention = /attention/i.test(routine.title);
         add({
           id: `habit:${key}:${routine.id}`,
           kind: "habit",
           channelId: "reminders",
           title: routine.title,
-          body: breathing ? "Two slow minutes. Tap to start." : "A gentle reminder for today's habit.",
-          url: breathing ? "/breathe?minutes=2" : "/",
+          body: attention
+            ? "One everyday task with full attention. Wandering is part of it."
+            : breathing
+              ? "Two slow minutes. Tap to start."
+              : "A gentle reminder for today's habit.",
+          url: attention ? "/attention" : breathing ? "/breathe?minutes=2" : "/",
           at: atTime(day, clock),
         });
       }

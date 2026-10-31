@@ -1046,6 +1046,21 @@ test("attention: mobile helpers split attention to 100 and round timer minutes",
   assert.deepEqual(groups.map((group) => [group.date, group.sessions.length]), [["2026-10-31", 2], ["2026-10-30", 1]]);
 });
 
+test("attention: the attention routine's reminder opens the attention screen", () => {
+  const plan = planReminders({
+    now: new Date(2026, 9, 31, 6, 0),
+    settings: { reminders_evening_enabled: false, reminders_evening_time: "21:30", reminders_thinking_enabled: false, reminders_morning_enabled: false, reminders_morning_time: "09:00", reminders_habits_enabled: true, reminders_quiet_enabled: false, reminders_quiet_start: "23:00", reminders_quiet_end: "07:00" },
+    dayClosed: false,
+    doneRoutineIdsToday: [],
+    worry: null,
+    routines: [{ id: 5, title: "Attention training", remind_at: "07:00", is_active: true, days_of_week: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], start_date: "2026-10-01", end_date: null }],
+    roughPatchAt: null,
+    days: 1,
+  });
+  assert.equal(plan[0].url, "/attention");
+  assert.ok(/wandering is part of it/i.test(plan[0].body));
+});
+
 test("attention: phone and web wording are identical", () => {
   assert.deepEqual(mobileAttention.ATTENTION_COPY, ATTENTION_COPY);
   assert.deepEqual(mobileAttention.ANCHOR_PROMPTS, ANCHOR_PROMPTS);
