@@ -1,3 +1,4 @@
+export * from "@/lib/db/attention";
 export * from "@/lib/db/activation";
 export * from "@/lib/db/anchor-notes";
 export * from "@/lib/db/conversations";

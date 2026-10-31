@@ -282,6 +282,33 @@ export type BehaviouralActivationEntry = {
   updated_at: Date;
 };
 
+export type AttentionSession = {
+  id: number;
+  user_id: number;
+  session_type: "mundane_task" | "meditation";
+  task_name: string;
+  entry_date: string;
+  started_at: Date;
+  duration_minutes: number;
+  self_focus_before: number | null;
+  self_focus_after: number | null;
+  // Always 100 minus the matching self focus (computed by the database).
+  task_focus_before: number | null;
+  task_focus_after: number | null;
+  anchors_used: Array<"touch" | "sight" | "hearing" | "smell" | "taste"> | null;
+  mood_before: number | null;
+  mood_after: number | null;
+  comments: string | null;
+  linked_task_id: number | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type AttentionTaskIdea = {
+  id: number;
+  name: string;
+};
+
 export type ConversationSummary = {
   id: number;
   user_id: number;
@@ -405,6 +432,11 @@ export type UserSettings = {
   reminders_quiet_enabled: boolean;    // default: true
   reminders_quiet_start: string;       // default: "23:00"
   reminders_quiet_end: string;         // default: "07:00"
+
+  // Attention training: guided meditation step lengths in seconds
+  attention_observe_seconds: number;   // default: 60
+  attention_belly_seconds: number;     // default: 120
+  attention_body_seconds: number;      // default: 120
 
   // Server push
   push_support_alerts: boolean;        // default: true (very low entry written outside the app)

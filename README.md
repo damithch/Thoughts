@@ -55,6 +55,7 @@ The **AI Task Control Center** provides a focused interface for reviewing and ch
 ### Behavioural and cognitive exercises
 
 - **Behavioural Activation**: record activities with before/after ratings for depression, pleasure, and achievement, then save them to the journal.
+- **Attention Training** (CCI *What? Me Worry!?!* module 4): log mundane-task focusing sessions with before/after attention ratings (task focus is always 100 minus self focus), sense anchors and notes; run a guided 3-step breathing meditation; review history, a weekly practice strip, streak, minutes and a 30-day focus trend. Sessions can tick off a daily "Attention training" routine and become journal reflections.
 - **Worry Postponement**: complete a structured seven-day module with worry definitions, evidence for and against, scheduled thinking time, postponed items, experiment-day observations, and outcome comparisons.
 
 ### RAG and semantic personal search
@@ -80,6 +81,7 @@ Thoughts includes a JSON-RPC MCP server at `/api/mcp`, secured with an API key a
 - `get_behavioural_activation_entries`
 - `delete_conversation_log`
 - `search_journal` for semantic search across the indexed archive
+- `create_attention_session`, `get_attention_sessions` and `get_attention_stats` for attention training
 
 The server implements MCP protocol version `2024-11-05`, exposes `initialize`, `tools/list`, and `tools/call`, and keeps MCP data scoped to the configured user.
 
@@ -117,6 +119,7 @@ External assistants can save structured conversation summaries containing a date
 | Conversation archive | `/dashboard/conversations` |
 | Behavioural Activation | `/dashboard/activation` |
 | Worry Postponement | `/dashboard/worry-postponement` |
+| Attention Training | `/dashboard/attention` |
 | Settings | `/dashboard/settings` |
 
 ## API and integration endpoints

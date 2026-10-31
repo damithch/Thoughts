@@ -303,6 +303,12 @@ export default async function DashboardPage({
                 BA Worksheet
               </Link>
               <Link
+                href="/dashboard/attention"
+                className="rounded-full border border-stone-900/10 px-4 py-3 text-center text-stone-900 transition-colors hover:bg-stone-50"
+              >
+                Attention Training
+              </Link>
+              <Link
                 href="/dashboard/worry-postponement"
                 className="rounded-full border border-teal-950/10 px-4 py-3 text-center text-teal-950 transition-colors hover:bg-teal-50"
               >

@@ -40,6 +40,12 @@ export default function MoreScreen() {
           onPress={() => router.push("/worry")}
         />
         <NavRow
+          icon="eye-outline"
+          title="Attention training"
+          subtitle="Everyday task focusing and short meditations"
+          onPress={() => router.push("/attention")}
+        />
+        <NavRow
           icon="walk-outline"
           title="Behavioural activation"
           subtitle="Rate activities before and after"

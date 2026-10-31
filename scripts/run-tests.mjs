@@ -31,6 +31,18 @@ import {
   validateVoiceAudio,
 } from "../src/lib/voice-capture.ts";
 
+import {
+  computeAttentionStats,
+  computeAttentionStreak,
+  describeFocusChange,
+  mergeAttentionUpdate,
+  parseAttentionSessionInput,
+  parseStatsRange,
+} from "../src/lib/attention/rules.ts";
+import { ATTENTION_BANNED_WORDS, ATTENTION_COPY, ANCHOR_PROMPTS, MEDITATION_STEP_COPY } from "../src/lib/attention/copy.ts";
+import * as mobileAttention from "../mobile/src/lib/attention.ts";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+
 console.log("Running Thoughts test suite via Node.js native test runner...\n");
 
 let passed = 0;
@@ -941,6 +953,140 @@ test("voice (app): hints follow the recording state; save label counts extras", 
   assert.equal(saveLabel(1, 0), "Save thought + 1 task");
   assert.equal(saveLabel(2, 1), "Save thought + 2 tasks + 1 worry");
   assert.equal(saveLabel(0, 3), "Save thought + 3 worries");
+});
+
+// Attention training
+const ATT_TODAY = "2026-10-31";
+
+test("attention: a mundane session keeps self focus; task focus is never read from the client", () => {
+  const parsed = parseAttentionSessionInput(
+    { sessionType: "mundane_task", taskName: "  Walking   to campus ", durationMinutes: 12, selfFocusBefore: 70, selfFocusAfter: 40, taskFocusBefore: 99, anchorsUsed: ["Hearing", "touch", "touch"] },
+    ATT_TODAY,
+  );
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.value.taskName, "Walking to campus");
+  assert.equal(parsed.value.entryDate, ATT_TODAY);
+  assert.deepEqual(parsed.value.anchorsUsed, ["touch", "hearing"]);
+  assert.equal("taskFocusBefore" in parsed.value, false);
+});
+
+test("attention: meditation gets a default name and refuses percentages and anchors", () => {
+  const ok = parseAttentionSessionInput({ sessionType: "meditation", durationMinutes: 5 }, ATT_TODAY);
+  assert.equal(ok.ok && ok.value.taskName, "Breathing meditation");
+  assert.equal(parseAttentionSessionInput({ sessionType: "meditation", durationMinutes: 5, selfFocusBefore: 50 }, ATT_TODAY).ok, false);
+  assert.equal(parseAttentionSessionInput({ sessionType: "meditation", durationMinutes: 5, anchorsUsed: ["sight"] }, ATT_TODAY).ok, false);
+});
+
+test("attention: rejects bad durations, percents, anchors, types and future days", () => {
+  const base = { sessionType: "mundane_task", taskName: "Dishes" };
+  for (const body of [
+    { ...base, durationMinutes: 0 },
+    { ...base, durationMinutes: 121 },
+    { ...base, durationMinutes: 2.5 },
+    { ...base, durationMinutes: "10" },
+    { ...base, durationMinutes: 5, selfFocusBefore: 101 },
+    { ...base, durationMinutes: 5, selfFocusAfter: -1 },
+    { ...base, durationMinutes: 5, anchorsUsed: ["sixth sense"] },
+    { ...base, durationMinutes: 5, entryDate: "2026-11-01" },
+    { ...base, durationMinutes: 5, moodBefore: 11 },
+    { sessionType: "yoga", durationMinutes: 5 },
+    { sessionType: "mundane_task", taskName: "   ", durationMinutes: 5 },
+  ]) {
+    assert.equal(parseAttentionSessionInput(body, ATT_TODAY).ok, false, JSON.stringify(body));
+  }
+});
+
+test("attention: an update merges changes; switching to meditation drops mundane-only fields", () => {
+  const stored = { sessionType: "mundane_task", taskName: "Dishes", durationMinutes: 5, selfFocusBefore: 60, selfFocusAfter: 30, anchorsUsed: ["touch"], comments: "" };
+  assert.equal(mergeAttentionUpdate(stored, { selfFocusAfter: 20, user_id: 9 }).selfFocusAfter, 20);
+  assert.equal("user_id" in mergeAttentionUpdate(stored, { user_id: 9 }), false);
+  const switched = mergeAttentionUpdate(stored, { sessionType: "meditation" });
+  assert.equal(parseAttentionSessionInput(switched, ATT_TODAY).ok, true);
+  assert.equal(parseStatsRange("30d"), 30);
+  assert.equal(parseStatsRange("whatever"), 7);
+});
+
+test("attention: streak counts back from today, or from yesterday if today is still open", () => {
+  assert.equal(computeAttentionStreak(["2026-10-31", "2026-10-30", "2026-10-29", "2026-10-27"], ATT_TODAY), 3);
+  assert.equal(computeAttentionStreak(["2026-10-30", "2026-10-29"], ATT_TODAY), 2);
+  assert.equal(computeAttentionStreak(["2026-10-29"], ATT_TODAY), 0);
+  assert.equal(computeAttentionStreak([], ATT_TODAY), 0);
+});
+
+test("attention: stats fill every day, total minutes and average task-focus change", () => {
+  const session = (date, type, minutes, before = null, after = null) => ({
+    session_type: type, task_name: "Walk", entry_date: date, started_at: `${date}T06:00:00Z`, duration_minutes: minutes,
+    self_focus_before: before === null ? null : 100 - before, self_focus_after: after === null ? null : 100 - after,
+    task_focus_before: before, task_focus_after: after, anchors_used: null, mood_before: null, mood_after: null, comments: null,
+  });
+  const stats = computeAttentionStats(
+    [session("2026-10-31", "mundane_task", 10, 30, 60), session("2026-10-31", "meditation", 5), session("2026-10-29", "mundane_task", 5, 50, 40), session("2026-10-01", "meditation", 9)],
+    ["2026-10-31", "2026-10-29"],
+    ATT_TODAY,
+    7,
+  );
+  assert.equal(stats.days.length, 7);
+  assert.equal(stats.from, "2026-10-25");
+  assert.deepEqual([stats.sessionCount, stats.totalMinutes, stats.mundaneCount, stats.meditationCount], [3, 20, 2, 1]);
+  assert.equal(stats.avgTaskFocusChange, 10);
+  assert.equal(stats.daysWithBoth, 1);
+  assert.equal(stats.streak, 1);
+  assert.deepEqual(stats.trend.map((point) => [point.before, point.after]), [[50, 40], [30, 60]]);
+  assert.equal(describeFocusChange(30, 60), "30% → 60% on the task");
+});
+
+test("attention: mobile helpers split attention to 100 and round timer minutes", () => {
+  assert.deepEqual(mobileAttention.splitAttention(70), { self: 70, task: 30 });
+  assert.deepEqual(mobileAttention.splitAttention(-4), { self: 0, task: 100 });
+  assert.equal(mobileAttention.minutesFromSeconds(20), 1);
+  assert.equal(mobileAttention.minutesFromSeconds(330), 6);
+  assert.equal(mobileAttention.minutesFromSeconds(99999), 120);
+  assert.deepEqual(mobileAttention.meditationSteps({ attention_belly_seconds: 90 }).map((step) => step.seconds), [60, 90, 120]);
+  const groups = mobileAttention.groupSessionsByDay([{ entry_date: "2026-10-31" }, { entry_date: "2026-10-31" }, { entry_date: "2026-10-30" }]);
+  assert.deepEqual(groups.map((group) => [group.date, group.sessions.length]), [["2026-10-31", 2], ["2026-10-30", 1]]);
+});
+
+test("attention: the attention routine's reminder opens the attention screen", () => {
+  const plan = planReminders({
+    now: new Date(2026, 9, 31, 6, 0),
+    settings: { reminders_evening_enabled: false, reminders_evening_time: "21:30", reminders_thinking_enabled: false, reminders_morning_enabled: false, reminders_morning_time: "09:00", reminders_habits_enabled: true, reminders_quiet_enabled: false, reminders_quiet_start: "23:00", reminders_quiet_end: "07:00" },
+    dayClosed: false,
+    doneRoutineIdsToday: [],
+    worry: null,
+    routines: [{ id: 5, title: "Attention training", remind_at: "07:00", is_active: true, days_of_week: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], start_date: "2026-10-01", end_date: null }],
+    roughPatchAt: null,
+    days: 1,
+  });
+  assert.equal(plan[0].url, "/attention");
+  assert.ok(/wandering is part of it/i.test(plan[0].body));
+});
+
+test("attention: phone and web wording are identical", () => {
+  assert.deepEqual(mobileAttention.ATTENTION_COPY, ATTENTION_COPY);
+  assert.deepEqual(mobileAttention.ANCHOR_PROMPTS, ANCHOR_PROMPTS);
+  assert.deepEqual(mobileAttention.MEDITATION_STEP_COPY, MEDITATION_STEP_COPY);
+});
+
+test("attention: no screen calls mind-wandering a failure", () => {
+  const roots = ["src/lib/attention/copy.ts", "mobile/src/lib/attention.ts", "src/app/dashboard/attention", "mobile/src/app/attention", "mobile/src/components/attention"];
+  const files = [];
+  const walk = (path) => {
+    if (!existsSync(path)) return;
+    if (statSync(path).isDirectory()) readdirSync(path).forEach((name) => walk(`${path}/${name}`));
+    else if (/\.(ts|tsx)$/.test(path) && !path.endsWith("actions.ts")) files.push(path);
+  };
+  roots.forEach(walk);
+  assert.ok(files.length >= 2);
+  for (const file of files) {
+    // Only user-facing text: string literals and JSX text, not code identifiers.
+    const text = readFileSync(file, "utf8");
+    const strings = [...text.matchAll(/"([^"\n]*)"|`([^`]*)`|>([^<>{}\n]+)</g)].map((match) => match[1] ?? match[2] ?? match[3]);
+    for (const value of strings) {
+      for (const pattern of ATTENTION_BANNED_WORDS) {
+        assert.ok(!pattern.test(value), `${file}: "${value.trim()}" matches ${pattern}`);
+      }
+    }
+  }
 });
 
 console.log(`\nTest Results: ${passed} passed, ${failed} failed.`);
