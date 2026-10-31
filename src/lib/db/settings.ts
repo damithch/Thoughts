@@ -1,6 +1,7 @@
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import type { RagDocumentKind, SupportContact, UserSettings } from "@/lib/db/types";
+import { DEFAULT_MEDITATION_STEPS, MEDITATION_STEP_LIMITS } from "@/lib/attention/rules";
 import { parseClockTime } from "@/lib/tasks/validation";
 
 const ALL_RAG_KINDS: RagDocumentKind[] = [
@@ -70,6 +71,11 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   reminders_quiet_enabled: true,
   reminders_quiet_start: "23:00",
   reminders_quiet_end: "07:00",
+
+  // Attention training
+  attention_observe_seconds: DEFAULT_MEDITATION_STEPS.observe,
+  attention_belly_seconds: DEFAULT_MEDITATION_STEPS.belly,
+  attention_body_seconds: DEFAULT_MEDITATION_STEPS.body,
 
   // Server push
   push_support_alerts: true,
@@ -144,6 +150,10 @@ export async function getUserSettings(userId: number): Promise<UserSettings> {
     reminders_quiet_enabled: safeBool(stored.reminders_quiet_enabled, DEFAULT_USER_SETTINGS.reminders_quiet_enabled),
     reminders_quiet_start: parseClockTime(stored.reminders_quiet_start) ?? DEFAULT_USER_SETTINGS.reminders_quiet_start,
     reminders_quiet_end: parseClockTime(stored.reminders_quiet_end) ?? DEFAULT_USER_SETTINGS.reminders_quiet_end,
+
+    attention_observe_seconds: clampInt(stored.attention_observe_seconds, MEDITATION_STEP_LIMITS.min, MEDITATION_STEP_LIMITS.max, DEFAULT_USER_SETTINGS.attention_observe_seconds),
+    attention_belly_seconds: clampInt(stored.attention_belly_seconds, MEDITATION_STEP_LIMITS.min, MEDITATION_STEP_LIMITS.max, DEFAULT_USER_SETTINGS.attention_belly_seconds),
+    attention_body_seconds: clampInt(stored.attention_body_seconds, MEDITATION_STEP_LIMITS.min, MEDITATION_STEP_LIMITS.max, DEFAULT_USER_SETTINGS.attention_body_seconds),
 
     push_support_alerts: safeBool(stored.push_support_alerts, DEFAULT_USER_SETTINGS.push_support_alerts),
     push_last_support_trigger: safeString(stored.push_last_support_trigger, DEFAULT_USER_SETTINGS.push_last_support_trigger),

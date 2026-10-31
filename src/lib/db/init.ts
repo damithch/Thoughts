@@ -391,6 +391,62 @@ export async function ensureInitialized() {
         ON behavioural_activation_entries (user_id, entry_date ASC, created_at ASC)
       `);
 
+      // Attention training (What? Me Worry!?! module 4): mundane-task focusing and meditation.
+      // Task focus is always 100 minus self focus, so the database computes it.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS attention_sessions (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          session_type TEXT NOT NULL,
+          task_name TEXT NOT NULL,
+          entry_date DATE NOT NULL,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          duration_minutes INTEGER NOT NULL,
+          self_focus_before INTEGER,
+          self_focus_after INTEGER,
+          task_focus_before INTEGER GENERATED ALWAYS AS (100 - self_focus_before) STORED,
+          task_focus_after INTEGER GENERATED ALWAYS AS (100 - self_focus_after) STORED,
+          anchors_used TEXT[],
+          mood_before INTEGER,
+          mood_after INTEGER,
+          comments TEXT,
+          linked_task_id BIGINT REFERENCES daily_tasks(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CHECK (session_type IN ('mundane_task', 'meditation')),
+          CHECK (duration_minutes BETWEEN 1 AND 120),
+          CHECK (self_focus_before IS NULL OR self_focus_before BETWEEN 0 AND 100),
+          CHECK (self_focus_after IS NULL OR self_focus_after BETWEEN 0 AND 100),
+          CHECK (anchors_used IS NULL OR anchors_used <@ ARRAY['touch','sight','hearing','smell','taste']::TEXT[]),
+          CHECK (mood_before IS NULL OR mood_before BETWEEN 1 AND 10),
+          CHECK (mood_after IS NULL OR mood_after BETWEEN 1 AND 10),
+          CHECK (
+            session_type = 'mundane_task'
+            OR (self_focus_before IS NULL AND self_focus_after IS NULL AND anchors_used IS NULL)
+          )
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS attention_sessions_user_date_idx
+        ON attention_sessions (user_id, entry_date DESC, started_at DESC)
+      `);
+
+      // The user's own list of everyday tasks to practise with (quick-pick chips).
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS attention_task_ideas (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS attention_task_ideas_user_name_idx
+        ON attention_task_ideas (user_id, lower(name))
+      `);
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS conversation_summaries (
           id BIGSERIAL PRIMARY KEY,

@@ -229,6 +229,108 @@ await test("push devices: register, move to another account, remove", async () =
   await pool.query(`DELETE FROM users WHERE id = $1`, [other[0].id]);
 });
 
+const attention = await import("@/lib/db/attention");
+const { parseAttentionSessionInput } = await import("@/lib/attention/rules");
+
+function attentionValues(body: Record<string, unknown>) {
+  const parsed = parseAttentionSessionInput(body, today);
+  if (!parsed.ok) throw new Error(parsed.error);
+  return parsed.value;
+}
+
+await test("attention: task focus is always 100 minus self focus, and the task is remembered", async () => {
+  const { session, completedTask } = await attention.createAttentionSession(
+    userId,
+    attentionValues({ sessionType: "mundane_task", taskName: "Washing dishes", durationMinutes: 6, selfFocusBefore: 70, selfFocusAfter: 35, anchorsUsed: ["touch", "hearing"] }),
+    { today },
+  );
+  assert.deepEqual([session.task_focus_before, session.task_focus_after], [30, 65]);
+  assert.deepEqual(session.anchors_used, ["touch", "hearing"]);
+  assert.equal(completedTask, null);
+  assert.ok((await attention.getAttentionTaskIdeas(userId)).some((idea) => idea.name === "Washing dishes"));
+
+  const updated = await attention.updateAttentionSession(session.id, userId, attentionValues({ ...session, sessionType: "mundane_task", taskName: "Washing dishes", durationMinutes: 6, selfFocusBefore: 10, selfFocusAfter: null }));
+  assert.deepEqual([updated?.task_focus_before, updated?.task_focus_after], [90, null]);
+});
+
+await test("attention: the database refuses percentages on a meditation and out-of-range values", async () => {
+  await assert.rejects(pool.query(
+    `INSERT INTO attention_sessions (user_id, session_type, task_name, entry_date, duration_minutes, self_focus_before)
+     VALUES ($1, 'meditation', 'x', $2::date, 5, 50)`,
+    [userId, today],
+  ));
+  await assert.rejects(pool.query(
+    `INSERT INTO attention_sessions (user_id, session_type, task_name, entry_date, duration_minutes)
+     VALUES ($1, 'mundane_task', 'x', $2::date, 121)`,
+    [userId, today],
+  ));
+  await assert.rejects(pool.query(
+    `INSERT INTO attention_sessions (user_id, session_type, task_name, entry_date, duration_minutes, anchors_used)
+     VALUES ($1, 'mundane_task', 'x', $2::date, 5, ARRAY['sixth sense'])`,
+    [userId, today],
+  ));
+});
+
+await test("attention: another user can't read, change or delete a session", async () => {
+  const { rows: other } = await pool.query<{ id: number }>(
+    `INSERT INTO users (name, email, password_hash) VALUES ('Other', $1, 'x:y') RETURNING id`,
+    [`db-test-attention-${Date.now()}@example.test`],
+  );
+  const { session } = await attention.createAttentionSession(userId, attentionValues({ sessionType: "meditation", durationMinutes: 5 }), { today });
+  assert.equal(session.task_name, "Breathing meditation");
+  assert.equal(await attention.getAttentionSessionForUser(session.id, other[0].id), null);
+  assert.equal(await attention.updateAttentionSession(session.id, other[0].id, attentionValues({ sessionType: "meditation", durationMinutes: 9 })), null);
+  assert.equal(await attention.deleteAttentionSession(session.id, other[0].id), false);
+  assert.equal((await attention.getAttentionSessions(other[0].id)).length, 0);
+  assert.equal((await attention.getAttentionSessionForUser(session.id, userId))?.duration_minutes, 5);
+  await pool.query(`DELETE FROM users WHERE id = $1`, [other[0].id]);
+});
+
+await test("attention: saving can tick off today's attention routine, and deleting the task keeps the session", async () => {
+  const reminder = await attention.setAttentionReminder(userId, "07:15", today);
+  assert.equal(reminder?.time, "07:15");
+  assert.equal((await attention.setAttentionReminder(userId, "07:30", today))?.routineId, reminder?.routineId, "reuses the routine");
+
+  const { session, completedTask } = await attention.createAttentionSession(
+    userId,
+    attentionValues({ sessionType: "mundane_task", taskName: "Walking", durationMinutes: 10, selfFocusBefore: 60, selfFocusAfter: 40 }),
+    { today, completeTask: true },
+  );
+  assert.equal(completedTask, attention.ATTENTION_ROUTINE_TITLE);
+  const task = (await tasksOn(today)).find((t) => t.recurring_task_id === reminder?.routineId)!;
+  assert.equal(task.status, "done");
+  assert.equal(session.linked_task_id, task.id);
+
+  const again = await attention.createAttentionSession(userId, attentionValues({ sessionType: "meditation", durationMinutes: 3 }), { today, completeTask: true });
+  assert.notEqual(again.completedTask, attention.ATTENTION_ROUTINE_TITLE, "an already-done task isn't ticked twice");
+
+  await db.deleteTask(task.id, userId);
+  assert.equal((await attention.getAttentionSessionForUser(session.id, userId))?.linked_task_id, null);
+
+  const cleared = await attention.setAttentionReminder(userId, null, today);
+  assert.deepEqual([cleared?.time, cleared?.active], [null, true], "clearing the time keeps the routine");
+});
+
+await test("attention: stats count today's sessions and the streak runs back through yesterday", async () => {
+  await attention.createAttentionSession(userId, attentionValues({ sessionType: "meditation", durationMinutes: 4, entryDate: yesterday }), { today });
+  const stats = await attention.getAttentionStats(userId, today, 7);
+  const todayStats = stats.days.find((day) => day.date === today)!;
+  assert.ok(todayStats.mundane >= 2 && todayStats.meditation >= 1);
+  assert.equal(stats.days.length, 7);
+  assert.equal(stats.streak, 2);
+  assert.ok(stats.trend.some((point) => point.before === 40 && point.after === 60));
+});
+
+await test("attention: a reflection becomes one tagged thought, even if requested twice", async () => {
+  const [session] = await attention.getAttentionSessions(userId, { type: "mundane_task", limit: 1 });
+  const first = await attention.createAttentionReflection(userId, session, { mood: 6, text: "Caught my mind drifting three times." });
+  const second = await attention.createAttentionReflection(userId, session, { mood: 6, text: "Again" });
+  assert.equal(first, second);
+  const { rows } = await pool.query<{ tags: string[]; category: string }>(`SELECT tags, category FROM thoughts WHERE id = $1`, [first]);
+  assert.ok(rows[0].tags.includes("attention-training"));
+  assert.equal(rows[0].category, "Attention training");
+});
+
 await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 await pool.end();
 
