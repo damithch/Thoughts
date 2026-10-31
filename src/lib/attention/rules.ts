@@ -330,3 +330,141 @@ export function describeFocusChange(before: number | null, after: number | null)
 export function taskTitlePatterns(type: AttentionSessionType) {
   return type === "meditation" ? ["%attention%", "%meditat%", "%breath%"] : ["%attention%"];
 }
+
+// --- Date ranges (reports, MCP) ---
+
+export const REPORT_MAX_DAYS = 92;
+
+function daysBetween(from: string, to: string) {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+// Missing dates default to the last 7 days ending today. Both ends inclusive.
+export function parseDateRange(
+  fromValue: unknown,
+  toValue: unknown,
+  today: string,
+  maxDays: number = REPORT_MAX_DAYS,
+): { ok: true; from: string; to: string } | { ok: false; error: string } {
+  const to = isMissing(toValue) ? today : toValue;
+  if (!isValidTaskDate(to)) return { ok: false, error: "to must be a valid YYYY-MM-DD date." };
+  const from = isMissing(fromValue) ? shiftColomboDate(to, -6) : fromValue;
+  if (!isValidTaskDate(from)) return { ok: false, error: "from must be a valid YYYY-MM-DD date." };
+  if (from > to) return { ok: false, error: "from must be on or before to." };
+  if (daysBetween(from, to) + 1 > maxDays) {
+    return { ok: false, error: `A report can cover at most ${maxDays} days.` };
+  }
+  return { ok: true, from, to };
+}
+
+// --- Insights (analysis over a date range) ---
+
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+function average(values: number[]) {
+  return values.length === 0 ? null : Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
+}
+
+export type AttentionInsights = {
+  from: string;
+  to: string;
+  sessionCount: number;
+  mundaneCount: number;
+  meditationCount: number;
+  totalMinutes: number;
+  daysPractised: number;
+  focus: {
+    ratedSessions: number;
+    avgTaskFocusBefore: number | null;
+    avgTaskFocusAfter: number | null;
+    avgChange: number | null;
+    // Average "after" task focus in the first and second half of the rated sessions (oldest first).
+    earlierAvgAfter: number | null;
+    laterAvgAfter: number | null;
+  };
+  byTask: { taskName: string; sessions: number; minutes: number; avgBefore: number | null; avgAfter: number | null; avgChange: number | null }[];
+  anchors: { anchor: AttentionAnchor; count: number; shareOfTaskSessions: number }[];
+  meditation: { sessions: number; minutes: number; avgMinutes: number | null; avgMoodChange: number | null };
+  byWeekday: { weekday: (typeof WEEKDAYS)[number]; sessions: number }[];
+  recentNotes: { date: string; type: AttentionSessionType; taskName: string; comments: string }[];
+};
+
+export function computeAttentionInsights(sessions: AttentionSessionLike[], from: string, to: string): AttentionInsights {
+  const inRange = sessions
+    .filter((session) => session.entry_date >= from && session.entry_date <= to)
+    .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+  const mundane = inRange.filter((session) => session.session_type === "mundane_task");
+  const meditation = inRange.filter((session) => session.session_type === "meditation");
+  const rated = mundane.filter((session) => session.task_focus_before !== null && session.task_focus_after !== null);
+  const half = Math.floor(rated.length / 2);
+
+  const tasks = new Map<string, AttentionSessionLike[]>();
+  for (const session of mundane) {
+    const key = session.task_name.trim().toLowerCase();
+    tasks.set(key, [...(tasks.get(key) ?? []), session]);
+  }
+
+  const moodChanges = meditation
+    .filter((session) => session.mood_before !== null && session.mood_after !== null)
+    .map((session) => (session.mood_after as number) - (session.mood_before as number));
+
+  return {
+    from,
+    to,
+    sessionCount: inRange.length,
+    mundaneCount: mundane.length,
+    meditationCount: meditation.length,
+    totalMinutes: inRange.reduce((sum, session) => sum + session.duration_minutes, 0),
+    daysPractised: new Set(inRange.map((session) => session.entry_date)).size,
+    focus: {
+      ratedSessions: rated.length,
+      avgTaskFocusBefore: average(rated.map((session) => session.task_focus_before as number)),
+      avgTaskFocusAfter: average(rated.map((session) => session.task_focus_after as number)),
+      avgChange: average(rated.map((session) => (session.task_focus_after as number) - (session.task_focus_before as number))),
+      earlierAvgAfter: half > 0 ? average(rated.slice(0, half).map((session) => session.task_focus_after as number)) : null,
+      laterAvgAfter: half > 0 ? average(rated.slice(rated.length - half).map((session) => session.task_focus_after as number)) : null,
+    },
+    byTask: [...tasks.values()]
+      .map((group) => {
+        const groupRated = group.filter((session) => session.task_focus_before !== null && session.task_focus_after !== null);
+        return {
+          taskName: group[group.length - 1].task_name,
+          sessions: group.length,
+          minutes: group.reduce((sum, session) => sum + session.duration_minutes, 0),
+          avgBefore: average(group.filter((s) => s.task_focus_before !== null).map((s) => s.task_focus_before as number)),
+          avgAfter: average(group.filter((s) => s.task_focus_after !== null).map((s) => s.task_focus_after as number)),
+          avgChange: average(groupRated.map((s) => (s.task_focus_after as number) - (s.task_focus_before as number))),
+        };
+      })
+      .sort((a, b) => b.sessions - a.sessions || a.taskName.localeCompare(b.taskName)),
+    anchors: ATTENTION_ANCHORS.map((anchor) => {
+      const count = mundane.filter((session) => session.anchors_used?.includes(anchor)).length;
+      return { anchor, count, shareOfTaskSessions: mundane.length ? Math.round((count / mundane.length) * 100) : 0 };
+    })
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count),
+    meditation: {
+      sessions: meditation.length,
+      minutes: meditation.reduce((sum, session) => sum + session.duration_minutes, 0),
+      avgMinutes: average(meditation.map((session) => session.duration_minutes)),
+      avgMoodChange: average(moodChanges),
+    },
+    byWeekday: WEEKDAYS.map((weekday, index) => ({
+      weekday,
+      sessions: inRange.filter((session) => {
+        const [year, month, day] = session.entry_date.split("-").map(Number);
+        return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === index;
+      }).length,
+    })),
+    recentNotes: inRange
+      .filter((session) => session.comments && session.comments.trim())
+      .slice(-10)
+      .reverse()
+      .map((session) => ({
+        date: session.entry_date,
+        type: session.session_type,
+        taskName: session.task_name,
+        comments: (session.comments as string).trim(),
+      })),
+  };
+}
