@@ -359,6 +359,58 @@ await test("therapy report: worry data is limited to the range; the PDF renders"
   assert.equal(onlyWorry.attention, null);
 });
 
+const worryService = await import("@/lib/worry/service");
+
+await test("worry tools: start, log a sudden worry, record a day, evidence, update and finish", async () => {
+  const { rows: other } = await pool.query<{ id: number }>(
+    `INSERT INTO users (name, email, password_hash) VALUES ('Worry', $1, 'x:y') RETURNING id`,
+    [`db-test-worry-${Date.now()}@example.test`],
+  );
+  const worrier = other[0].id;
+
+  const none = await worryService.logPostponedWorry(worrier, { content: "What if I'm late?" }, today);
+  assert.equal(none.ok, false, "needs a running experiment");
+  assert.equal((await worryService.getWorryOverview(worrier, today)).module, null);
+
+  assert.equal((await worryService.startWorryModule(worrier, { beliefText: "Worrying helps me prepare", beliefBeforePct: 75 })).ok, true);
+  assert.equal((await worryService.startWorryModule(worrier, { beliefText: "Second" })).ok, false, "only one at a time");
+  assert.equal((await worryService.changeWorryModule(worrier, { thinkingTimeStart: "18:30", thinkingTimeDuration: 20 })).ok, true);
+
+  const logged = await worryService.logPostponedWorry(worrier, { content: "  What if the exam goes badly?  " }, today);
+  assert.ok(logged.ok);
+  if (logged.ok) {
+    assert.equal(logged.item.content, "What if the exam goes badly?");
+    assert.equal(logged.item.entry_date, today);
+    assert.equal(logged.thinkingTime.start, "18:30");
+  }
+  await worryService.logPostponedWorry(worrier, { content: "Money this month" }, today);
+
+  assert.equal((await worryService.recordWorryExperimentDay(worrier, { whatHappened: "Parked two worries" }, today)).ok, false);
+  const first = await worryService.recordWorryExperimentDay(worrier, { whatHappened: "Parked two worries", controllability: 4 }, today);
+  assert.ok(first.ok && !first.updatedExisting);
+  const second = await worryService.recordWorryExperimentDay(worrier, { thinkingTimeNotes: "Both felt smaller", controllability: 6 }, today);
+  assert.ok(second.ok && second.updatedExisting);
+  if (second.ok) assert.equal(second.day.what_happened, "Parked two worries", "kept the earlier field");
+
+  assert.equal((await worryService.addWorryEvidence(worrier, { side: "against", content: "I prepared fine last time without worrying" })).ok, true);
+  assert.equal((await worryService.addWorryEvidence(worrier, { side: "maybe", content: "x" })).ok, false);
+
+  const overview = await worryService.getWorryOverview(worrier, today);
+  assert.equal(overview.active, true);
+  assert.equal(overview.progress?.postponedToday, 2);
+  assert.equal(overview.progress?.dayNumber, 1);
+  assert.equal(overview.progress?.latestControllability, 6);
+  assert.equal(overview.evidence?.against.length, 1);
+  assert.equal((await worryService.getWorryOverview(userId, today)).module?.belief === "Worrying helps me prepare", false, "other users can't see it");
+
+  assert.equal((await worryService.changeWorryModule(worrier, { beliefAfterPct: 40, reflectionText: "Less true than I thought", status: "completed" })).ok, true);
+  const finished = await worryService.getWorryOverview(worrier, today);
+  assert.deepEqual([finished.active, finished.module?.status, finished.progress?.beliefChange], [false, "completed", -35]);
+  assert.equal((await worryService.logPostponedWorry(worrier, { content: "late worry" }, today)).ok, false, "a finished experiment takes no new worries");
+
+  await pool.query(`DELETE FROM users WHERE id = $1`, [worrier]);
+});
+
 await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 await pool.end();
 
