@@ -42,6 +42,14 @@ import {
   computeAttentionInsights,
 } from "../src/lib/attention/rules.ts";
 import { toPdfText, wrapText } from "../src/lib/reports/pdf-text.ts";
+import {
+  computeWorryProgress,
+  parseExperimentDay,
+  parseModuleChanges,
+  parseNewModule,
+  parseWorryDate,
+  parseWorryText,
+} from "../src/lib/worry/rules.ts";
 import { checkReportRange } from "../mobile/src/lib/report-range.ts";
 import { ATTENTION_BANNED_WORDS, ATTENTION_COPY, ANCHOR_PROMPTS, MEDITATION_STEP_COPY } from "../src/lib/attention/copy.ts";
 import * as mobileAttention from "../mobile/src/lib/attention.ts";
@@ -1148,6 +1156,50 @@ test("attention: insights per task, senses, meditation mood and earlier vs later
   assert.equal(insights.meditation.avgMoodChange, 3);
   assert.equal(insights.byWeekday.find((day) => day.weekday === "thu").sessions, 2);
   assert.deepEqual(insights.recentNotes.map((note) => note.comments), ["noticed my feet"]);
+});
+
+// Worry postponement (MCP tools)
+test("worry: a sudden worry is trimmed and dated today; future days and empty text are refused", () => {
+  assert.deepEqual(parseWorryText("  What if   I fail the viva?  "), { ok: true, value: "What if I fail the viva?" });
+  assert.equal(parseWorryText("   ").ok, false);
+  assert.equal(parseWorryText("x".repeat(400)).value.length, 300);
+  assert.deepEqual(parseWorryDate(undefined, "2026-11-01"), { ok: true, value: "2026-11-01" });
+  assert.equal(parseWorryDate("2026-11-02", "2026-11-01").ok, false);
+  assert.equal(parseWorryDate("2026-02-30", "2026-11-01").ok, false);
+});
+
+test("worry: module changes validate ranges, thinking time and status; only sent fields change", () => {
+  const ok = parseModuleChanges({ beliefAfterPct: 40, thinkingTimeStart: "6:30", thinkingTimeDuration: 20, status: "completed" });
+  assert.deepEqual(ok, { ok: true, value: { beliefAfterPct: 40, thinkingTimeStart: "06:30", thinkingTimeDuration: 20, status: "completed" } });
+  assert.deepEqual(parseModuleChanges({ beliefBeforePct: null }).value, { beliefBeforePct: null });
+  for (const bad of [{ beliefAfterPct: 101 }, { predictionConfidence: 11 }, { thinkingTimeStart: "25:00" }, { thinkingTimeDuration: 12 }, { status: "paused" }, { beliefText: "  " }, {}]) {
+    assert.equal(parseModuleChanges(bad).ok, false, JSON.stringify(bad));
+  }
+  assert.equal(parseNewModule({ beliefText: "Worrying keeps me safe", beliefBeforePct: 80 }).ok, true);
+  assert.equal(parseNewModule({ beliefText: "" }).ok, false);
+  assert.equal(parseNewModule({ beliefText: "x", beliefBeforePct: 150 }).ok, false);
+});
+
+test("worry: an experiment day needs controllability; partial updates keep what was recorded", () => {
+  assert.equal(parseExperimentDay({ whatHappened: "Postponed" }, null).ok, false);
+  assert.equal(parseExperimentDay({ controllability: 11 }, null).ok, false);
+  const existing = { whatHappened: "Postponed two worries", thinkingTimeNotes: "Felt smaller", controllability: 4 };
+  assert.deepEqual(parseExperimentDay({ controllability: 6 }, existing).value, { ...existing, controllability: 6 });
+  assert.deepEqual(parseExperimentDay({ thinkingTimeNotes: "Only one still mattered" }, existing).value, { ...existing, thinkingTimeNotes: "Only one still mattered" });
+});
+
+test("worry: progress counts the day number, postponed worries and the controllability trend", () => {
+  const progress = computeWorryProgress(
+    { started_on: "2026-10-27", belief_before_pct: 80, belief_after_pct: 50 },
+    [{ entry_date: "2026-10-29", controllability: 6 }, { entry_date: "2026-10-27", controllability: 3 }],
+    [{ entry_date: "2026-10-27" }, { entry_date: "2026-11-01" }, { entry_date: "2026-11-01" }],
+    "2026-11-01",
+  );
+  assert.deepEqual(
+    [progress.dayNumber, progress.experimentDaysRecorded, progress.postponedTotal, progress.postponedToday, progress.avgControllability, progress.firstControllability, progress.latestControllability, progress.beliefChange],
+    [6, 2, 3, 2, 4.5, 3, 6, -30],
+  );
+  assert.deepEqual(progress.postponedByDay, [{ date: "2026-10-27", count: 1 }, { date: "2026-11-01", count: 2 }]);
 });
 
 console.log(`\nTest Results: ${passed} passed, ${failed} failed.`);

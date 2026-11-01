@@ -518,3 +518,37 @@ export async function getWorryReportData(userId: number, from: string, to: strin
     }),
   );
 }
+
+// Every postponed worry in an experiment, oldest first.
+export async function getPostponedItemsForModule(moduleId: number): Promise<WorryPostponedItem[]> {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<WorryPostponedItem>(
+    `SELECT id, module_id, TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date, content, created_at
+     FROM worry_postponed_items
+     WHERE module_id = $1
+     ORDER BY entry_date, created_at`,
+    [moduleId],
+  );
+
+  return rows;
+}
+
+// The newest experiment of any status (used when none is active).
+export async function getLatestWorryModule(userId: number): Promise<WorryPostponementModule | null> {
+  await ensureInitialized();
+
+  const { rows } = await pool.query<WorryModuleRow>(
+    `SELECT id, user_id, belief_text, belief_before_pct, belief_after_pct,
+            thinking_time_start, thinking_time_duration, thinking_time_place,
+            prediction_text, prediction_confidence, reflection_text,
+            status, created_at, updated_at
+     FROM worry_postponement_modules
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId],
+  );
+
+  return rows[0] ? attachChildren(rows[0]) : null;
+}

@@ -43,6 +43,14 @@ import {
 } from "@/lib/attention/rules";
 import { editAttentionSession, saveAttentionSession } from "@/lib/attention/service";
 import { getTherapyReportData, parseSections } from "@/lib/reports/therapy-data";
+import {
+  addWorryEvidence,
+  changeWorryModule,
+  getWorryOverview,
+  logPostponedWorry,
+  recordWorryExperimentDay,
+  startWorryModule,
+} from "@/lib/worry/service";
 import { computeDayStreak } from "@/lib/tasks/stats";
 import { parseClockTime } from "@/lib/tasks/validation";
 import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskItem, Thought } from "@/lib/db";
@@ -580,6 +588,90 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: { days: { type: "integer", minimum: 1, maximum: 90 } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_worry_module",
+    description:
+      "The current worry postponement experiment (CCI What? Me Worry!?!): the worry belief being tested and belief % before/after, the daily thinking-time plan, prediction, evidence for and against, experiment days with controllability (0-10), today's postponed worries and progress (day number, totals, controllability trend). Falls back to the most recent experiment if none is running.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "log_postponed_worry",
+    description:
+      "Park a worry that just came up so it can wait for the daily thinking time instead of being worried about now. Use for a sudden worry the user mentions. Needs a running experiment (see start_worry_module). Returns the thinking-time plan so you can remind the user when to come back to it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "The worry in a few words (max 300 characters)." },
+        date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Defaults to today (Asia/Colombo). Not in the future." },
+      },
+      required: ["content"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "record_worry_experiment_day",
+    description:
+      "Record (or update) one day of the worry postponement experiment: what happened when worries were postponed, notes from thinking time, and how controllable the worry felt (0 = not at all, 10 = completely). Fields you leave out keep what was already recorded for that day.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Defaults to today (Asia/Colombo)." },
+        whatHappened: { type: "string" },
+        thinkingTimeNotes: { type: "string" },
+        controllability: { type: "integer", minimum: 0, maximum: 10 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_worry_module",
+    description:
+      "Change the running worry postponement experiment. Only the fields you send change: belief text or belief % before/after (0-100), thinking-time start (HH:MM), duration (5, 10, 15, 20 or 30 min) and place, prediction and its confidence (0-10), reflection, and status (completed or abandoned to finish it).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        beliefText: { type: "string" },
+        beliefBeforePct: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+        beliefAfterPct: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+        thinkingTimeStart: { type: "string", pattern: "^([01]?\\d|2[0-3]):[0-5]\\d$" },
+        thinkingTimeDuration: { type: "integer", enum: [5, 10, 15, 20, 30] },
+        thinkingTimePlace: { type: "string" },
+        predictionText: { type: "string" },
+        predictionConfidence: { type: ["integer", "null"], minimum: 0, maximum: 10 },
+        reflectionText: { type: "string" },
+        status: { type: "string", enum: ["active", "completed", "abandoned"] },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_worry_evidence",
+    description:
+      "Add a piece of evidence to the running worry experiment: 'for' supports the worry belief, 'against' goes against it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        side: { type: "string", enum: ["for", "against"] },
+        content: { type: "string", description: "The evidence in a sentence (max 500 characters)." },
+      },
+      required: ["side", "content"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "start_worry_module",
+    description:
+      "Start a new worry postponement experiment with the worry belief to test (e.g. 'Worrying helps me prepare') and optionally how strongly it is believed (0-100%). Only one can run at a time.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        beliefText: { type: "string" },
+        beliefBeforePct: { type: "integer", minimum: 0, maximum: 100 },
+      },
+      required: ["beliefText"],
       additionalProperties: false,
     },
   },
@@ -1558,6 +1650,43 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       inboxCount,
       slippingTasks: slipping.map((task) => ({ id: task.id, title: task.title, scheduled_date: task.scheduled_date, rollover_count: task.rollover_count })),
     });
+  }
+
+  if (name === "get_worry_module") {
+    return formatToolResult(await getWorryOverview(userId, getCurrentColomboDate()));
+  }
+
+  if (name === "log_postponed_worry") {
+    const result = await logPostponedWorry(userId, args, getCurrentColomboDate());
+    if (!result.ok) throw new McpInvalidParamsError(`log_postponed_worry: ${result.error}`);
+    return formatToolResult({ logged: true, item: result.item, postponedThatDay: result.postponedThatDay, thinkingTime: result.thinkingTime });
+  }
+
+  if (name === "record_worry_experiment_day") {
+    const result = await recordWorryExperimentDay(userId, args, getCurrentColomboDate());
+    if (!result.ok) throw new McpInvalidParamsError(`record_worry_experiment_day: ${result.error}`);
+    return formatToolResult({ saved: true, updatedExisting: result.updatedExisting, day: result.day });
+  }
+
+  if (name === "update_worry_module") {
+    const result = await changeWorryModule(userId, args);
+    if (!result.ok) throw new McpInvalidParamsError(`update_worry_module: ${result.error}`);
+    const experiment: Record<string, unknown> = { ...result.module };
+    delete experiment.evidence;
+    delete experiment.experiment_days;
+    return formatToolResult({ updated: true, module: experiment });
+  }
+
+  if (name === "add_worry_evidence") {
+    const result = await addWorryEvidence(userId, args);
+    if (!result.ok) throw new McpInvalidParamsError(`add_worry_evidence: ${result.error}`);
+    return formatToolResult({ added: true, evidence: result.evidence });
+  }
+
+  if (name === "start_worry_module") {
+    const result = await startWorryModule(userId, args);
+    if (!result.ok) throw new McpInvalidParamsError(`start_worry_module: ${result.error}`);
+    return formatToolResult({ started: true, module: result.module });
   }
 
   throw new Error(`Unknown tool: ${name}`);

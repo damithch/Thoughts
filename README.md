@@ -84,6 +84,7 @@ Thoughts includes a JSON-RPC MCP server at `/api/mcp`, secured with an API key a
 - `create_attention_session`, `get_attention_sessions`, `update_attention_session`, `delete_attention_session`, `get_attention_stats` and `get_attention_insights` for attention training
 - `update_recurring_task`, `delete_recurring_task` and `get_task_stats` for routines and task progress (`get_tasks` also takes a date range and title search)
 - `get_therapy_report` for attention training and worry postponement over a date range
+- `get_worry_module`, `log_postponed_worry` (park a sudden worry until thinking time), `record_worry_experiment_day`, `update_worry_module`, `add_worry_evidence` and `start_worry_module` for the worry postponement experiment
 
 The server implements MCP protocol version `2024-11-05`, exposes `initialize`, `tools/list`, and `tools/call`, and keeps MCP data scoped to the configured user.
 
