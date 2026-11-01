@@ -38,7 +38,11 @@ import {
   mergeAttentionUpdate,
   parseAttentionSessionInput,
   parseStatsRange,
+  parseDateRange,
+  computeAttentionInsights,
 } from "../src/lib/attention/rules.ts";
+import { toPdfText, wrapText } from "../src/lib/reports/pdf-text.ts";
+import { checkReportRange } from "../mobile/src/lib/report-range.ts";
 import { ATTENTION_BANNED_WORDS, ATTENTION_COPY, ANCHOR_PROMPTS, MEDITATION_STEP_COPY } from "../src/lib/attention/copy.ts";
 import * as mobileAttention from "../mobile/src/lib/attention.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -1087,6 +1091,63 @@ test("attention: no screen calls mind-wandering a failure", () => {
       }
     }
   }
+});
+
+// Reports
+test("reports: date range defaults to the last 7 days and enforces order and the 92-day limit", () => {
+  assert.deepEqual(parseDateRange(undefined, undefined, "2026-10-31"), { ok: true, from: "2026-10-25", to: "2026-10-31" });
+  assert.deepEqual(parseDateRange("2026-10-01", "2026-10-31", "2026-10-31"), { ok: true, from: "2026-10-01", to: "2026-10-31" });
+  assert.equal(parseDateRange("2026-10-31", "2026-10-01", "2026-10-31").ok, false);
+  assert.equal(parseDateRange("2026-07-01", "2026-10-31", "2026-10-31").ok, false);
+  assert.equal(parseDateRange("2026-08-01", "2026-10-31", "2026-10-31").ok, true, "exactly 92 days is fine");
+  assert.equal(parseDateRange("2026-02-30", undefined, "2026-10-31").ok, false);
+  assert.equal(checkReportRange("2026-10-25", "2026-10-31", "2026-10-31", true), null);
+  assert.ok(checkReportRange("2026-10-25", "2026-11-01", "2026-10-31", true));
+  assert.ok(checkReportRange("2026-10-25", "2026-10-31", "2026-10-31", false));
+  assert.ok(checkReportRange("2026-07-01", "2026-10-31", "2026-10-31", true));
+});
+
+test("reports: PDF text keeps Latin text, maps arrows and drops emoji", () => {
+  assert.equal(toPdfText("30% → 60% — calmer “today” 🙂"), "30% -> 60% — calmer “today” ");
+  assert.equal(toPdfText("Café, naïve"), "Café, naïve");
+  assert.equal(toPdfText("line1\nline2\tx"), "line1\nline2  x");
+  assert.equal(toPdfText("සිංහල"), "?????");
+  assert.equal(toPdfText(null), "");
+});
+
+test("reports: word wrap fits the width, keeps paragraphs and splits very long words", () => {
+  const measure = (text) => text.length;
+  assert.deepEqual(wrapText("one two three four", 9, measure), ["one two", "three", "four"]);
+  assert.deepEqual(wrapText("a\n\nb", 5, measure), ["a", "", "b"]);
+  assert.deepEqual(wrapText("abcdefghij", 4, measure), ["abcd", "efgh", "ij"]);
+});
+
+test("attention: insights per task, senses, meditation mood and earlier vs later focus", () => {
+  const s = (date, type, task, before, after, extra = {}) => ({
+    session_type: type, task_name: task, entry_date: date, started_at: `${date}T06:00:00Z`, duration_minutes: 10,
+    self_focus_before: before === null ? null : 100 - before, self_focus_after: after === null ? null : 100 - after,
+    task_focus_before: before, task_focus_after: after, anchors_used: null, mood_before: null, mood_after: null, comments: null, ...extra,
+  });
+  const insights = computeAttentionInsights(
+    [
+      s("2026-10-26", "mundane_task", "Walking", 20, 50, { anchors_used: ["touch", "hearing"], comments: "noticed my feet" }),
+      s("2026-10-27", "mundane_task", "walking", 30, 60, { anchors_used: ["hearing"] }),
+      s("2026-10-28", "mundane_task", "Dishes", 40, 80),
+      s("2026-10-29", "mundane_task", "Dishes", 50, 90),
+      s("2026-10-29", "meditation", "Breathing meditation", null, null, { mood_before: 4, mood_after: 7 }),
+      s("2026-10-01", "meditation", "Breathing meditation", null, null),
+    ],
+    "2026-10-25",
+    "2026-10-31",
+  );
+  assert.deepEqual([insights.sessionCount, insights.mundaneCount, insights.meditationCount, insights.daysPractised], [5, 4, 1, 4]);
+  assert.equal(insights.focus.avgChange, 35);
+  assert.deepEqual([insights.focus.earlierAvgAfter, insights.focus.laterAvgAfter], [55, 85]);
+  assert.deepEqual(insights.byTask.map((task) => [task.taskName, task.sessions, task.avgChange]), [["Dishes", 2, 40], ["walking", 2, 30]]);
+  assert.deepEqual(insights.anchors.map((anchor) => [anchor.anchor, anchor.count, anchor.shareOfTaskSessions]), [["hearing", 2, 50], ["touch", 1, 25]]);
+  assert.equal(insights.meditation.avgMoodChange, 3);
+  assert.equal(insights.byWeekday.find((day) => day.weekday === "thu").sessions, 2);
+  assert.deepEqual(insights.recentNotes.map((note) => note.comments), ["noticed my feet"]);
 });
 
 console.log(`\nTest Results: ${passed} passed, ${failed} failed.`);

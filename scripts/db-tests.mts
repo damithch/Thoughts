@@ -331,6 +331,34 @@ await test("attention: a reflection becomes one tagged thought, even if requeste
   assert.equal(rows[0].category, "Attention training");
 });
 
+const worry = await import("@/lib/db/worry-postponement");
+const reports = await import("@/lib/reports/therapy-data");
+const { renderTherapyReportPdf } = await import("@/lib/reports/therapy-pdf");
+
+await test("therapy report: worry data is limited to the range; the PDF renders", async () => {
+  const mod = await worry.createWorryModule({ userId, beliefText: "Worrying keeps me safe", beliefBeforePct: 70 });
+  await worry.createWorryEvidence({ moduleId: mod.id, side: "for", content: "It feels like it helps" });
+  await worry.upsertWorryExperimentDay({ moduleId: mod.id, entryDate: yesterday, whatHappened: "Postponed", thinkingTimeNotes: "Smaller later", controllability: 6 });
+  await worry.upsertWorryExperimentDay({ moduleId: mod.id, entryDate: weekAgo, whatHappened: "Old day", thinkingTimeNotes: "", controllability: 3 });
+  await worry.createPostponedItem(mod.id, yesterday, "What if → it goes wrong? 🙂");
+
+  const modules = await worry.getWorryReportData(userId, yesterday, today);
+  assert.equal(modules.length, 1);
+  assert.deepEqual(modules[0].experiment_days.map((day) => day.entry_date), [yesterday]);
+  assert.equal(modules[0].postponed_items.length, 1);
+  assert.equal(modules[0].evidence.length, 1);
+
+  const data = await reports.getTherapyReportData({ id: userId, name: "DB test" }, weekAgo, today, ["attention", "worry"]);
+  assert.ok((data.attention?.sessions.length ?? 0) > 0);
+  assert.equal(data.worry?.modules[0].experiment_days.length, 2);
+  const pdf = await renderTherapyReportPdf(data);
+  assert.equal(Buffer.from(pdf.slice(0, 5)).toString(), "%PDF-");
+  assert.ok(pdf.length > 3000);
+
+  const onlyWorry = await reports.getTherapyReportData({ id: userId, name: "DB test" }, today, today, reports.parseSections("worry"));
+  assert.equal(onlyWorry.attention, null);
+});
+
 await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 await pool.end();
 

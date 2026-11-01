@@ -1,3 +1,4 @@
+import { File, Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -33,6 +34,8 @@ type AuthState = {
   signIn: (serverUrl: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   request: <T>(path: string, options?: RequestOptions) => Promise<T>;
+  // Saves a binary download (e.g. a PDF report) to the cache with the sign-in token attached.
+  download: (path: string, fileName: string) => Promise<File>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -180,9 +183,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [serverUrl, token, signOut],
   );
 
+  const download = useCallback(
+    async (path: string, fileName: string) => {
+      try {
+        return await File.downloadFileAsync(`${serverUrl}/api${path}`, new File(Paths.cache, fileName), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          idempotent: true,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (/\b401\b/.test(message)) {
+          await signOut();
+          throw new ApiError("Sign in again to continue.", 401);
+        }
+        throw new ApiError(
+          /\b400\b/.test(message)
+            ? "Those dates can't be used. Pick up to 92 days, ending today or earlier."
+            : "The report couldn't be downloaded. Check your connection and try again.",
+          0,
+        );
+      }
+    },
+    [serverUrl, token, signOut],
+  );
+
   const value = useMemo(
-    () => ({ ready, user, serverUrl, signIn, signOut, request }),
-    [ready, user, serverUrl, signIn, signOut, request],
+    () => ({ ready, user, serverUrl, signIn, signOut, request, download }),
+    [ready, user, serverUrl, signIn, signOut, request, download],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

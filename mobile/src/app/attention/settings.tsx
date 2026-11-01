@@ -89,17 +89,18 @@ export default function AttentionSettingsScreen() {
       "Meditation steps saved.",
     );
 
-  const addIdea = () =>
-    run(
+  const addIdea = () => {
+    if (!newIdea.trim()) return;
+    return run(
       "idea",
       async () => {
-        if (!newIdea.trim()) return;
         const result = await request<{ ideas: AttentionIdea[] }>("/v1/attention/ideas", { method: "POST", body: { name: newIdea } });
         ideas.setData(result);
         setNewIdea("");
       },
       "Added.",
     );
+  };
 
   function removeIdea(idea: AttentionIdea) {
     Alert.alert("Remove from your list?", `${idea.name}\n\nPast sessions keep their name.`, [

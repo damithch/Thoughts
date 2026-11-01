@@ -95,6 +95,8 @@ function LogTab() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SaveResult | null>(null);
+  // Scrolling pauses while a slider is being dragged, so the drag isn't taken over by the page.
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     if (timerStart === null) return;
@@ -193,7 +195,7 @@ function LogTab() {
   const elapsed = timerStart !== null ? Math.max(0, Math.floor((now - timerStart) / 1000)) : 0;
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" scrollEnabled={!dragging}>
       <Muted>{ATTENTION_COPY.principle}</Muted>
       <ChoiceRow
         options={[
@@ -208,7 +210,7 @@ function LogTab() {
         <Card>
           <Muted>{ATTENTION_COPY.mundaneIntro}</Muted>
           <TaskPicker ideas={ideas.data?.ideas ?? []} value={taskName} onChange={setTaskName} />
-          <FocusSlider label={ATTENTION_COPY.beforeQuestion} value={before} onChange={setBefore} />
+          <FocusSlider label={ATTENTION_COPY.beforeQuestion} value={before} onChange={setBefore} onDragChange={setDragging} />
 
           <View style={styles.timerRow}>
             {timerStart !== null ? (
@@ -225,7 +227,7 @@ function LogTab() {
           {timerStart === null ? <MinutesStepper value={minutes} onChange={setMinutes} /> : null}
 
           <AnchorPicker value={anchors} onChange={setAnchors} />
-          <FocusSlider label={ATTENTION_COPY.afterQuestion} value={after} onChange={setAfter} />
+          <FocusSlider label={ATTENTION_COPY.afterQuestion} value={after} onChange={setAfter} onDragChange={setDragging} />
           <Field
             label={ATTENTION_COPY.commentsLabel}
             value={comments}
@@ -370,6 +372,7 @@ function ProgressTab() {
         <CardTitle eyebrow="Last 30 days" title="Attention on the task" />
         <TrendChart trend={month.data.stats.trend} />
       </Card>
+      <Button title="Homework report (PDF)" variant="secondary" onPress={() => router.push("/export")} />
       <Muted>{ATTENTION_COPY.principle}</Muted>
     </ScrollView>
   );

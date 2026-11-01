@@ -9,7 +9,11 @@ import {
   getThoughtsByUserAndDate,
   getWorryDataByUserAndDate,
   getAttentionSessions,
+  getInboxOpenTaskCount,
+  getOverdueOpenTasks,
+  getRecurringTasksByUser,
 } from "@/lib/db";
+import { computeAttentionInsights } from "@/lib/attention/rules";
 import { toColomboExportParts } from "@/lib/time";
 
 type DailyThought = Awaited<ReturnType<typeof getThoughtsByUserAndDate>>[number];
@@ -112,6 +116,15 @@ export async function GET(request: Request) {
       getWorryDataByUserAndDate(currentUser.id, date),
       getAttentionSessions(currentUser.id, { from: date, to: date }),
     ]);
+    const [overdueTasks, inboxOpenCount, routines] = await Promise.all([
+      getOverdueOpenTasks(currentUser.id, date),
+      getInboxOpenTaskCount(currentUser.id),
+      getRecurringTasksByUser(currentUser.id),
+    ]);
+    const routineTitles = new Map(routines.map((routine) => [routine.id, routine.title]));
+    const attentionInsights = computeAttentionInsights(attentionSessions, date, date);
+    const minutesBetween = (start: Date | null, end: Date | null) =>
+      start && end ? Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000)) : null;
     const taskProgress = buildTaskProgress(tasks);
     const dayThoughtSummary = buildDayThoughtSummary(thoughts, tasks);
 
@@ -129,6 +142,34 @@ export async function GET(request: Request) {
           total_tasks: tasks.length,
           total_check_ins: checkIns.length,
           task_progress: taskProgress,
+          task_details: {
+            high_priority_open: tasks
+              .filter((task) => task.priority === "high" && (task.status === "todo" || task.status === "in_progress"))
+              .map((task) => task.title),
+            from_routines: tasks.filter((task) => task.recurring_task_id !== null).length,
+            one_off: tasks.filter((task) => task.recurring_task_id === null).length,
+            pushed_back: tasks.filter((task) => task.rollover_count > 0).map((task) => ({ title: task.title, times: task.rollover_count })),
+            overdue_open_before_this_day: overdueTasks.map((task) => ({
+              id: task.id,
+              title: task.title,
+              scheduled_date: task.scheduled_date,
+              priority: task.priority,
+              status: task.status,
+              rollover_count: task.rollover_count,
+            })),
+            inbox_open_count: inboxOpenCount,
+          },
+          attention_summary: {
+            sessions: attentionInsights.sessionCount,
+            task_sessions: attentionInsights.mundaneCount,
+            meditations: attentionInsights.meditationCount,
+            minutes: attentionInsights.totalMinutes,
+            avg_task_focus_before: attentionInsights.focus.avgTaskFocusBefore,
+            avg_task_focus_after: attentionInsights.focus.avgTaskFocusAfter,
+            avg_task_focus_change: attentionInsights.focus.avgChange,
+            anchors_used: attentionInsights.anchors.map((anchor) => ({ anchor: anchor.anchor, sessions: anchor.count })),
+            meditation_mood_change: attentionInsights.meditation.avgMoodChange,
+          },
           day_note: dayRecord
             ? {
                 intention: dayRecord.intention,
@@ -250,6 +291,7 @@ export async function GET(request: Request) {
               id: task.id,
               user_id: task.user_id,
               recurring_task_id: task.recurring_task_id,
+              routine_title: task.recurring_task_id ? routineTitles.get(task.recurring_task_id) ?? null : null,
               title: task.title,
               status: task.status,
               priority: task.priority,
@@ -264,6 +306,8 @@ export async function GET(request: Request) {
               started_at_utc: startedAt?.isoUtc ?? null,
               completed_at: completedAt?.localIso ?? null,
               completed_at_utc: completedAt?.isoUtc ?? null,
+              rollover_count: task.rollover_count,
+              minutes_started_to_done: task.status === "done" ? minutesBetween(task.started_at, task.completed_at) : null,
             };
           }),
         },
@@ -437,6 +481,8 @@ export async function GET(request: Request) {
         "updated_at",
         "started_at",
         "completed_at",
+        "rollover_count",
+        "routine_title",
       ].join(","),
       ...tasks.map((task: DailyTask) => {
         const createdAt = toColomboExportParts(task.created_at);
@@ -456,8 +502,47 @@ export async function GET(request: Request) {
           escapeCsv(updatedAt.localIso),
           escapeCsv(task.started_at ? toColomboExportParts(task.started_at).localIso : ""),
           escapeCsv(task.completed_at ? toColomboExportParts(task.completed_at).localIso : ""),
+          String(task.rollover_count),
+          escapeCsv(task.recurring_task_id ? routineTitles.get(task.recurring_task_id) ?? "" : ""),
         ].join(",");
       }),
+      "",
+      ["overdue_open_tasks_before_this_day", String(overdueTasks.length)].join(","),
+      ["inbox_open_tasks", String(inboxOpenCount)].join(","),
+      "",
+      ["attention_sessions"].join(","),
+      [
+        "id",
+        "session_type",
+        "task_name",
+        "started_at",
+        "duration_minutes",
+        "self_focus_before",
+        "self_focus_after",
+        "task_focus_before",
+        "task_focus_after",
+        "anchors_used",
+        "mood_before",
+        "mood_after",
+        "comments",
+      ].join(","),
+      ...attentionSessions.map((session) =>
+        [
+          String(session.id),
+          escapeCsv(session.session_type),
+          escapeCsv(session.task_name),
+          escapeCsv(toColomboExportParts(session.started_at).localIso),
+          String(session.duration_minutes),
+          String(session.self_focus_before ?? ""),
+          String(session.self_focus_after ?? ""),
+          String(session.task_focus_before ?? ""),
+          String(session.task_focus_after ?? ""),
+          escapeCsv((session.anchors_used ?? []).join("|")),
+          String(session.mood_before ?? ""),
+          String(session.mood_after ?? ""),
+          escapeCsv(session.comments ?? ""),
+        ].join(","),
+      ),
     ];
 
     return new NextResponse(lines.join("\n"), {

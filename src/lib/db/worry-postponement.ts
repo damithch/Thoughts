@@ -463,3 +463,58 @@ export async function getWorryDataByUserAndMonth(
     module: mod,
   };
 }
+
+// ── Report (date range) ─────────────────────────────────────
+
+export type WorryReportModule = Omit<WorryPostponementModule, "experiment_days"> & {
+  experiment_days: WorryExperimentDay[];
+  postponed_items: WorryPostponedItem[];
+};
+
+// Modules that were running at some point in [from, to] (Colombo dates), with their evidence and
+// only the experiment days and postponed worries that fall inside the range.
+export async function getWorryReportData(userId: number, from: string, to: string): Promise<WorryReportModule[]> {
+  await ensureInitialized();
+
+  const { rows: modules } = await pool.query<WorryModuleRow>(
+    `SELECT id, user_id, belief_text, belief_before_pct, belief_after_pct,
+            thinking_time_start, thinking_time_duration, thinking_time_place,
+            prediction_text, prediction_confidence, reflection_text,
+            status, created_at, updated_at
+     FROM worry_postponement_modules
+     WHERE user_id = $1
+       AND (created_at AT TIME ZONE 'Asia/Colombo')::date <= $3::date
+       AND (status = 'active' OR (updated_at AT TIME ZONE 'Asia/Colombo')::date >= $2::date)
+     ORDER BY created_at`,
+    [userId, from, to],
+  );
+
+  return Promise.all(
+    modules.map(async (mod) => {
+      const [evidence, days, items] = await Promise.all([
+        pool.query<WorryEvidence>(
+          `SELECT id, module_id, side, content, sort_order, created_at
+           FROM worry_evidence WHERE module_id = $1 ORDER BY side, sort_order, id`,
+          [mod.id],
+        ),
+        pool.query<WorryExperimentDay>(
+          `SELECT id, module_id, TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date,
+                  what_happened, thinking_time_notes, controllability, created_at, updated_at
+           FROM worry_experiment_days
+           WHERE module_id = $1 AND entry_date BETWEEN $2::date AND $3::date
+           ORDER BY entry_date`,
+          [mod.id, from, to],
+        ),
+        pool.query<WorryPostponedItem>(
+          `SELECT id, module_id, TO_CHAR(entry_date, 'YYYY-MM-DD') AS entry_date, content, created_at
+           FROM worry_postponed_items
+           WHERE module_id = $1 AND entry_date BETWEEN $2::date AND $3::date
+           ORDER BY entry_date, created_at`,
+          [mod.id, from, to],
+        ),
+      ]);
+
+      return { ...mod, evidence: evidence.rows, experiment_days: days.rows, postponed_items: items.rows };
+    }),
+  );
+}
