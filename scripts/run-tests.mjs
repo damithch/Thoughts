@@ -51,6 +51,7 @@ import {
   parseWorryText,
 } from "../src/lib/worry/rules.ts";
 import { checkReportRange } from "../mobile/src/lib/report-range.ts";
+import { buildSphereLayout, moodBand, pickThemes } from "../src/lib/thought-sphere.ts";
 import { ATTENTION_BANNED_WORDS, ATTENTION_COPY, ANCHOR_PROMPTS, MEDITATION_STEP_COPY } from "../src/lib/attention/copy.ts";
 import * as mobileAttention from "../mobile/src/lib/attention.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -1200,6 +1201,50 @@ test("worry: progress counts the day number, postponed worries and the controlla
     [6, 2, 3, 2, 4.5, 3, 6, -30],
   );
   assert.deepEqual(progress.postponedByDay, [{ date: "2026-10-27", count: 1 }, { date: "2026-11-01", count: 2 }]);
+});
+
+test("thought sphere: mood bands are low 1-3, steady 4-6, light 7-10", () => {
+  assert.deepEqual([1, 3, 4, 6, 7, 10].map(moodBand), ["low", "low", "steady", "steady", "light", "light"]);
+});
+
+test("thought sphere: themes come from common tags, else the first part of the category", () => {
+  const pages = [
+    { id: 1, title: "a", mood: 5, tags: ["Family", "anxiety"], category: "Anxiety", date: "2026-11-01" },
+    { id: 2, title: "b", mood: 5, tags: ["family"], category: "Calm", date: "2026-11-02" },
+    { id: 3, title: "c", mood: 5, tags: [], category: "Calm, vidushi", date: "2026-11-03" },
+    { id: 4, title: "d", mood: 5, tags: [], category: "calm", date: "2026-11-04" },
+    { id: 5, title: "e", mood: 5, tags: ["once"], category: "x", date: "2026-11-05" },
+  ];
+  assert.deepEqual(pickThemes(pages), [{ name: "calm", count: 2 }, { name: "family", count: 2 }]);
+});
+
+test("thought sphere: layout is stable, on the unit sphere, and threads join same-theme pages", () => {
+  const pages = Array.from({ length: 30 }, (_, i) => ({
+    id: 100 + i,
+    title: `p${i}`,
+    mood: (i % 10) + 1,
+    tags: i % 3 === 0 ? ["study"] : i % 3 === 1 ? ["family", "study"] : [],
+    category: i % 3 === 2 ? "Calm" : "Anxiety",
+    date: i === 29 ? "2026-11-08" : "2026-11-01",
+  }));
+  const layout = buildSphereLayout(pages, "2026-11-08");
+  const again = buildSphereLayout(pages, "2026-11-08");
+  assert.deepEqual(layout, again);
+  for (const node of layout.nodes) {
+    assert.ok(Math.abs(Math.hypot(...node.p) - 1) < 1e-9);
+  }
+  // Pages tagged family + study take the more specific theme, family.
+  assert.equal(layout.nodes[1].theme, "family");
+  assert.equal(layout.nodes[0].theme, "study");
+  assert.equal(layout.nodes[2].theme, "calm");
+  assert.ok(layout.arcs.length > 0);
+  for (const [a, b] of layout.arcs) assert.equal(layout.nodes[a].theme, layout.nodes[b].theme);
+  assert.deepEqual(layout.nodes.filter((n) => n.today).map((n) => n.id), [129]);
+  assert.equal(layout.bands.low + layout.bands.steady + layout.bands.light, 30);
+});
+
+test("thought sphere: an empty archive gives an empty layout", () => {
+  assert.deepEqual(buildSphereLayout([], "2026-11-08"), { nodes: [], arcs: [], themes: [], bands: { low: 0, steady: 0, light: 0 } });
 });
 
 console.log(`\nTest Results: ${passed} passed, ${failed} failed.`);

@@ -26,7 +26,10 @@ import {
   getCurrentColomboDate,
   getCurrentColomboMonth,
   toColomboDate,
+  toColomboExportParts,
 } from "@/lib/time";
+import { buildSphereLayout } from "@/lib/thought-sphere";
+import { ThoughtSphere } from "@/app/components/thought-sphere";
 import RagSearch from "@/app/components/rag-search";
 import { ThoughtFormSection } from "@/app/components/thought-form-section";
 import { AnchorNoteCard } from "@/app/components/anchor-note-card";
@@ -34,6 +37,9 @@ import { SupportCard } from "@/app/components/support-card";
 import { getSupportStatus } from "@/lib/support";
 
 export const dynamic = "force-dynamic";
+
+// How many recent pages the thought sphere shows.
+const SPHERE_PAGE_LIMIT = 120;
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -176,6 +182,7 @@ export default async function DashboardPage({
     hasToday: false,
   };
   let recentAnchorNotes: Awaited<ReturnType<typeof getRecentAnchorNotes>> = [];
+  let sphereThoughts: Awaited<ReturnType<typeof getThoughtsByUser>> = [];
 
   try {
     [
@@ -186,6 +193,7 @@ export default async function DashboardPage({
       todayAnchorNote,
       anchorStreak,
       recentAnchorNotes,
+      sphereThoughts,
     ] = await Promise.all([
       getThoughtsByUser(currentUser.id, 24, visibility),
       getThoughtActivityByUserMonth(currentUser.id, activeMonth),
@@ -194,6 +202,7 @@ export default async function DashboardPage({
       getAnchorNoteByDate(currentUser.id, today),
       getAnchorStreak(currentUser.id, today),
       getRecentAnchorNotes(currentUser.id, 30),
+      getThoughtsByUser(currentUser.id, SPHERE_PAGE_LIMIT, "active"),
     ]);
   } catch (error) {
     console.error("Failed to load dashboard data.", error);
@@ -250,6 +259,17 @@ export default async function DashboardPage({
   const latestActivity = latestThought
     ? toColomboDate(latestThought.created_at)
     : "No entries";
+  const sphereLayout = buildSphereLayout(
+    sphereThoughts.map((thought) => ({
+      id: thought.id,
+      title: thought.title,
+      mood: thought.mood,
+      tags: thought.tags,
+      category: thought.category,
+      date: toColomboExportParts(thought.created_at).date,
+    })),
+    today,
+  );
   const visibilitySuffix = visibility === "active" ? "" : `&vis=${visibility}`;
   const archiveHeading =
     visibility === "hidden"
@@ -383,6 +403,8 @@ export default async function DashboardPage({
             </p>
           </div>
         </section>
+
+        {databaseAvailable ? <ThoughtSphere layout={sphereLayout} /> : null}
 
         <section className="rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-4 shadow-[0_20px_50px_rgba(48,84,53,0.10)] sm:rounded-[2rem] sm:p-5">
           <RagSearch />
