@@ -17,7 +17,8 @@ Thoughts is organized around four connected workflows:
 
 ### Journal and reflection
 
-- Create, edit, and delete thought cards with titles, categories, mood scores, summaries, long-form notes, tags, and concept tags.
+- Create, edit, and delete thought cards with titles, emotions (up to three from a fixed list), a life area, an optional trigger, mood scores, summaries, long-form notes, tags, and concept tags. Older free-text categories are read into emotions, life area and trigger automatically; the original text stays as the card label.
+- Rename or merge tags across every card in Settings.
 - Link thoughts to ideas in the insight library and record evidence of applying those ideas.
 - Review entries on a monthly calendar and in an archive of mood- and category-aware cards.
 - Add day intentions, end-of-day notes, mood ratings, and timestamped mood/energy/focus check-ins.
@@ -26,7 +27,7 @@ Thoughts is organized around four connected workflows:
 
 The **Smart Capture** workflow accepts raw journal text and uses Gemini to infer:
 
-- Title, category, mood, summary, and long-form body
+- Title, emotions, life area, trigger, mood, a first-person summary, and long-form body
 - Tags and concept tags
 - Related insight-library ideas
 - The reflection explaining how an idea appeared in real life
@@ -56,6 +57,7 @@ The **AI Task Control Center** provides a focused interface for reviewing and ch
 
 - **Behavioural Activation**: record activities with before/after ratings for depression, pleasure, and achievement, then save them to the journal.
 - **Attention Training** (CCI *What? Me Worry!?!* module 4): log mundane-task focusing sessions with before/after attention ratings (task focus is always 100 minus self focus), sense anchors and notes; run a guided 3-step breathing meditation; review history, a weekly practice strip, streak, minutes and a 30-day focus trend. Sessions can tick off a daily "Attention training" routine and become journal reflections.
+- **For my next session**: a list of things to bring up with a therapist, added by typing, from a thought card ("Session"), from voice capture, or by Claude. Notes are ticked off once discussed and printed first in the therapy report.
 - **Worry Postponement**: complete a structured seven-day module with worry definitions, evidence for and against, scheduled thinking time, postponed items, experiment-day observations, and outcome comparisons.
 
 ### RAG and semantic personal search
@@ -83,7 +85,8 @@ Thoughts includes a JSON-RPC MCP server at `/api/mcp`, secured with an API key a
 - `search_journal` for semantic search across the indexed archive
 - `create_attention_session`, `get_attention_sessions`, `update_attention_session`, `delete_attention_session`, `get_attention_stats` and `get_attention_insights` for attention training
 - `update_recurring_task`, `delete_recurring_task` and `get_task_stats` for routines and task progress (`get_tasks` also takes a date range and title search)
-- `get_therapy_report` for attention training and worry postponement over a date range
+- `get_therapy_report` for the next-session list, attention training and worry postponement over a date range
+- `get_session_notes`, `add_session_note` and `update_session_note` for the next-session list (`create_thought` takes `emotions`, `lifeArea` and `trigger`)
 - `get_worry_module`, `log_postponed_worry` (park a sudden worry until thinking time), `record_worry_experiment_day`, `update_worry_module`, `add_worry_evidence` and `start_worry_module` for the worry postponement experiment
 
 The server implements MCP protocol version `2024-11-05`, exposes `initialize`, `tools/list`, and `tools/call`, and keeps MCP data scoped to the configured user.
@@ -95,7 +98,7 @@ External assistants can save structured conversation summaries containing a date
 ### Reports, backup, and portability
 
 - Export daily reports as JSON or CSV.
-- Export monthly reports as JSON with grouped day-by-day summaries.
+- Export monthly reports as JSON with grouped day-by-day summaries. Each record is listed once and days point to records by id; add `&full=1` for the older shape that repeats records under every day.
 - Export a full JSON backup of thoughts, tasks, routines, and related personal data.
 - Restore data from a previous JSON backup.
 
@@ -123,6 +126,7 @@ External assistants can save structured conversation summaries containing a date
 | Behavioural Activation | `/dashboard/activation` |
 | Worry Postponement | `/dashboard/worry-postponement` |
 | Attention Training | `/dashboard/attention` |
+| Next-session list | `/dashboard/session` |
 | Settings | `/dashboard/settings` |
 
 ## API and integration endpoints

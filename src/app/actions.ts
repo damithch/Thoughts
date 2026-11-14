@@ -49,6 +49,7 @@ import {
   parseTaskPriorityValue,
   parseTaskStatusValue,
 } from "@/lib/tasks/validation";
+import { resolveThoughtFields } from "@/lib/thought-fields";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 function parseMood(value: FormDataEntryValue | null) {
@@ -171,6 +172,20 @@ function parseDaysOfWeek(formData: FormData) {
   );
 }
 
+// The thought form sends emotions (comma-separated), a life area and an optional trigger.
+function readThoughtFields(formData: FormData, tags: string[]) {
+  return resolveThoughtFields(
+    {
+      emotions: formData.get("emotions")?.toString() ?? "",
+      lifeArea: formData.get("lifeArea")?.toString() ?? "",
+      trigger: formData.get("trigger")?.toString() ?? "",
+      // Only sent when editing an older card, so its label survives if nothing is picked.
+      category: formData.get("category")?.toString() ?? "",
+    },
+    tags,
+  );
+}
+
 export async function createThoughtAction(formData: FormData) {
   const currentUser = await getCurrentUser();
 
@@ -179,9 +194,9 @@ export async function createThoughtAction(formData: FormData) {
   }
 
   const title = formData.get("title")?.toString().trim() ?? "";
-  const category = formData.get("category")?.toString().trim() ?? "";
   const mood = parseMood(formData.get("mood"));
   const tags = parseTags(formData.get("tags"));
+  const fields = readThoughtFields(formData, tags);
   const conceptTags = parseTags(formData.get("conceptTags"));
   const summary = formData.get("summary")?.toString().trim() ?? "";
   const body = formData.get("body")?.toString().trim() ?? "";
@@ -192,7 +207,7 @@ export async function createThoughtAction(formData: FormData) {
       : null;
   const insightReflection = formData.get("insightReflection")?.toString().trim() ?? "";
 
-  if (!title || !category || !mood || !summary) {
+  if (!title || !fields || !mood || !summary) {
     redirect("/dashboard?toast=invalid_entry&type=error");
   }
 
@@ -201,7 +216,10 @@ export async function createThoughtAction(formData: FormData) {
   try {
     await createThought({
       title,
-      category,
+      category: fields.category,
+      emotions: fields.emotions,
+      lifeArea: fields.lifeArea,
+      trigger: fields.trigger,
       mood,
       tags,
       conceptTags,
@@ -239,9 +257,9 @@ export async function updateThoughtAction(formData: FormData) {
 
   const thoughtId = Number(formData.get("thoughtId"));
   const title = formData.get("title")?.toString().trim() ?? "";
-  const category = formData.get("category")?.toString().trim() ?? "";
   const mood = parseMood(formData.get("mood"));
   const tags = parseTags(formData.get("tags"));
+  const fields = readThoughtFields(formData, tags);
   const conceptTags = parseTags(formData.get("conceptTags"));
   const summary = formData.get("summary")?.toString().trim() ?? "";
   const body = formData.get("body")?.toString().trim() ?? "";
@@ -252,7 +270,7 @@ export async function updateThoughtAction(formData: FormData) {
       : null;
   const insightReflection = formData.get("insightReflection")?.toString().trim() ?? "";
 
-  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !category || !mood || !summary) {
+  if (!Number.isInteger(thoughtId) || thoughtId <= 0 || !title || !fields || !mood || !summary) {
     redirect("/dashboard?toast=update_failed&type=error");
   }
 
@@ -263,7 +281,10 @@ export async function updateThoughtAction(formData: FormData) {
     const result = await updateThought({
       id: thoughtId,
       title,
-      category,
+      category: fields.category,
+      emotions: fields.emotions,
+      lifeArea: fields.lifeArea,
+      trigger: fields.trigger,
       mood,
       tags,
       conceptTags,

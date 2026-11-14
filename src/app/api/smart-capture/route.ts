@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { pool } from "@/lib/db/client";
 import { getBookIdeasByUser } from "@/lib/db/insights";
+import { getTagCounts, getTriggerCounts } from "@/lib/db/thoughts";
+import { EMOTIONS, LIFE_AREAS, rankTags, resolveThoughtFields, THOUGHT_FIELD_LIMITS } from "@/lib/thought-fields";
 import { getUserSettings } from "@/lib/db/settings";
 import { generateWithFallback, GeminiApiError } from "@/lib/gemini";
 
@@ -33,33 +34,15 @@ export async function POST(request: Request) {
   try {
     const settings = await getUserSettings(currentUser.id);
 
-    // Fetch user's existing tags and categories for context consistency
-    const [tagsResult, categoriesResult, bookIdeas] = await Promise.all([
-      pool.query<{ tag: string }>(
-        `
-          SELECT DISTINCT unnest(tags) AS tag
-          FROM thoughts
-          WHERE user_id = $1
-          ORDER BY tag ASC
-          LIMIT 50
-        `,
-        [currentUser.id],
-      ),
-      pool.query<{ category: string }>(
-        `
-          SELECT DISTINCT category
-          FROM thoughts
-          WHERE user_id = $1
-          ORDER BY category ASC
-          LIMIT 30
-        `,
-        [currentUser.id],
-      ),
+    // The user's own tags (most used first) and triggers, so the model reuses them.
+    const [tagCounts, triggerCounts, bookIdeas] = await Promise.all([
+      getTagCounts(currentUser.id),
+      getTriggerCounts(currentUser.id),
       getBookIdeasByUser(currentUser.id),
     ]);
 
-    const existingTags = tagsResult.rows.map((r) => r.tag);
-    const existingCategories = categoriesResult.rows.map((r) => r.category);
+    const existingTags = rankTags(tagCounts);
+    const existingTriggers = triggerCounts.map((row) => row.trigger);
     const bookIdeaContext = bookIdeas.map((idea) => ({
       id: idea.id,
       bookTitle: idea.book_title,
@@ -70,24 +53,29 @@ export async function POST(request: Request) {
 
 IMPORTANT RULES:
 - Output ONLY valid JSON, no markdown fences, no explanation text.
-- Reuse existing tags and categories when they fit. Only create new ones if none match.
+- Reuse existing tags when they fit. Only create a new one if none match, and never add a near-duplicate of an existing tag (for example "calmness" when "calm" exists).
+- emotions: 1 to ${THOUGHT_FIELD_LIMITS.emotions} of exactly these words, strongest first: ${EMOTIONS.join(", ")}.
+- lifeArea: exactly one of ${LIFE_AREAS.map((area) => area.key).join(", ")} (${LIFE_AREAS.map((area) => `${area.key} = ${area.label}`).join("; ")}), or "" if unclear.
+- trigger: the person, place or event that set the feeling off, in a few words (reuse an existing trigger's exact wording when it is the same one), or "" if there is none.
 - mood is an integer from 1 (lowest) to 10 (highest). Infer it from the emotional tone.
-- summary should be 1-2 SHORT sentences that capture the core of the entry. Keep it brief and scannable.
+- summary should be 1-2 SHORT sentences that capture the core of the entry, written in the first person as the user ("I felt...", "I studied..."). Never write "the user", "they", "he" or "she" about the writer. Keep it brief and scannable.
 - body is the FULL journal text, cleaned up slightly for readability but preserving the user's voice. If the raw text is long, the summary stays short and ALL the detail goes into body. Never truncate body.
-- tags are general grouping labels (max 5).
+- tags are specific topic labels (max 5). Skip labels so general they would fit almost any entry (such as "emotional processing"), and do not repeat the emotions or life area as tags.
 - conceptTags: ALWAYS return an empty array []. The user fills these manually.
 - linkedBookIdeaId: set to the numeric ID of a matching book idea if the entry clearly relates to one, otherwise null.
 - insightReflection: if a book idea is linked, write a short note on how it appeared in the entry. Otherwise empty string.
 
 EXISTING CONTEXT (reuse when appropriate):
 - Existing tags: ${existingTags.length > 0 ? existingTags.join(", ") : "(none yet)"}
-- Existing categories: ${existingCategories.length > 0 ? existingCategories.join(", ") : "(none yet)"}
+- Existing triggers: ${existingTriggers.length > 0 ? existingTriggers.join(", ") : "(none yet)"}
 - Book ideas: ${bookIdeaContext.length > 0 ? JSON.stringify(bookIdeaContext) : "(none yet)"}
 
 OUTPUT JSON SCHEMA:
 {
   "title": "string (short, descriptive title)",
-  "category": "string (single category label)",
+  "emotions": ["string array, from the list above"],
+  "lifeArea": "string (one key from the list above, or empty)",
+  "trigger": "string or empty",
   "mood": "integer 1-10",
   "tags": ["string array"],
   "conceptTags": [],
@@ -158,9 +146,20 @@ OUTPUT JSON SCHEMA:
     }
 
     // Validate and sanitize the parsed fields
+    const fields =
+      resolveThoughtFields({
+        emotions: parsed.emotions ?? [],
+        lifeArea: parsed.lifeArea ?? "",
+        trigger: parsed.trigger ?? "",
+        category: parsed.category,
+      }) ?? { category: "Neutral", emotions: ["neutral"], lifeArea: "", trigger: "" };
     const output = {
       title: typeof parsed.title === "string" ? parsed.title.trim().slice(0, 200) : "",
-      category: typeof parsed.category === "string" ? parsed.category.trim().slice(0, 100) : "",
+      // `category` is the short label older phone builds still read.
+      category: fields?.category ?? "",
+      emotions: fields?.emotions ?? [],
+      lifeArea: fields?.lifeArea ?? "",
+      trigger: fields?.trigger ?? "",
       mood: typeof parsed.mood === "number" && Number.isInteger(parsed.mood) && parsed.mood >= 1 && parsed.mood <= 10
         ? parsed.mood
         : 5,

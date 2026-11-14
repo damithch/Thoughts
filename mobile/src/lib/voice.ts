@@ -34,10 +34,11 @@ export function recordingHint(state: { started: boolean; recording: boolean; ela
 }
 
 // The Save button's label, so it's clear what one tap will create.
-export function saveLabel(tasks: number, worries: number) {
+export function saveLabel(tasks: number, worries: number, sessionNotes = 0) {
   const extras = [
     tasks > 0 ? `${tasks} task${tasks === 1 ? "" : "s"}` : null,
     worries > 0 ? `${worries} worr${worries === 1 ? "y" : "ies"}` : null,
+    sessionNotes > 0 ? `${sessionNotes} session note${sessionNotes === 1 ? "" : "s"}` : null,
   ].filter(Boolean);
 
   return extras.length > 0 ? `Save thought + ${extras.join(" + ")}` : "Save thought";

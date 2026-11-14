@@ -21,6 +21,7 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { formatDayLabel, formatTime, shiftDate } from "@/lib/dates";
+import { emotionsLabel } from "@/lib/thought-fields";
 import { colors, fonts } from "@/lib/theme";
 import type { AgentResponse, AnchorStreak, Task, TodayResponse } from "@/lib/types";
 import { errorMessage, useApi } from "@/lib/use-api";
@@ -328,7 +329,7 @@ function DayReviewCard({ data }: { data: TodayResponse }) {
           <View style={{ flex: 1 }}>
             <Text style={styles.rowTitle}>{thought.title}</Text>
             <Text style={styles.rowMeta}>
-              {thought.category} · mood {thought.mood}/10 · {formatTime(thought.created_at)}
+              {emotionsLabel(thought)} · mood {thought.mood}/10 · {formatTime(thought.created_at)}
             </Text>
           </View>
         </Pressable>

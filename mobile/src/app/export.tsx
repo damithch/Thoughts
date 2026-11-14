@@ -38,7 +38,8 @@ export default function ExportScreen() {
   const [reportTo, setReportTo] = useState<string | null>(today);
   const [withAttention, setWithAttention] = useState(true);
   const [withWorry, setWithWorry] = useState(true);
-  const reportProblem = checkReportRange(reportFrom, reportTo, today, withAttention || withWorry);
+  const [withSession, setWithSession] = useState(true);
+  const reportProblem = checkReportRange(reportFrom, reportTo, today, withAttention || withWorry || withSession);
 
   async function exportReportPdf() {
     if (reportProblem || !reportFrom || !reportTo) return;
@@ -46,7 +47,9 @@ export default function ExportScreen() {
     setError(null);
 
     try {
-      const sections = [withAttention ? "attention" : null, withWorry ? "worry" : null].filter(Boolean).join(",");
+      const sections = [withSession ? "session" : null, withAttention ? "attention" : null, withWorry ? "worry" : null]
+        .filter(Boolean)
+        .join(",");
       const fileName = `thoughts-therapy-report-${reportFrom}-to-${reportTo}.pdf`;
       const file = await download(`/reports/therapy?from=${reportFrom}&to=${reportTo}&sections=${sections}`, fileName);
 
@@ -159,6 +162,7 @@ export default function ExportScreen() {
         />
         <DateStepper label="From" value={reportFrom} onChange={setReportFrom} fallback={today} />
         <DateStepper label="To" value={reportTo} onChange={(value) => setReportTo(value && value > today ? today : value)} fallback={today} />
+        <SwitchRow label="Next-session list" value={withSession} onChange={setWithSession} />
         <SwitchRow label="Attention training" value={withAttention} onChange={setWithAttention} />
         <SwitchRow label="Worry postponement" value={withWorry} onChange={setWithWorry} />
         {reportProblem ? <Muted>{reportProblem}</Muted> : null}

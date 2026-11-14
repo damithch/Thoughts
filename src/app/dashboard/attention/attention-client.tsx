@@ -820,7 +820,10 @@ function ReportDownload({ today }: { today: string }) {
   const [to, setTo] = useState(today);
   const [attention, setAttention] = useState(true);
   const [worry, setWorry] = useState(true);
-  const sections = [attention ? "attention" : null, worry ? "worry" : null].filter(Boolean).join(",");
+  const [session, setSession] = useState(true);
+  const sections = [session ? "session" : null, attention ? "attention" : null, worry ? "worry" : null]
+    .filter(Boolean)
+    .join(",");
   const spanDays = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
   const problem =
     !from || !to
@@ -840,7 +843,7 @@ function ReportDownload({ today }: { today: string }) {
         <p className={eyebrow}>Share with your therapist</p>
         <h2 className="mt-2 font-[family:var(--font-display)] text-2xl">Homework report (PDF)</h2>
         <p className="mt-2 text-sm text-stone-600">
-          Attention training and worry postponement for the days you pick: totals, a focus chart, every session and your notes.
+          Your next-session list, attention training and worry postponement for the days you pick: totals, a focus chart, every session and your notes.
         </p>
       </div>
       <div className="flex flex-wrap gap-2 text-sm">
@@ -869,6 +872,10 @@ function ReportDownload({ today }: { today: string }) {
         </label>
       </div>
       <div className="flex flex-wrap gap-5 text-sm text-stone-700">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={session} onChange={(event) => setSession(event.target.checked)} className="accent-emerald-800" />
+          Next-session list
+        </label>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={attention} onChange={(event) => setAttention(event.target.checked)} className="accent-emerald-800" />
           Attention training

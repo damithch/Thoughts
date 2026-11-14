@@ -2,6 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { ThoughtFieldsPicker } from "@/components/thought-fields";
 import { Button, Card, CardTitle, ErrorText, Eyebrow, Field, MoodPicker, Muted } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { colors, radius } from "@/lib/theme";
@@ -10,7 +11,9 @@ import { errorMessage } from "@/lib/use-api";
 
 export type ThoughtInput = {
   title: string;
-  category: string;
+  emotions: string[];
+  lifeArea: string;
+  trigger: string;
   mood: number;
   summary: string;
   body: string;
@@ -39,7 +42,9 @@ export function ThoughtForm({
 }) {
   const { request } = useAuth();
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [category, setCategory] = useState(initial?.category ?? "");
+  const [emotions, setEmotions] = useState<string[]>(initial?.emotions ?? []);
+  const [lifeArea, setLifeArea] = useState(initial?.life_area ?? "");
+  const [trigger, setTrigger] = useState(initial?.trigger ?? "");
   const [mood, setMood] = useState<number | null>(initial?.mood ?? null);
   const [summary, setSummary] = useState(initial?.summary ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
@@ -59,7 +64,9 @@ export function ThoughtForm({
 
   function applySmartCapture(result: SmartCaptureResult) {
     setTitle(result.title);
-    setCategory(result.category);
+    setEmotions(result.emotions ?? []);
+    setLifeArea(result.lifeArea ?? "");
+    setTrigger(result.trigger ?? "");
     setMood(result.mood);
     setSummary(result.summary);
     setBody(result.body);
@@ -70,8 +77,8 @@ export function ThoughtForm({
   }
 
   async function submit() {
-    if (!title.trim() || !category.trim() || !mood || !summary.trim()) {
-      setError("Add a title, category, mood and summary.");
+    if (!title.trim() || emotions.length === 0 || !mood || !summary.trim()) {
+      setError("Add a title, at least one emotion, a mood and a summary.");
       return;
     }
 
@@ -81,7 +88,9 @@ export function ThoughtForm({
     try {
       await onSubmit({
         title: title.trim(),
-        category: category.trim(),
+        emotions,
+        lifeArea,
+        trigger: trigger.trim(),
         mood,
         summary: summary.trim(),
         body: body.trim(),
@@ -102,7 +111,14 @@ export function ThoughtForm({
         {!initial ? <SmartCapture onResult={applySmartCapture} /> : null}
 
         <Field label="Title" value={title} onChangeText={setTitle} placeholder="What's on your mind?" />
-        <Field label="Category" value={category} onChangeText={setCategory} placeholder="work, family, health…" />
+        <ThoughtFieldsPicker
+          emotions={emotions}
+          lifeArea={lifeArea}
+          trigger={trigger}
+          onEmotions={setEmotions}
+          onLifeArea={setLifeArea}
+          onTrigger={setTrigger}
+        />
         <MoodPicker value={mood} onChange={setMood} />
         <Field
           label="Card summary"

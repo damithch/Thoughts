@@ -19,6 +19,9 @@ import {
   deleteRecurringTask,
   generateDailyTasksFromRecurring,
   createThought,
+  createSessionNote,
+  getSessionNotes,
+  updateSessionNote,
   getConversationSummariesByUserAndDate,
   getConversationSummariesByUserMonth,
   getDailyCheckInsByUserAndDate,
@@ -57,7 +60,9 @@ import type { NewTask, NewThought, NewRecurringTask, UpdateRecurringTask, TaskIt
 import { pool } from "@/lib/db/client";
 import { ensureInitialized } from "@/lib/db/init";
 import { embedTexts } from "@/lib/gemini";
+import { normalizeSessionNoteContent, SESSION_NOTE_LIMITS } from "@/lib/session-notes";
 import { alertSupportByPush } from "@/lib/support";
+import { EMOTIONS, LIFE_AREAS, resolveThoughtFields, THOUGHT_FIELD_LIMITS } from "@/lib/thought-fields";
 import { getCurrentColomboDate, shiftColomboDate } from "@/lib/time";
 
 const MCP_API_KEY_HEADER = "x-api-key";
@@ -198,11 +203,32 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         title: { type: "string" },
-        category: { type: "string" },
+        emotions: {
+          type: "array",
+          items: { type: "string", enum: [...EMOTIONS] },
+          minItems: 1,
+          maxItems: THOUGHT_FIELD_LIMITS.emotions,
+          description: "What the user felt, strongest first.",
+        },
+        lifeArea: {
+          type: "string",
+          enum: LIFE_AREAS.map((area) => area.key),
+          description: LIFE_AREAS.map((area) => `${area.key} = ${area.label}`).join("; "),
+        },
+        trigger: {
+          type: "string",
+          maxLength: THOUGHT_FIELD_LIMITS.trigger,
+          description: "The person, place or event that set the feeling off, in a few words. Leave out if there is none.",
+        },
+        category: { type: "string", description: "Deprecated: send emotions, lifeArea and trigger instead." },
         mood: { type: "integer", minimum: 1, maximum: 10 },
-        tags: { type: "array", items: { type: "string" } },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Specific topic labels. Do not repeat the emotions or life area here.",
+        },
         conceptTags: { type: "array", items: { type: "string" } },
-        summary: { type: "string" },
+        summary: { type: "string", description: "1-2 short sentences in the first person, as the user." },
         body: { type: "string" },
         linkedBookIdeaId: { type: ["integer", "null"] },
         insightReflection: { type: "string" },
@@ -212,13 +238,14 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
           maxLength: 200,
         },
       },
-      required: ["title", "category", "mood", "summary"],
+      required: ["title", "emotions", "mood", "summary"],
       additionalProperties: false,
     },
   },
   {
     name: "create_conversation_log",
-    description: "Save a Claude conversation summary into the journal conversation log.",
+    description:
+      "Save a Claude conversation summary into the journal conversation log. Anything the user should raise with their therapist or doctor goes on the next-session list with add_session_note, not only in actionItems.",
     inputSchema: {
       type: "object",
       properties: {
@@ -538,13 +565,13 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "get_therapy_report",
     description:
-      "The therapy homework report as data for a date range (default last 7 days, max 92): attention training (insights + every session) and worry postponement (belief, evidence, experiment days, postponed worries). The same content as the PDF at /api/reports/therapy.",
+      "The therapy homework report as data for a date range (default last 7 days, max 92): the next-session list (open notes, and those discussed in the range), attention training (insights + every session) and worry postponement (belief, evidence, experiment days, postponed worries). The same content as the PDF at /api/reports/therapy.",
     inputSchema: {
       type: "object",
       properties: {
         from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
         to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
-        sections: { type: "array", items: { type: "string", enum: ["attention", "worry"] } },
+        sections: { type: "array", items: { type: "string", enum: ["session", "attention", "worry"] } },
       },
       additionalProperties: false,
     },
@@ -588,6 +615,40 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: { days: { type: "integer", minimum: 1, maximum: 90 } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_session_notes",
+    description:
+      "The user's 'for my next session' list: things to bring up with their therapist. Open notes first, then discussed ones.",
+    inputSchema: {
+      type: "object",
+      properties: { status: { type: "string", enum: ["open", "discussed", "all"], description: "Defaults to open." } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_session_note",
+    description:
+      "Add something to the user's 'for my next session' list. Use it whenever the user says they want to tell, ask or discuss something with their therapist, counsellor or doctor, or when a conversation surfaces something worth raising there. One short first-person sentence per note. Adding the same open note twice returns the existing one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: `What to bring up (max ${SESSION_NOTE_LIMITS.content} characters).` },
+        thoughtId: { type: "integer", description: "Optional id of the journal thought it came from." },
+      },
+      required: ["content"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_session_note",
+    description: "Change a next-session note's text, or mark it discussed (true) or open again (false).",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "integer" }, content: { type: "string" }, discussed: { type: "boolean" } },
+      required: ["id"],
       additionalProperties: false,
     },
   },
@@ -856,7 +917,8 @@ async function listThoughtsForUser(userId: number, filters: { date?: string | nu
 
   const { rows } = await pool.query<Thought>(
     `
-      SELECT t.id, t.title, t.category, t.excerpt AS summary, t.body, t.user_id, t.created_at,
+      SELECT t.id, t.title, t.category, t.emotions, t.life_area, t.trigger_text AS "trigger",
+             t.excerpt AS summary, t.body, t.user_id, t.created_at,
              t.updated_at, t.mood, t.tags,
              COALESCE(
                ARRAY_AGG(DISTINCT ct.name) FILTER (WHERE ct.name IS NOT NULL),
@@ -1165,7 +1227,10 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
 
   if (name === "create_thought") {
     const title = normalizeOptionalString(args.title);
-    const category = normalizeOptionalString(args.category);
+    const thoughtTags = normalizeStringArray(args.tags);
+    // emotions / lifeArea / trigger; an older prompt that only sends a category still works.
+    const fields = resolveThoughtFields(args, thoughtTags);
+    const category = fields?.category ?? "";
     const summary = normalizeOptionalString(args.summary);
     const body = normalizeOptionalString(args.body) ?? "";
     const insightReflection = normalizeOptionalString(args.insightReflection);
@@ -1180,7 +1245,9 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
           : null;
 
     if (!title || !category || !summary || mood === null) {
-      throw new McpInvalidParamsError("create_thought requires title, category, mood, and summary.");
+      throw new McpInvalidParamsError(
+        `create_thought requires title, emotions (1-${THOUGHT_FIELD_LIMITS.emotions} of: ${EMOTIONS.join(", ")}), mood, and summary.`,
+      );
     }
 
     if (linkedBookIdeaId) {
@@ -1205,8 +1272,11 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
     const input: NewThought = {
       title,
       category,
+      emotions: fields?.emotions,
+      lifeArea: fields?.lifeArea,
+      trigger: fields?.trigger,
       mood,
-      tags: normalizeStringArray(args.tags),
+      tags: thoughtTags,
       conceptTags: normalizeStringArray(args.conceptTags),
       summary,
       body,
@@ -1241,7 +1311,9 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       created: true,
       thought: {
         title: input.title,
-        category: input.category,
+        emotions: fields?.emotions ?? [],
+        lifeArea: fields?.lifeArea ?? "",
+        trigger: fields?.trigger ?? "",
         mood: input.mood,
         tags: input.tags,
         conceptTags: input.conceptTags,
@@ -1650,6 +1722,32 @@ async function handleToolCall(name: string, args: JsonObject, userId: number, re
       inboxCount,
       slippingTasks: slipping.map((task) => ({ id: task.id, title: task.title, scheduled_date: task.scheduled_date, rollover_count: task.rollover_count })),
     });
+  }
+
+  if (name === "get_session_notes") {
+    const status = args.status === "discussed" || args.status === "all" ? args.status : "open";
+    return formatToolResult({ notes: await getSessionNotes(userId, status) });
+  }
+
+  if (name === "add_session_note") {
+    const content = normalizeSessionNoteContent(args.content);
+    if (!content) throw new McpInvalidParamsError("add_session_note requires content.");
+    const thoughtId =
+      typeof args.thoughtId === "number" && Number.isInteger(args.thoughtId) && args.thoughtId > 0 ? args.thoughtId : null;
+    const result = await createSessionNote({ userId, content, source: "claude", thoughtId });
+    if (!result) throw new McpInvalidParamsError("add_session_note: thoughtId doesn't belong to this user.");
+    return formatToolResult({ added: result.created, alreadyOnList: !result.created, note: result.note });
+  }
+
+  if (name === "update_session_note") {
+    const id = typeof args.id === "number" && Number.isInteger(args.id) && args.id > 0 ? args.id : null;
+    if (!id) throw new McpInvalidParamsError("update_session_note requires a positive integer id.");
+    const changes: { content?: string; discussed?: boolean } = {};
+    if (typeof args.content === "string") changes.content = args.content;
+    if (typeof args.discussed === "boolean") changes.discussed = args.discussed;
+    const note = await updateSessionNote(userId, id, changes);
+    if (!note) throw new McpInvalidParamsError("That note doesn't exist, or the new text is empty.");
+    return formatToolResult({ updated: true, note });
   }
 
   if (name === "get_worry_module") {

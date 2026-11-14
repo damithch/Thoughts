@@ -6,6 +6,7 @@ export * from "@/lib/db/insights";
 export * from "@/lib/db/password-resets";
 export * from "@/lib/db/push";
 export * from "@/lib/db/rag";
+export * from "@/lib/db/session-notes";
 export * from "@/lib/db/settings";
 export * from "@/lib/db/support";
 export * from "@/lib/db/thoughts";

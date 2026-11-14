@@ -5,7 +5,11 @@ export type User = { id: number; name: string; email: string };
 export type Thought = {
   id: number;
   title: string;
+  // The short label made from the emotions (what older entries typed as free text).
   category: string;
+  emotions: string[];
+  life_area: string;
+  trigger: string;
   mood: number;
   is_hidden: boolean;
   tags: string[];
@@ -180,6 +184,9 @@ export type InsightsResponse = { sources: InsightSource[]; ideas: InsightIdea[] 
 export type SmartCaptureResult = {
   title: string;
   category: string;
+  emotions: string[];
+  lifeArea: string;
+  trigger: string;
   mood: number;
   tags: string[];
   conceptTags: string[];
@@ -285,6 +292,9 @@ export type VoiceCaptureResponse = {
     thought: {
       title: string;
       category: string;
+      emotions: string[];
+      lifeArea: string;
+      trigger: string;
       mood: number;
       tags: string[];
       summary: string;
@@ -294,6 +304,8 @@ export type VoiceCaptureResponse = {
     };
     tasks: VoiceTaskDraft[];
     worries: string[];
+    // Things you said you want to raise with your therapist.
+    sessionNotes: string[];
   };
   // Present only while a worry-postponement module is running.
   worryParking: { thinkingTime: string | null } | null;
@@ -307,5 +319,17 @@ export type VoiceSaveResponse = {
   thought: Thought | null;
   tasksCreated: number;
   worriesParked: number;
+  sessionNotesAdded: number;
   repeated?: boolean;
 };
+
+export type SessionNote = {
+  id: number;
+  content: string;
+  source: "manual" | "thought" | "voice" | "claude";
+  thought_id: number | null;
+  created_at: string;
+  discussed_at: string | null;
+};
+
+export type SessionNotesResponse = { notes: SessionNote[] };

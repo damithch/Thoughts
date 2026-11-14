@@ -411,6 +411,114 @@ await test("worry tools: start, log a sudden worry, record a day, evidence, upda
   await pool.query(`DELETE FROM users WHERE id = $1`, [worrier]);
 });
 
+const thoughtsDb = await import("@/lib/db/thoughts");
+const sessionNotes = await import("@/lib/db/session-notes");
+
+const baseThought = { mood: 5, conceptTags: [], summary: "s", body: "", linkedBookIdeaId: null, insightReflection: "", userId };
+
+await test("thoughts: emotions, life area and trigger are stored; an old category is read into them", async () => {
+  const modernId = await thoughtsDb.createThought({
+    ...baseThought,
+    title: "Modern",
+    category: "Anxious, sad",
+    emotions: ["anxious", "sad"],
+    lifeArea: "study",
+    trigger: "exam results",
+    tags: ["exam"],
+  });
+  const modern = await thoughtsDb.getThoughtByIdForUser(modernId!, userId);
+  assert.deepEqual([modern?.emotions, modern?.life_area, modern?.trigger], [["anxious", "sad"], "study", "exam results"]);
+
+  // A caller that only knows the old category (routines, older app builds).
+  const legacyId = await thoughtsDb.createThought({ ...baseThought, title: "Legacy", category: "Anger, frustration", tags: ["family"] });
+  const legacy = await thoughtsDb.getThoughtByIdForUser(legacyId!, userId);
+  assert.deepEqual([legacy?.category, legacy?.emotions, legacy?.life_area], ["Anger, frustration", ["angry", "frustrated"], "family"]);
+
+  // An update that doesn't send the fields leaves them alone; one that does replaces them.
+  const edit = { ...baseThought, id: modernId!, title: "Modern", category: "Anxious, sad", tags: ["exam"] };
+  await thoughtsDb.updateThought(edit);
+  assert.deepEqual((await thoughtsDb.getThoughtByIdForUser(modernId!, userId))?.emotions, ["anxious", "sad"]);
+  await thoughtsDb.updateThought({ ...edit, category: "Calm", emotions: ["calm"], lifeArea: "", trigger: "" });
+  const after = await thoughtsDb.getThoughtByIdForUser(modernId!, userId);
+  assert.deepEqual([after?.emotions, after?.life_area, after?.trigger], [["calm"], "", ""]);
+
+  await thoughtsDb.updateThought({ ...edit, category: "Calm", emotions: ["calm"], lifeArea: "study", trigger: "Exam Results" });
+  const triggers = await thoughtsDb.getTriggerCounts(userId);
+  assert.deepEqual(triggers.map((row) => [row.trigger, row.count]), [["Exam Results", 1]]);
+});
+
+await test("tags: counted most used first; merging renames everywhere without duplicates", async () => {
+  const tagUser = Number(
+    (await pool.query<{ id: number }>(`INSERT INTO users (name, email, password_hash) VALUES ('Tags', $1, 'x:y') RETURNING id`, [
+      `tags-${Date.now()}@example.com`,
+    ])).rows[0].id,
+  );
+  const make = (title: string, tags: string[]) =>
+    thoughtsDb.createThought({ ...baseThought, userId: tagUser, title, category: "Calm", tags });
+  await make("a", ["calm", "study"]);
+  await make("b", ["calmness", "calm"]);
+  await make("c", ["calmness"]);
+
+  assert.deepEqual((await thoughtsDb.getTagCounts(tagUser)).map((row) => [row.tag, row.count]), [["calm", 2], ["calmness", 2], ["study", 1]]);
+  assert.equal(await thoughtsDb.mergeTag(tagUser, "Calmness", " calm "), 2);
+  assert.deepEqual((await thoughtsDb.getTagCounts(tagUser)).map((row) => [row.tag, row.count]), [["calm", 3], ["study", 1]]);
+  assert.equal(await thoughtsDb.mergeTag(tagUser, "calm", "calm"), 0, "same name changes nothing");
+  assert.equal(await thoughtsDb.mergeTag(userId, "calm", "peace"), 0, "another user's tags are untouched");
+
+  await pool.query(`DELETE FROM thoughts WHERE user_id = $1`, [tagUser]);
+  await pool.query(`DELETE FROM users WHERE id = $1`, [tagUser]);
+});
+
+await test("session notes: add, no duplicates, tick off, report order, other users kept out", async () => {
+  const thoughtId = await thoughtsDb.createThought({ ...baseThought, title: "Bad dreams", category: "Anxious", tags: [] });
+
+  const typed = await sessionNotes.createSessionNote({ userId, content: "  Ask about the   medication change ", source: "manual" });
+  assert.deepEqual([typed?.created, typed?.note.content, typed?.note.source], [true, "Ask about the medication change", "manual"]);
+  const again = await sessionNotes.createSessionNote({ userId, content: "ask about the medication change", source: "claude" });
+  assert.deepEqual([again?.created, again?.note.id], [false, typed?.note.id]);
+
+  const fromThought = await sessionNotes.createSessionNote({ userId, content: "Bad dreams", source: "thought", thoughtId });
+  assert.equal(fromThought?.note.thought_id, thoughtId);
+  const sameThought = await sessionNotes.createSessionNote({ userId, content: "Different words", source: "thought", thoughtId });
+  assert.equal(sameThought?.created, false, "one open note per thought");
+  assert.equal(await sessionNotes.createSessionNote({ userId, content: "   ", source: "manual" }), null);
+
+  const { rows: strangers } = await pool.query<{ id: number }>(
+    `INSERT INTO users (name, email, password_hash) VALUES ('Other', $1, 'x:y') RETURNING id`,
+    [`session-${Date.now()}@example.com`],
+  );
+  const stranger = Number(strangers[0].id);
+  assert.equal(await sessionNotes.createSessionNote({ userId: stranger, content: "Mine", source: "thought", thoughtId }), null, "not their thought");
+  assert.equal(await sessionNotes.updateSessionNote(stranger, typed!.note.id, { discussed: true }), null);
+  assert.equal(await sessionNotes.deleteSessionNote(stranger, typed!.note.id), false);
+
+  const ticked = await sessionNotes.updateSessionNote(userId, typed!.note.id, { discussed: true });
+  assert.ok(ticked?.discussed_at);
+  assert.deepEqual((await sessionNotes.getSessionNotes(userId, "open")).map((note) => note.content), ["Bad dreams"]);
+  assert.deepEqual((await sessionNotes.getSessionNotes(userId)).map((note) => note.content), ["Bad dreams", "Ask about the medication change"]);
+  // Once ticked off, the same thing can be raised again later.
+  assert.equal((await sessionNotes.createSessionNote({ userId, content: "Ask about the medication change", source: "manual" }))?.created, true);
+
+  const report = await reports.getTherapyReportData({ id: userId, name: "DB test" }, weekAgo, today, ["session"]);
+  assert.deepEqual([report.session?.open.length, report.session?.discussed.length, report.attention, report.worry], [2, 1, null, null]);
+  const older = await reports.getTherapyReportData({ id: userId, name: "DB test" }, weekAgo, yesterday, ["session"]);
+  assert.equal(older.session?.discussed.length, 0, "discussed today is outside a range ending yesterday");
+  assert.ok((await renderTherapyReportPdf(report)).length > 1000);
+  assert.deepEqual(reports.parseSections(null), ["session", "attention", "worry"]);
+
+  assert.equal((await sessionNotes.updateSessionNote(userId, typed!.note.id, { discussed: false }))?.discussed_at, null);
+  assert.equal(await sessionNotes.updateSessionNote(userId, typed!.note.id, { content: "  " }), null, "empty text is refused");
+  assert.equal(await sessionNotes.deleteSessionNote(userId, typed!.note.id), true);
+
+  // Deleting the thought keeps the note.
+  await pool.query(`DELETE FROM thoughts WHERE id = $1`, [thoughtId]);
+  const kept = (await sessionNotes.getSessionNotes(userId, "open")).find((note) => note.content === "Bad dreams");
+  assert.equal(kept?.thought_id, null);
+
+  await pool.query(`DELETE FROM users WHERE id = $1`, [stranger]);
+});
+
+await pool.query(`DELETE FROM thoughts WHERE user_id = $1`, [userId]);
 await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 await pool.end();
 

@@ -13,6 +13,8 @@ import {
   withMobileUser,
 } from "@/lib/mobile-api";
 
+import { resolveThoughtFields } from "@/lib/thought-fields";
+
 export const dynamic = "force-dynamic";
 
 // GET /api/v1/thoughts?limit=50&visibility=active|hidden|all -> { thoughts } (newest first)
@@ -29,8 +31,9 @@ export const GET = withMobileUser(async (request, user) => {
   return Response.json({ thoughts });
 });
 
-// POST /api/v1/thoughts { title, category, mood, summary, body?, tags?, conceptTags?,
-//   linkedBookIdeaId?, insightReflection?, requestId? } -> 201 { thought }.
+// POST /api/v1/thoughts { title, emotions, lifeArea?, trigger?, mood, summary, body?, tags?,
+//   conceptTags?, linkedBookIdeaId?, insightReflection?, requestId? } -> 201 { thought }.
+// Older app builds send `category` instead of emotions / lifeArea / trigger; it is read into them.
 // A retried request with the same requestId doesn't create a duplicate.
 export const POST = withMobileUser(async (request, user) => {
   const body = await readJsonObject(request);
@@ -40,12 +43,13 @@ export const POST = withMobileUser(async (request, user) => {
   }
 
   const title = readString(body.title, 200);
-  const category = readString(body.category, 80);
+  const tags = readTags(body.tags);
+  const fields = resolveThoughtFields(body, tags);
   const mood = readMood(body.mood);
   const summary = readString(body.summary, 2000);
 
-  if (!title || !category || !mood || !summary) {
-    return apiError("A thought needs a title, category, mood (1-10) and summary.", 400);
+  if (!title || !fields || !mood || !summary) {
+    return apiError("A thought needs a title, at least one emotion, mood (1-10) and summary.", 400);
   }
 
   const linkedBookIdeaId = await readOwnedBookIdeaId(body.linkedBookIdeaId, user.id);
@@ -56,11 +60,14 @@ export const POST = withMobileUser(async (request, user) => {
 
   const thoughtId = await createThought({
     title,
-    category,
+    category: fields.category,
+    emotions: fields.emotions,
+    lifeArea: fields.lifeArea,
+    trigger: fields.trigger,
     mood,
     summary,
     body: readString(body.body),
-    tags: readTags(body.tags),
+    tags,
     conceptTags: readTags(body.conceptTags),
     linkedBookIdeaId: linkedBookIdeaId ?? null,
     insightReflection: readString(body.insightReflection, 4000),

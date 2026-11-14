@@ -4,6 +4,7 @@ import { ATTENTION_COPY } from "@/lib/attention/copy";
 import { describeFocusChange } from "@/lib/attention/rules";
 import { toPdfText, wrapText } from "@/lib/reports/pdf-text";
 import type { TherapyReportData } from "@/lib/reports/therapy-data";
+import { sourceLabel } from "@/lib/session-notes";
 
 // A4 in points.
 const PAGE = { width: 595.28, height: 841.89 };
@@ -28,6 +29,11 @@ function formatDate(date: string) {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+// YYYY-MM-DD in Colombo time.
+function toColomboDate(value: Date | string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Colombo" }).format(new Date(value));
 }
 
 function formatTime(value: Date | string) {
@@ -399,6 +405,39 @@ function worrySection(layout: Layout, data: NonNullable<TherapyReportData["worry
   });
 }
 
+function sessionSection(layout: Layout, data: NonNullable<TherapyReportData["session"]>) {
+  layout.heading("To bring to this session");
+
+  if (data.open.length === 0) {
+    layout.text("Nothing is waiting on the list.", { size: 10 });
+  } else {
+    data.open.forEach((note, index) => {
+      layout.ensure(30);
+      layout.text(`${index + 1}.  ${note.content}`, { size: 10.5 });
+      layout.text(`${sourceLabel(note.source)} · added ${formatDate(toColomboDate(note.created_at))}`, {
+        size: 8,
+        color: COLORS.faint,
+        x: MARGIN.x + 16,
+      });
+      layout.gap(5);
+    });
+  }
+
+  if (data.discussed.length > 0) {
+    layout.subheading("Already discussed in this period");
+    layout.table(
+      [
+        { title: "Discussed", width: 1.2 },
+        { title: "Note", width: 5 },
+      ],
+      data.discussed.map((note) => [
+        note.discussed_at ? formatDate(toColomboDate(note.discussed_at)) : "-",
+        note.content,
+      ]),
+    );
+  }
+}
+
 export async function renderTherapyReportPdf(data: TherapyReportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setTitle(toPdfText(`Therapy homework report ${data.from} to ${data.to}`));
@@ -413,7 +452,8 @@ export async function renderTherapyReportPdf(data: TherapyReportData): Promise<U
   layout.text("THERAPY HOMEWORK REPORT", { size: 8, font: bold, color: COLORS.accent });
   layout.gap(4);
   layout.text(
-    [data.attention ? "Attention training" : null, data.worry ? "Worry postponement" : null].filter(Boolean).join(" and "),
+    [data.attention ? "Attention training" : null, data.worry ? "Worry postponement" : null].filter(Boolean).join(" and ") ||
+      "For my next session",
     { size: 22, font: bold },
   );
   layout.text(`${formatDate(data.from)} to ${formatDate(data.to)}`, { size: 12, color: COLORS.soft });
@@ -424,6 +464,7 @@ export async function renderTherapyReportPdf(data: TherapyReportData): Promise<U
   );
   layout.gap(6);
 
+  if (data.session) sessionSection(layout, data.session);
   if (data.attention) attentionSection(layout, data.attention);
   if (data.worry) worrySection(layout, data.worry);
 

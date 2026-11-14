@@ -5,6 +5,7 @@ import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View
 
 import { Fab, LoadingState, Segmented, Tag } from "@/components/ui";
 import { formatTimestamp } from "@/lib/dates";
+import { emotionsLabel } from "@/lib/thought-fields";
 import { colors, fonts, radius } from "@/lib/theme";
 import type { Thought } from "@/lib/types";
 import { useApi } from "@/lib/use-api";
@@ -74,7 +75,7 @@ export default function JournalScreen() {
               style={({ pressed }) => [styles.card, pressed && { opacity: 0.8 }]}
             >
               <View style={styles.cardTop}>
-                <Text style={styles.category}>{item.category}</Text>
+                <Text style={styles.category}>{emotionsLabel(item)}</Text>
                 <Text style={styles.mood}>Mood {item.mood}/10</Text>
               </View>
               <Text style={styles.title}>{item.title}</Text>

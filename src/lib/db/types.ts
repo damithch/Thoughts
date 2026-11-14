@@ -2,6 +2,9 @@ export type Thought = {
   id: number;
   title: string;
   category: string;
+  emotions: string[];
+  life_area: string;
+  trigger: string;
   mood: number;
   is_hidden: boolean;
   tags: string[];
@@ -64,6 +67,11 @@ export type PasswordResetToken = {
 export type NewThought = {
   title: string;
   category: string;
+  // Left out by older callers: the fields are then read from `category` (on create) or kept
+  // as they are (on update).
+  emotions?: string[];
+  lifeArea?: string;
+  trigger?: string;
   mood: number;
   tags: string[];
   conceptTags: string[];
@@ -79,6 +87,11 @@ export type UpdateThought = {
   id: number;
   title: string;
   category: string;
+  // Left out by older callers: the fields are then read from `category` (on create) or kept
+  // as they are (on update).
+  emotions?: string[];
+  lifeArea?: string;
+  trigger?: string;
   mood: number;
   tags: string[];
   conceptTags: string[];

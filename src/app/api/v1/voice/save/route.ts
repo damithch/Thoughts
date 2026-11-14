@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import {
   createPostponedItem,
+  createSessionNote,
   createTask,
   createThought,
   getActiveWorryModule,
@@ -21,6 +22,8 @@ import {
 } from "@/lib/mobile-api";
 import { isValidTaskDate, normalizeTaskTitle, parseTaskPriorityValue } from "@/lib/tasks/validation";
 import { getCurrentColomboDate } from "@/lib/time";
+import { normalizeSessionNoteList } from "@/lib/session-notes";
+import { resolveThoughtFields } from "@/lib/thought-fields";
 import { VOICE_LIMITS } from "@/lib/voice-capture";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +31,13 @@ export const dynamic = "force-dynamic";
 const VOICE_TASK_TAG = "voice";
 
 // POST /api/v1/voice/save {
-//   thought: { title, category, mood, summary, body, tags?, linkedBookIdeaId?, insightReflection? },
+//   thought: { title, emotions, lifeArea?, trigger?, mood, summary, body, tags?, linkedBookIdeaId?,
+//              insightReflection? }   (older builds send `category` instead of the three fields)
 //   tasks?: [{ title, date (YYYY-MM-DD | null), priority? }],
 //   worries?: [string],
+//   sessionNotes?: [string],
 //   requestId
-// } -> 201 { thought, tasksCreated, worriesParked }
+// } -> 201 { thought, tasksCreated, worriesParked, sessionNotesAdded }
 // Saves the reviewed draft. A retry with the same requestId returns the saved thought without
 // adding the tasks or worries twice.
 export const POST = withMobileUser(async (request, user) => {
@@ -42,13 +47,16 @@ export const POST = withMobileUser(async (request, user) => {
   if (!body || !raw) return apiError("Send the reviewed thought as a JSON object.", 400);
 
   const title = readString(raw.title, 200);
-  const category = readString(raw.category, 80);
+  const tags = readTags(raw.tags);
+  const fields = resolveThoughtFields(raw, tags);
   const mood = readMood(raw.mood);
   const summary = readString(raw.summary, 2000);
 
-  if (!title || !category || !mood || !summary) {
-    return apiError("The thought needs a title, category, mood (1-10) and summary.", 400);
+  if (!title || !fields || !mood || !summary) {
+    return apiError("The thought needs a title, at least one emotion, mood (1-10) and summary.", 400);
   }
+
+  const sessionNotes = normalizeSessionNoteList(body.sessionNotes);
 
   // Validate everything before writing anything.
   const rawTasks = Array.isArray(body.tasks) ? body.tasks : [];
@@ -85,18 +93,27 @@ export const POST = withMobileUser(async (request, user) => {
 
   if (alreadySaved) {
     return Response.json(
-      { thought: await getThoughtByIdForUser(alreadySaved, user.id), tasksCreated: 0, worriesParked: 0, repeated: true },
+      {
+        thought: await getThoughtByIdForUser(alreadySaved, user.id),
+        tasksCreated: 0,
+        worriesParked: 0,
+        sessionNotesAdded: 0,
+        repeated: true,
+      },
       { status: 200 },
     );
   }
 
   const thoughtId = await createThought({
     title,
-    category,
+    category: fields.category,
+    emotions: fields.emotions,
+    lifeArea: fields.lifeArea,
+    trigger: fields.trigger,
     mood,
     summary,
     body: readString(raw.body),
-    tags: readTags(raw.tags),
+    tags,
     conceptTags: [],
     linkedBookIdeaId: linkedBookIdeaId ?? null,
     insightReflection: readString(raw.insightReflection, 4000),
@@ -122,14 +139,21 @@ export const POST = withMobileUser(async (request, user) => {
     }
   }
 
+  let sessionNotesAdded = 0;
+  for (const content of sessionNotes) {
+    const result = await createSessionNote({ userId: user.id, content, source: "voice", thoughtId: thoughtId ?? null });
+    if (result?.created) sessionNotesAdded += 1;
+  }
+
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/session");
   revalidatePath("/dashboard/tasks", "layout");
   revalidatePath("/");
 
   const thought = thoughtId ? await getThoughtByIdForUser(thoughtId, user.id) : null;
 
   return Response.json(
-    { thought, tasksCreated: tasks.length, worriesParked: worryModule ? worries.length : 0 },
+    { thought, tasksCreated: tasks.length, worriesParked: worryModule ? worries.length : 0, sessionNotesAdded },
     { status: 201 },
   );
 });

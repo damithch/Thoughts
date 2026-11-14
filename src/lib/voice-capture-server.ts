@@ -1,7 +1,7 @@
 import "server-only";
 
-import { pool } from "@/lib/db/client";
-import { getActiveWorryModule, getBookIdeasByUser, getUserSettings } from "@/lib/db";
+import { getActiveWorryModule, getBookIdeasByUser, getTagCounts, getTriggerCounts, getUserSettings } from "@/lib/db";
+import { rankTags } from "@/lib/thought-fields";
 import { GeminiApiError, generateWithFallback, type PromptPart } from "@/lib/gemini";
 import { apiError } from "@/lib/mobile-api";
 import { getCurrentColomboDate } from "@/lib/time";
@@ -15,28 +15,22 @@ const ERROR_STATUS: Record<string, number> = {
   api_error: 502,
 };
 
-// Everything a voice capture needs from the user's data: existing tags and categories to reuse,
+// Everything a voice capture needs from the user's data: existing tags (most used first) and triggers to reuse,
 // book ideas to link, and whether worries can be parked right now.
 export async function loadVoiceCaptureContext(userId: number) {
   const today = getCurrentColomboDate();
-  const [settings, tagsResult, categoriesResult, bookIdeas, worryModule] = await Promise.all([
+  const [settings, tagCounts, triggerCounts, bookIdeas, worryModule] = await Promise.all([
     getUserSettings(userId),
-    pool.query<{ tag: string }>(
-      `SELECT DISTINCT unnest(tags) AS tag FROM thoughts WHERE user_id = $1 ORDER BY tag LIMIT 50`,
-      [userId],
-    ),
-    pool.query<{ category: string }>(
-      `SELECT DISTINCT category FROM thoughts WHERE user_id = $1 ORDER BY category LIMIT 30`,
-      [userId],
-    ),
+    getTagCounts(userId),
+    getTriggerCounts(userId),
     getBookIdeasByUser(userId),
     getActiveWorryModule(userId),
   ]);
 
   const promptContext = {
     today,
-    tags: tagsResult.rows.map((row) => row.tag),
-    categories: categoriesResult.rows.map((row) => row.category),
+    tags: rankTags(tagCounts),
+    triggers: triggerCounts.map((row) => row.trigger),
     bookIdeas: bookIdeas.map((idea) => ({ id: idea.id, bookTitle: idea.book_title, ideaText: idea.idea_text })),
   };
 
