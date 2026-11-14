@@ -24,6 +24,7 @@ import {
   View,
 } from "react-native";
 
+import { ThoughtFieldsPicker } from "@/components/thought-fields";
 import { Button, Card, CardTitle, ErrorText, Eyebrow, Field, MoodPicker, Muted, formatClock } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { colomboToday, formatShortDate, shiftDate } from "@/lib/dates";
@@ -498,7 +499,9 @@ function Review({
   const today = colomboToday();
   const [requestId] = useState(() => randomUUID());
   const [title, setTitle] = useState(draft.thought.title);
-  const [category, setCategory] = useState(draft.thought.category);
+  const [emotions, setEmotions] = useState<string[]>(draft.thought.emotions ?? []);
+  const [lifeArea, setLifeArea] = useState(draft.thought.lifeArea ?? "");
+  const [trigger, setTrigger] = useState(draft.thought.trigger ?? "");
   const [mood, setMood] = useState<number | null>(draft.thought.mood);
   const [summary, setSummary] = useState(draft.thought.summary);
   const [body, setBody] = useState(draft.thought.body);
@@ -506,19 +509,22 @@ function Review({
   const [tasks, setTasks] = useState<TaskChoice[]>(draft.tasks.map((task) => ({ ...task, keep: true })));
   // Parking a worry is a choice, so these start unticked.
   const [worries, setWorries] = useState(draft.worries.map((worry) => ({ text: worry, keep: false })));
+  // You said these out loud as things for your therapist, so they start ticked.
+  const [sessionNotes, setSessionNotes] = useState((draft.sessionNotes ?? []).map((note) => ({ text: note, keep: true })));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const keptTasks = tasks.filter((task) => task.keep && task.title.trim());
   const keptWorries = worryParking ? worries.filter((worry) => worry.keep && worry.text.trim()) : [];
+  const keptSessionNotes = sessionNotes.filter((note) => note.keep && note.text.trim());
 
   function updateTask(index: number, patch: Partial<TaskChoice>) {
     setTasks((current) => current.map((task, at) => (at === index ? { ...task, ...patch } : task)));
   }
 
   async function save() {
-    if (!title.trim() || !category.trim() || !mood || !summary.trim()) {
-      setError("Add a title, category, mood and summary.");
+    if (!title.trim() || emotions.length === 0 || !mood || !summary.trim()) {
+      setError("Add a title, at least one emotion, a mood and a summary.");
       return;
     }
 
@@ -532,7 +538,9 @@ function Review({
           requestId,
           thought: {
             title: title.trim(),
-            category: category.trim(),
+            emotions,
+            lifeArea,
+            trigger: trigger.trim(),
             mood,
             summary: summary.trim(),
             body: body.trim(),
@@ -542,6 +550,7 @@ function Review({
           },
           tasks: keptTasks.map(({ title: taskTitle, date, priority }) => ({ title: taskTitle.trim(), date, priority })),
           worries: keptWorries.map((worry) => worry.text.trim()),
+          sessionNotes: keptSessionNotes.map((note) => note.text.trim()),
         },
       });
 
@@ -561,6 +570,9 @@ function Review({
         result.tasksCreated > 0 ? `added ${result.tasksCreated} task${result.tasksCreated === 1 ? "" : "s"}` : null,
         result.worriesParked > 0
           ? `parked ${result.worriesParked} worr${result.worriesParked === 1 ? "y" : "ies"} for thinking time`
+          : null,
+        result.sessionNotesAdded > 0
+          ? `put ${result.sessionNotesAdded} note${result.sessionNotesAdded === 1 ? "" : "s"} on your next-session list`
           : null,
       ].filter(Boolean);
 
@@ -587,7 +599,14 @@ function Review({
         <Card>
           <CardTitle eyebrow="Thought" title="Your card" />
           <Field label="Title" value={title} onChangeText={setTitle} />
-          <Field label="Category" value={category} onChangeText={setCategory} />
+          <ThoughtFieldsPicker
+            emotions={emotions}
+            lifeArea={lifeArea}
+            trigger={trigger}
+            onEmotions={setEmotions}
+            onLifeArea={setLifeArea}
+            onTrigger={setTrigger}
+          />
           <MoodPicker value={mood} onChange={setMood} />
           <Field label="Card summary" value={summary} onChangeText={setSummary} multiline />
           <Field label="Your words" value={body} onChangeText={setBody} multiline style={{ minHeight: 160 }} />
@@ -637,8 +656,26 @@ function Review({
           </Card>
         ) : null}
 
+        {sessionNotes.length > 0 ? (
+          <Card>
+            <CardTitle eyebrow="For my next session" title="Bring to your therapist?" />
+            <Muted>Ticked ones go on your next-session list (More → For my next session).</Muted>
+            {sessionNotes.map((note, index) => (
+              <CheckRow
+                key={index}
+                checked={note.keep}
+                onToggle={() =>
+                  setSessionNotes((current) => current.map((item, at) => (at === index ? { ...item, keep: !item.keep } : item)))
+                }
+              >
+                <Text style={styles.rowText}>{note.text}</Text>
+              </CheckRow>
+            ))}
+          </Card>
+        ) : null}
+
         <ErrorText message={error} />
-        <Button title={saveLabel(keptTasks.length, keptWorries.length)} onPress={save} busy={busy} />
+        <Button title={saveLabel(keptTasks.length, keptWorries.length, keptSessionNotes.length)} onPress={save} busy={busy} />
         <Button title="Fix the words" variant="secondary" onPress={onFixWords} disabled={busy} />
         <Button title="Start over" variant="secondary" onPress={onStartOver} disabled={busy} />
       </ScrollView>

@@ -4,6 +4,9 @@ import React, { useState, useEffect, useRef } from "react";
 export type SmartCaptureResult = {
   title: string;
   category: string;
+  emotions: string[];
+  lifeArea: string;
+  trigger: string;
   mood: number;
   tags: string[];
   conceptTags: string[];

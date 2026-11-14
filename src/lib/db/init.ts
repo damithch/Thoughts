@@ -1,5 +1,6 @@
 import { pool } from "@/lib/db/client";
 import { EMBEDDING_DIM } from "@/lib/embedding-config";
+import { classifyLegacyCategory } from "@/lib/thought-fields";
 
 export const seedThoughts = [
   {
@@ -137,6 +138,18 @@ export async function ensureInitialized() {
         CREATE UNIQUE INDEX IF NOT EXISTS thoughts_user_request_id_idx
         ON thoughts (user_id, request_id)
         WHERE request_id IS NOT NULL
+      `);
+
+      // The old free-text category is split into three answers: emotions (fixed list), life
+      // area and an optional trigger. `category` stays as the short label shown on cards.
+      // fields_version 0 marks rows written before the split (or by a raw insert); they are
+      // read into the new columns once, further down.
+      await pool.query(`
+        ALTER TABLE thoughts
+        ADD COLUMN IF NOT EXISTS emotions TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+        ADD COLUMN IF NOT EXISTS life_area TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS trigger_text TEXT NOT NULL DEFAULT '',
+        ADD COLUMN IF NOT EXISTS fields_version SMALLINT NOT NULL DEFAULT 0
       `);
 
       await pool.query(`
@@ -926,6 +939,24 @@ export async function ensureInitialized() {
         )
       `);
 
+      // "For my next session": things to bring up with a therapist, ticked off once discussed.
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS session_notes (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          content TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'manual',
+          thought_id BIGINT REFERENCES thoughts(id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          discussed_at TIMESTAMPTZ
+        )
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS session_notes_user_idx
+        ON session_notes (user_id, discussed_at, created_at DESC)
+      `);
+
       const { rows } = await pool.query<{ count: string }>(
         "SELECT COUNT(*)::text AS count FROM thoughts",
       );
@@ -940,6 +971,24 @@ export async function ensureInitialized() {
             [thought.title, thought.category, thought.mood, thought.tags, thought.summary, thought.body],
           );
         }
+      }
+
+      // One-off: read each old category into emotions / life area / trigger. Nothing is
+      // overwritten: `category` keeps what was typed, and only untouched rows are filled.
+      const legacy = await pool.query<{ id: string; category: string; tags: string[] }>(
+        "SELECT id, category, tags FROM thoughts WHERE fields_version = 0 LIMIT 5000",
+      );
+
+      for (const row of legacy.rows) {
+        const fields = classifyLegacyCategory(row.category, row.tags);
+        await pool.query(
+          `
+            UPDATE thoughts
+            SET emotions = $2, life_area = $3, trigger_text = $4, fields_version = 1
+            WHERE id = $1 AND fields_version = 0
+          `,
+          [row.id, fields.emotions, fields.lifeArea, fields.trigger],
+        );
       }
 
       initialized = true;

@@ -34,6 +34,12 @@ export default function MoreScreen() {
           onPress={() => router.push("/support")}
         />
         <NavRow
+          icon="clipboard-outline"
+          title="For my next session"
+          subtitle="Things to bring up with your therapist"
+          onPress={() => router.push("/session")}
+        />
+        <NavRow
           icon="cloud-outline"
           title="Worry postponement"
           subtitle="Test a worry belief over a week"

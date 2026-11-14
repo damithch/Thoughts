@@ -59,6 +59,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const month = searchParams.get("month") ?? "";
+  // The export lists every record once. ?full=1 gives the older, doubled shape.
+  const full = searchParams.get("full") === "1";
 
   if (!/^\d{4}-\d{2}$/.test(month)) {
     return new NextResponse("Invalid month.", { status: 400 });
@@ -89,6 +91,9 @@ export async function GET(request: Request) {
         user_id: thought.user_id,
         title: thought.title,
         category: thought.category,
+        emotions: thought.emotions,
+        life_area: thought.life_area,
+        trigger: thought.trigger,
         mood: thought.mood,
         tags: thought.tags,
         concept_tags: thought.concept_tags,
@@ -98,7 +103,8 @@ export async function GET(request: Request) {
         insight_reflection: thought.insight_reflection,
         summary: thought.summary,
         full_note: thought.body,
-        content: thought.summary,
+        // The old export repeated the summary as `content`; only ?full=1 still does.
+        ...(full ? { content: thought.summary } : {}),
         created_at: createdAt.localIso,
         created_at_utc: createdAt.isoUtc,
         created_date: createdAt.date,
@@ -254,10 +260,21 @@ export async function GET(request: Request) {
                 })),
               }
             : null,
-          thoughts: dayThoughts,
-          conversation_logs: dayConversationLogs,
-          tasks: dayTasks,
-          check_ins: dayCheckIns,
+          // Each record is listed once at the top level; a day points to its records by id.
+          // ?full=1 repeats the whole records under every day, as older exports did.
+          ...(full
+            ? {
+                thoughts: dayThoughts,
+                conversation_logs: dayConversationLogs,
+                tasks: dayTasks,
+                check_ins: dayCheckIns,
+              }
+            : {
+                thought_ids: dayThoughts.map((thought) => thought.id),
+                conversation_log_ids: dayConversationLogs.map((log) => log.id),
+                task_ids: dayTasks.map((task) => task.id),
+                check_in_ids: dayCheckIns.map((checkIn) => checkIn.id),
+              }),
         };
       });
 
@@ -274,6 +291,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         report_type: "month",
+        format: full ? "full" : "slim",
         month,
         user: {
           id: currentUser.id,

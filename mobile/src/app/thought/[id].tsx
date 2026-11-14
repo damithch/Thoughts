@@ -7,6 +7,7 @@ import { Button, Card, Centered, ErrorText, Eyebrow, Tag } from "@/components/ui
 import { ApiError, useAuth } from "@/lib/auth";
 import { formatTimestamp } from "@/lib/dates";
 import { colors, fonts } from "@/lib/theme";
+import { contextLine, emotionsLabel } from "@/lib/thought-fields";
 import type { Thought } from "@/lib/types";
 
 export default function ThoughtScreen() {
@@ -17,6 +18,7 @@ export default function ThoughtScreen() {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [hiding, setHiding] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +62,25 @@ export default function ThoughtScreen() {
     }
   }
 
+  async function bringToSession() {
+    setAdding(true);
+
+    try {
+      const result = await request<{ created: boolean }>("/v1/session-notes", {
+        method: "POST",
+        body: { thoughtId: Number(id) },
+      });
+      Alert.alert(
+        result.created ? "Added" : "Already on your list",
+        "It's on your next-session list (More → For my next session).",
+      );
+    } catch (caught) {
+      Alert.alert("Couldn't add it", caught instanceof ApiError ? caught.message : "Try again.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
   if (!thought) {
     return (
       <Centered>
@@ -89,9 +110,10 @@ export default function ThoughtScreen() {
     <ScrollView contentContainerStyle={styles.content}>
       <Card>
         <View style={styles.top}>
-          <Eyebrow>{thought.category}</Eyebrow>
+          <Eyebrow>{emotionsLabel(thought)}</Eyebrow>
           <Text style={styles.mood}>Mood {thought.mood}/10</Text>
         </View>
+        {contextLine(thought) ? <Text style={styles.context}>{contextLine(thought)}</Text> : null}
         <Text style={styles.title}>{thought.title}</Text>
         <Text style={styles.summary}>{thought.summary}</Text>
         {thought.body ? <Text style={styles.body}>{thought.body}</Text> : null}
@@ -120,6 +142,7 @@ export default function ThoughtScreen() {
 
       {thought.is_hidden ? <Text style={styles.hiddenNote}>Hidden from your journal and AI search.</Text> : null}
       <Button title="Edit" onPress={() => setEditing(true)} />
+      <Button title="Bring to my next session" variant="secondary" busy={adding} onPress={bringToSession} />
       <Button
         title={thought.is_hidden ? "Unhide" : "Hide"}
         variant="secondary"
@@ -145,6 +168,7 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 12, paddingBottom: 40 },
   top: { flexDirection: "row", justifyContent: "space-between" },
   mood: { fontSize: 12, color: colors.inkSoft },
+  context: { fontSize: 13, color: colors.inkSoft },
   title: { fontFamily: fonts.display, fontSize: 28, color: colors.ink },
   summary: { fontSize: 16, lineHeight: 24, color: colors.ink },
   body: { fontSize: 15, lineHeight: 24, color: colors.inkSoft },

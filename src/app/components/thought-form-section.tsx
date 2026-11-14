@@ -6,6 +6,7 @@ import { SmartCapture, type SmartCaptureResult } from "@/app/components/smart-ca
 import { LiveRagContext } from "@/app/components/live-rag-context";
 import SubmitButton from "@/app/components/submit-button";
 import Link from "next/link";
+import { EMOTIONS, LIFE_AREAS, THOUGHT_FIELD_LIMITS, type Emotion } from "@/lib/thought-fields";
 
 type BookIdeaOption = {
   id: number;
@@ -17,6 +18,9 @@ type EditingThought = {
   id: number;
   title: string;
   category: string;
+  emotions: string[];
+  life_area: string;
+  trigger: string;
   mood: number;
   tags: string[];
   concept_tags: string[];
@@ -50,7 +54,9 @@ export function ThoughtFormSection({
 
   // Controlled form field state — initialized from editingThought or empty
   const [title, setTitle] = useState(editingThought?.title ?? "");
-  const [category, setCategory] = useState(editingThought?.category ?? "");
+  const [emotions, setEmotions] = useState<string[]>(editingThought?.emotions ?? []);
+  const [lifeArea, setLifeArea] = useState(editingThought?.life_area ?? "");
+  const [trigger, setTrigger] = useState(editingThought?.trigger ?? "");
   const [mood, setMood] = useState(editingThought ? String(editingThought.mood) : "");
   const [tags, setTags] = useState(editingThought?.tags.join(", ") ?? "");
   const [conceptTags, setConceptTags] = useState(editingThought?.concept_tags.join(", ") ?? "");
@@ -64,7 +70,9 @@ export function ThoughtFormSection({
   // Smart Capture callback — populates all form fields via React state
   const handleAutoFill = useCallback((result: SmartCaptureResult) => {
     setTitle(result.title);
-    setCategory(result.category);
+    setEmotions(result.emotions);
+    setLifeArea(result.lifeArea);
+    setTrigger(result.trigger);
     setMood(String(result.mood));
     setTags(result.tags.join(", "));
     setConceptTags(result.conceptTags.join(", "));
@@ -78,6 +86,16 @@ export function ThoughtFormSection({
     // Scroll the form into view so the user can review
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  const toggleEmotion = (emotion: Emotion) => {
+    setEmotions((current) =>
+      current.includes(emotion)
+        ? current.filter((item) => item !== emotion)
+        : current.length >= THOUGHT_FIELD_LIMITS.emotions
+          ? current
+          : [...current, emotion],
+    );
+  };
 
   return (
     <div className="grid gap-6">
@@ -118,22 +136,68 @@ export function ThoughtFormSection({
             />
           </label>
 
-          <div className="grid gap-4 sm:gap-5 md:grid-cols-[1.1fr_0.9fr]">
-            <label className="grid gap-2 text-sm text-stone-700">
-              <span className="uppercase tracking-[0.18em] text-emerald-800/70">
-                Category
-              </span>
+          <fieldset className="grid gap-2 text-sm text-stone-700">
+            <legend className="uppercase tracking-[0.18em] text-emerald-800/70">How it feels</legend>
+            <input type="hidden" name="emotions" value={emotions.join(",")} />
+            {editingThought ? <input type="hidden" name="category" value={editingThought.category} /> : null}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {EMOTIONS.map((emotion) => {
+                const selected = emotions.includes(emotion);
+
+                return (
+                  <button
+                    key={emotion}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleEmotion(emotion)}
+                    className={`rounded-full border px-3 py-1.5 text-sm capitalize transition ${
+                      selected
+                        ? "border-emerald-950 bg-emerald-950 text-emerald-50"
+                        : "border-emerald-950/10 bg-emerald-50/60 text-stone-700 hover:border-emerald-700"
+                    }`}
+                  >
+                    {emotion}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-xs leading-5 text-stone-500">
+              Pick up to {THOUGHT_FIELD_LIMITS.emotions}. This replaces the old free-text category.
+            </span>
+          </fieldset>
+
+          <div className="grid gap-4 sm:gap-5 md:grid-cols-2">
+            <label className="grid min-w-0 gap-2 text-sm text-stone-700">
+              <span className="uppercase tracking-[0.18em] text-emerald-800/70">Life area</span>
+              <select
+                name="lifeArea"
+                value={lifeArea}
+                onChange={(e) => setLifeArea(e.target.value)}
+                className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
+              >
+                <option value="">Not set</option>
+                {LIFE_AREAS.map((area) => (
+                  <option key={area.key} value={area.key}>
+                    {area.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid min-w-0 gap-2 text-sm text-stone-700">
+              <span className="uppercase tracking-[0.18em] text-emerald-800/70">Trigger</span>
               <input
                 type="text"
-                name="category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                required
+                name="trigger"
+                value={trigger}
+                maxLength={THOUGHT_FIELD_LIMITS.trigger}
+                onChange={(e) => setTrigger(e.target.value)}
+                placeholder="Person, place or event (optional)"
                 className="rounded-2xl border border-emerald-950/10 bg-emerald-50/60 px-4 py-3 outline-none transition focus:border-emerald-700"
               />
             </label>
 
-            <label className="grid gap-2 text-sm text-stone-700">
+            <label className="grid min-w-0 gap-2 text-sm text-stone-700 md:col-span-2">
               <span className="uppercase tracking-[0.18em] text-emerald-800/70">
                 Mood level
               </span>

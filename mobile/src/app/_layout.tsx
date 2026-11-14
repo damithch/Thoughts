@@ -44,6 +44,7 @@ function RootNavigator() {
         <Stack.Screen name="conversations" options={{ title: "Conversation logs" }} />
         <Stack.Screen name="anchors" options={{ title: "Anchor notes" }} />
         <Stack.Screen name="worry" options={{ title: "Worry postponement" }} />
+        <Stack.Screen name="session" options={{ title: "For my next session" }} />
         <Stack.Screen name="activation/index" options={{ title: "Behavioural activation" }} />
         <Stack.Screen name="activation/[id]" options={{ title: "Activity" }} />
         <Stack.Screen name="attention/index" options={{ title: "Attention training" }} />

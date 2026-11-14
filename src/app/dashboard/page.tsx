@@ -29,6 +29,8 @@ import {
   toColomboExportParts,
 } from "@/lib/time";
 import { buildSphereLayout } from "@/lib/thought-sphere";
+import { categoryLabel, lifeAreaLabel } from "@/lib/thought-fields";
+import { addThoughtToSessionAction } from "@/app/dashboard/session/actions";
 import { ThoughtSphere } from "@/app/components/thought-sphere";
 import RagSearch from "@/app/components/rag-search";
 import { ThoughtFormSection } from "@/app/components/thought-form-section";
@@ -56,7 +58,10 @@ const dashboardToastMessages: Record<string, string> = {
   created: "Thought card created.",
   deleted: "Thought card deleted.",
   delete_failed: "That card could not be deleted.",
-  invalid_entry: "Add a title, category, mood level, and summary before saving.",
+  invalid_entry: "Add a title, at least one emotion, a mood level, and a summary before saving.",
+  session_added: "Added to your next-session list.",
+  session_exists: "That card is already on your next-session list.",
+  session_failed: "That card could not be added to the list.",
   registered: "Account created. Your dashboard is ready.",
   save_failed: "The card could not be saved.",
   hidden: "Thought card hidden.",
@@ -333,6 +338,12 @@ export default async function DashboardPage({
                 className="rounded-full border border-teal-950/10 px-4 py-3 text-center text-teal-950 transition-colors hover:bg-teal-50"
               >
                 Worry Postponement
+              </Link>
+              <Link
+                href="/dashboard/session"
+                className="rounded-full border border-emerald-950/10 px-4 py-3 text-center text-emerald-950 transition-colors hover:bg-white"
+              >
+                Next session
               </Link>
               <Link
                 href="/dashboard/support"
@@ -823,9 +834,16 @@ export default async function DashboardPage({
                   className="flex flex-col rounded-[1.75rem] border border-emerald-950/10 bg-white/45 p-5 sm:aspect-square shadow-[0_20px_50px_rgba(48,84,53,0.10)] backdrop-blur-md transition hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(0,0,0,0.08)] sm:p-6"
                 >
                   <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-stone-500">
-                    <span className="truncate">{thought.category}</span>
+                    <span className="truncate">
+                      {categoryLabel({ emotions: thought.emotions, lifeArea: "" }, thought.category)}
+                    </span>
                     <span className="whitespace-nowrap">Mood {thought.mood}/10</span>
                   </div>
+                  {thought.life_area || thought.trigger ? (
+                    <p className="mt-1 truncate text-[11px] text-stone-500">
+                      {[lifeAreaLabel(thought.life_area), thought.trigger].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
                   <h3 className="mt-3 font-[family:var(--font-display)] text-2xl leading-tight text-stone-900 sm:text-[1.65rem]">
                     {thought.title}
                   </h3>
@@ -884,6 +902,17 @@ export default async function DashboardPage({
                     >
                       Edit
                     </Link>
+                    <form action={addThoughtToSessionAction} className="flex-1">
+                      <input type="hidden" name="thoughtId" value={thought.id} />
+                      <button
+                        type="submit"
+                        disabled={!databaseAvailable}
+                        title="Add to the list for your next therapy session"
+                        className="inline-flex w-full justify-center rounded-full border border-emerald-950/10 bg-white/60 px-2 py-1.5 text-[11px] uppercase tracking-[0.08em] text-emerald-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Session
+                      </button>
+                    </form>
                     {thought.is_hidden ? (
                       <form action={unhideThoughtAction} className="flex-1">
                         <input type="hidden" name="thoughtId" value={thought.id} />

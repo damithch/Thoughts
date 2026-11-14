@@ -8,6 +8,8 @@ import SyncStatus from "@/app/components/sync-status";
 import ApiHealthCheck from "@/app/components/api-health-check";
 import { getCurrentUser } from "@/lib/auth";
 import { getUserSettings, DEFAULT_USER_SETTINGS } from "@/lib/db/settings";
+import { getTagCounts } from "@/lib/db/thoughts";
+import { mergeTagAction } from "@/app/dashboard/session/actions";
 import type { RagDocumentKind } from "@/lib/db/types";
 import { LLM_MODELS } from "@/lib/llm-models";
 
@@ -24,8 +26,15 @@ export default async function SettingsPage({
 
   const settings = await getUserSettings(currentUser.id);
   const params = await searchParams;
+  const tagToasts: Record<string, string> = {
+    tag_merged: "Tag merged on every card that had it.",
+    tag_missing: "No card has that tag.",
+    tag_invalid: "Pick a tag and type a different name to merge it into.",
+    tag_failed: "The tags could not be merged. Try again.",
+  };
   const toastMessage =
-    typeof params?.toast === "string" ? params.toast : null;
+    typeof params?.toast === "string" ? (tagToasts[params.toast] ?? params.toast) : null;
+  const tagCounts = await getTagCounts(currentUser.id);
 
   const ALL_RAG_KINDS: { value: RagDocumentKind; label: string }[] = [
     { value: "thought", label: "Thoughts" },
@@ -481,6 +490,76 @@ export default async function SettingsPage({
           </section>
 
         </form>
+
+        {/* Tags: rename or merge near-duplicates */}
+        <section
+          id="tags"
+          className="rounded-[1.75rem] border border-emerald-950/10 bg-white/72 p-5 shadow-[0_20px_50px_rgba(48,84,53,0.08)] sm:p-6"
+        >
+          <h2 className="font-[family:var(--font-display)] text-2xl text-stone-900">Tags</h2>
+          <p className="mt-2 text-sm leading-6 text-stone-600">
+            Rename a tag, or merge two that mean the same thing (for example calmness into calm). The change applies to
+            every card. Smart capture and voice capture reuse your most used tags first.
+          </p>
+          {tagCounts.length === 0 ? (
+            <p className="mt-4 text-sm text-stone-500">No tags yet.</p>
+          ) : (
+            <>
+              <form action={mergeTagAction} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                <label className="grid gap-1 text-xs font-medium text-stone-700">
+                  Tag to change
+                  <select
+                    name="from"
+                    required
+                    defaultValue=""
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="" disabled>
+                      Pick a tag
+                    </option>
+                    {tagCounts.map((item) => (
+                      <option key={item.tag} value={item.tag}>
+                        {item.tag} ({item.count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1 text-xs font-medium text-stone-700">
+                  Rename or merge into
+                  <input
+                    name="to"
+                    required
+                    maxLength={40}
+                    list="existing-tags"
+                    autoCapitalize="none"
+                    className="rounded-xl border border-stone-300 bg-white px-3 py-2 text-sm"
+                  />
+                  <datalist id="existing-tags">
+                    {tagCounts.map((item) => (
+                      <option key={item.tag} value={item.tag} />
+                    ))}
+                  </datalist>
+                </label>
+                <button
+                  type="submit"
+                  className="rounded-full bg-emerald-950 px-6 py-2.5 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-800"
+                >
+                  Merge
+                </button>
+              </form>
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {tagCounts.map((item) => (
+                  <li
+                    key={item.tag}
+                    className="rounded-full border border-emerald-950/10 bg-white/70 px-3 py-1 text-xs text-stone-700"
+                  >
+                    {item.tag} <span className="text-stone-400">{item.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
       </div>
     </main>
   );

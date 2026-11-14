@@ -12,6 +12,8 @@ import {
   withMobileUser,
 } from "@/lib/mobile-api";
 
+import { resolveThoughtFields } from "@/lib/thought-fields";
+
 export const dynamic = "force-dynamic";
 
 type ThoughtContext = { params: Promise<{ id: string }> };
@@ -53,18 +55,45 @@ export const PATCH = withMobileUser<ThoughtContext>(async (request, user, { para
     await setThoughtHiddenState({ id, userId: user.id, isHidden: body.isHidden });
   }
 
-  const editsContent = ["title", "category", "mood", "summary", "body", "tags", "conceptTags", "linkedBookIdeaId", "insightReflection"].some(
+  const editsContent = [
+    "title",
+    "category",
+    "emotions",
+    "lifeArea",
+    "trigger",
+    "mood",
+    "summary",
+    "body",
+    "tags",
+    "conceptTags",
+    "linkedBookIdeaId",
+    "insightReflection",
+  ].some(
     (field) => field in body,
   );
 
   if (editsContent) {
     const title = "title" in body ? readString(body.title, 200) : existing.title;
-    const category = "category" in body ? readString(body.category, 80) : existing.category;
+    const tags = "tags" in body ? readTags(body.tags) : existing.tags;
+    // Only the fields sent change; an older build's `category` is read into the new fields.
+    const sendsFields = ["category", "emotions", "lifeArea", "trigger"].some((field) => field in body);
+    const fields = sendsFields
+      ? resolveThoughtFields(
+          {
+            emotions: "emotions" in body ? body.emotions : "category" in body ? undefined : existing.emotions,
+            lifeArea: "lifeArea" in body ? body.lifeArea : "category" in body ? undefined : existing.life_area,
+            trigger: "trigger" in body ? body.trigger : "category" in body ? undefined : existing.trigger,
+            category: "category" in body ? body.category : existing.category,
+          },
+          tags,
+        )
+      : null;
+    const category = sendsFields ? fields?.category : existing.category;
     const mood = "mood" in body ? readMood(body.mood) : existing.mood;
     const summary = "summary" in body ? readString(body.summary, 2000) : existing.summary;
 
     if (!title || !category || !mood || !summary) {
-      return apiError("A thought needs a title, category, mood (1-10) and summary.", 400);
+      return apiError("A thought needs a title, at least one emotion, mood (1-10) and summary.", 400);
     }
 
     const linkedBookIdeaId = await readOwnedBookIdeaId(body.linkedBookIdeaId, user.id);
@@ -78,10 +107,13 @@ export const PATCH = withMobileUser<ThoughtContext>(async (request, user, { para
       userId: user.id,
       title,
       category,
+      emotions: fields?.emotions,
+      lifeArea: fields?.lifeArea,
+      trigger: fields?.trigger,
       mood,
       summary,
       body: "body" in body ? readString(body.body) : existing.body,
-      tags: "tags" in body ? readTags(body.tags) : existing.tags,
+      tags,
       conceptTags: "conceptTags" in body ? readTags(body.conceptTags) : existing.concept_tags,
       linkedBookIdeaId: linkedBookIdeaId === undefined ? existing.linked_book_idea_id : linkedBookIdeaId,
       insightReflection:
